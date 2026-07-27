@@ -51,6 +51,15 @@ plan.md §3.6 は `CaptionEventStream` を要求しているが、
 
 ## 現在の状態
 
-叩き台 (pre-audit first cut)。`pnpm verify` は green。
-WebAudio アダプタとサウンドボードプレビューは未実装
-（[testing.md](./testing.md)、[versioning.md](./versioning.md)）。
+叩き台 (pre-audit first cut)。`pnpm verify` は green（158 tests）。
+
+WebAudio アダプタ（`domain/webaudio-adapter.ts`）とサウンドボードプレビュー
+（`apps/preview-soundboard/`）は**実装済み**。
+`tsconfig.base.json` の `lib` は `["ES2024"]` のままで、`"DOM"` は入れていない
+—— 理由と手法は `domain/webaudio-surface.ts` のヘッダに書いてある。
+
+残っているのは**音声アセット同梱**と、
+**実ブラウザでの契約テスト**である（[testing.md](./testing.md) §4）。
+プレビューはターミナルアプリなので音を鳴らせない。
+何が確認できて何ができないかは
+[apps/preview-soundboard/README.md](../apps/preview-soundboard/README.md)。

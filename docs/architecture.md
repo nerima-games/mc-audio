@@ -133,7 +133,14 @@ mc-audio は**押し込まれる側**であり、決して押し返さない。
 - `"DOM"` を締め出すことで、WebAudio 固有の部分が `AudioBackendPort` の裏に**強制的に**回る
 - 結果として jsdom も `AudioContext` も無しでテストできる
 
-WebAudio アダプタは**最後に書く**。最初ではない。
+WebAudio アダプタは**最後に書いた**（`domain/webaudio-adapter.ts`）。
+そして **`lib` は変えなかった**。
+`domain/webaudio-surface.ts` が使うメンバだけを構造的に記述し、
+`test/webaudio-surface.test.ts` が本物の `lib.dom.d.ts` に対して fixture を
+コンパイルして「実 `AudioContext` がキャスト無しで満たす」ことを証明している。
+mc-save / mc-render / mx-ui と同じ手法である。
+
+上の 3 点は、アダプタが入った**後も**全部成り立っている。それが要点だった。
 
 ## 4. 構成ルール（plan.md §2.3）
 

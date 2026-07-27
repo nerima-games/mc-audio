@@ -18,9 +18,39 @@
 | BGM 状態機械 | day / night / cave の遷移計画（純関数） | ✅ |
 | オーディオゲート | `unavailable` / `locked` / `ready` の 3 状態 | ✅ |
 | `AudioBackendPort` | WebAudio を封じ込める唯一の継ぎ目 | ✅ |
-| WebAudio アダプタ | `AudioContext` のガード付き生成、オシレータ | ⬜ **未実装** |
+| WebAudio アダプタ | `AudioContext` のガード付き生成、オシレータ | ✅ `domain/webaudio-adapter.ts` |
+| WebAudio 界面型 | `lib` に `"DOM"` を入れずに済ませる構造的サブセット | ✅ `domain/webaudio-surface.ts` |
+| gain エンベロープ | クリック除去のための attack / release | ✅ `domain/envelope.ts` |
 | 音声ファイル同梱 | アセットは消費者に同梱（plan.md §5.3） | ⬜ |
-| サウンドボードプレビュー | 全キューを一覧から試聴 | ⬜ |
+| サウンドボードプレビュー | 全キューを一覧から試聴 | ✅ `apps/preview-soundboard/` |
+
+### WebAudio アダプタについて
+
+**`tsconfig.base.json` の `lib` は `["ES2024"]` のままである。`"DOM"` は入れていない。**
+
+`domain/webaudio-surface.ts` が、アダプタが実際に使う Web Audio のメンバだけを
+構造的に記述し、`test/webaudio-surface.test.ts` が
+`test/fixtures/webaudio-surface.ts` を**本物の `lib.dom.d.ts` に対してコンパイル**して
+「実 `AudioContext` がキャスト無しでこの型を満たす」ことを証明している。
+mc-save（`domain/indexeddb-surface.ts`）、mc-render、mx-ui と同じ手法である。
+
+理由は `docs/architecture.md` §3 が書いていたとおり:
+`"DOM"` を入れると `domain/` の全ファイルが `window` / `document` / `localStorage` に
+手を伸ばせるようになり、**何ヶ月も誰も気付かない**。
+`pnpm typecheck` が「この toolkit はプラットフォーム非依存である」という
+**証明**であり続けるために入れていない。
+
+この方式が 1 つだけ通らなかった箇所（`AudioNode.connect`）と、
+コンパイラが見つけた 4 つ目の `AudioContextState`（`'interrupted'`、iOS の着信）は
+`domain/webaudio-surface.ts` のヘッダに記録してある。
+
+### プレビューについて
+
+`apps/preview-soundboard/`。ターミナルアプリなので**音は鳴らない**。
+何が確認でき、何が確認できないかは
+[apps/preview-soundboard/README.md](../apps/preview-soundboard/README.md) に書いてある。
+本物の `makeSoundCueService` を本物のアダプタの上で走らせ、その結果を読み出して表示する
+（再計算はしない）。
 
 ## 2. 非スコープ（ここに書いたら負け）
 

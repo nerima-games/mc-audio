@@ -9,12 +9,25 @@
     "moduleResolution": "bundler",
     // No DOM, no WebWorker, no Node globals — yes, in an audio repository.
     //
-    // Everything mc-audio currently ships is pure: the cue registry, the volume
-    // arithmetic, the BGM state machine and the caption stream. Keeping `DOM`
-    // out is what forces the WebAudio-specific parts behind `AudioBackendPort`,
-    // and what lets the whole thing be tested in Node with no jsdom and no
-    // AudioContext. The WebAudio adapter that adds "DOM" is deliberately the
-    // last thing written, not the first (see docs/public-api.md).
+    // Keeping `DOM` out is what forces the WebAudio-specific parts behind
+    // `AudioBackendPort`, and what lets the whole thing be tested in Node with
+    // no jsdom and no AudioContext.
+    //
+    // THE WEBAUDIO ADAPTER SHIPPED WITHOUT CHANGING THIS LINE, and that was the
+    // point. `domain/webaudio-adapter.ts` talks to a real `AudioContext`
+    // through `domain/webaudio-surface.ts`, which describes structurally the
+    // handful of members it uses; `test/webaudio-surface.test.ts` compiles a
+    // fixture against the real `lib.dom.d.ts` to prove a real `AudioContext`
+    // satisfies those types with no cast. mc-save's `indexeddb-surface.ts`,
+    // mc-render's `dom-surface.ts` and mx-ui do the same.
+    //
+    // DO NOT ADD "DOM" HERE. With it on, every module in `domain/` silently
+    // becomes able to reach `window`, `document` and `localStorage`; the suite
+    // stays green, `pnpm typecheck` stops being a proof that this toolkit is
+    // platform-free, and nobody notices for months. If something genuinely
+    // cannot be described structurally, say so in
+    // `domain/webaudio-surface.ts` — it already names the one member that
+    // could not (`AudioNode.connect`) and what that costs.
     "lib": ["ES2024"],
     "types": [],
 

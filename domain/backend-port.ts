@@ -3,11 +3,19 @@
  *
  * PRE-AUDIT FIRST CUT (叩き台).
  *
- * Everything else in mc-audio is pure and runs in Node with no DOM. That is
- * deliberate and is enforced by `tsconfig.base.json`, whose `lib` does not
- * include `"DOM"`: `new AudioContext()` would not typecheck anywhere in this
- * repository today. The WebAudio adapter is the last thing to be written, not
- * the first, and it will bring its own tsconfig with `"DOM"` in it.
+ * Everything else in mc-audio is pure and runs in Node with no DOM, enforced by
+ * `tsconfig.base.json`, whose `lib` does not include `"DOM"`.
+ *
+ * The adapter now exists — `domain/webaudio-adapter.ts` — and `lib` STILL does
+ * not include `"DOM"`, which is not what the first cut of this comment
+ * predicted. It said the adapter would bring its own tsconfig with `"DOM"` in
+ * it; that turned out to be the wrong move, for a mechanical reason mc-save hit
+ * first: `scripts/api-lock.ts` and `scripts/check-dependency-whitelist.ts` both
+ * scan `tsconfig.build.json`, so an adapter outside it would be the one file
+ * that talks to real hardware and the one file no gate can see. Instead
+ * `domain/webaudio-surface.ts` describes the Web Audio members structurally and
+ * a test compiles a fixture against the real `lib.dom.d.ts` to prove the
+ * description is true.
  *
  * ---------------------------------------------------------------------------
  * `availability` is a first-class value, and that is the point

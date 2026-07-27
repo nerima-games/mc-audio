@@ -1,0 +1,31 @@
+{
+  // The dev preview under apps/preview-soundboard.
+  //
+  // A SEPARATE project on purpose. tsconfig.build.json proves that the shipped
+  // audio toolkit is platform-free — it inherits `types: []` and a `lib`
+  // WITHOUT "DOM", so a Node global or a browser type leaking into `domain/`
+  // fails the build. That proof is the reason the whole suite runs in Node with
+  // no jsdom and no AudioContext (docs/testing.md §2), and it is what
+  // domain/webaudio-surface.ts was written to preserve while still shipping an
+  // adapter. The preview renders to a terminal and needs Node's stdio, so it
+  // gets its own project and tsconfig.build.json is left exactly as it was.
+  //
+  // It also includes `test/fake-webaudio.ts`, which is unusual and deliberate.
+  // The preview drives the REAL adapter against the SAME test double the tests
+  // use, so the node graph and the automation calls it prints are what the
+  // adapter actually did — evidence, not a second description of it that could
+  // drift. A preview with its own private re-implementation of the browser
+  // would be able to draw a graph the adapter never built.
+  //
+  // NOTE what this file does NOT do: it does not add "DOM" to `lib`. The
+  // preview cannot make a sound and does not try; see apps/preview-soundboard
+  // /README.md on what it can and cannot show. A browser soundboard belongs
+  // beside this one eventually, not instead of it — it would be the only way to
+  // hear anything, and the only way to be unable to grep the result.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["apps/**/*.ts", "index.ts", "domain/**/*.ts", "test/fake-webaudio.ts"],
+  "exclude": ["node_modules", "coverage", "dist", "test/fixtures/**"]
+}

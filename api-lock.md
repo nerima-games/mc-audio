@@ -13,10 +13,16 @@
 <!-- ------------------------------------------------------------------------- -->
 
 format: 1
-exported declarations: 57
+exported declarations: 84
 supporting declarations: 3
 
 ## Exported
+
+### ATTACK_SECS  `const`
+
+```ts
+const ATTACK_SECS = 0.005;
+```
 
 ### AUDIO_AVAILABILITIES  `const`
 
@@ -46,6 +52,54 @@ type AudioBackend = {
 ```ts
 class AudioBackendPort extends AudioBackendPort_base {
 }
+```
+
+### AudioContextConstructorSurface  `type`
+
+```ts
+type AudioContextConstructorSurface = new () => AudioContextSurface;
+```
+
+### AudioContextStateSurface  `type`
+
+```ts
+type AudioContextStateSurface = 'suspended' | 'running' | 'closed' | 'interrupted';
+```
+
+### AudioContextSurface  `type`
+
+```ts
+type AudioContextSurface = {
+    readonly state: AudioContextStateSurface;
+    readonly currentTime: number;
+    readonly destination: AudioNodeSurface;
+    readonly resume: () => Promise<void>;
+    readonly close: () => Promise<void>;
+    readonly createOscillator: () => OscillatorSurface;
+    readonly createGain: () => GainSurface;
+    readonly createStereoPanner?: () => StereoPannerSurface;
+    onstatechange: ((event: never) => void) | null;
+};
+```
+
+### AudioNodeSurface  `type`
+
+```ts
+type AudioNodeSurface = {
+    connect(destination: AudioNodeSurface): AudioNodeSurface;
+    readonly disconnect: () => void;
+};
+```
+
+### AudioParamSurface  `type`
+
+```ts
+type AudioParamSurface = {
+    value: number;
+    readonly setValueAtTime: (value: number, startTime: number) => AudioParamSurface;
+    readonly linearRampToValueAtTime: (value: number, endTime: number) => AudioParamSurface;
+    readonly cancelScheduledValues: (cancelTime: number) => AudioParamSurface;
+};
 ```
 
 ### CAPTION_DISPLAY_SECS  `const`
@@ -148,16 +202,52 @@ type CuePlayOptions = {
 const DEFAULT_CAVE_THRESHOLD_Y = 40;
 ```
 
+### DEFAULT_TONE_WAVE  `const`
+
+```ts
+const DEFAULT_TONE_WAVE: OscillatorWave;
+```
+
 ### DEFAULT_VOLUME_SETTINGS  `const`
 
 ```ts
 const DEFAULT_VOLUME_SETTINGS: VolumeSettings;
 ```
 
+### EnvelopePoint  `type`
+
+```ts
+type EnvelopePoint = {
+    readonly kind: 'set' | 'ramp';
+    readonly atSecs: number;
+    readonly gain: number;
+};
+```
+
+### GainSurface  `type`
+
+```ts
+type GainSurface = AudioNodeSurface & {
+    readonly gain: AudioParamSurface;
+};
+```
+
 ### MAX_VISIBLE_CAPTIONS  `const`
 
 ```ts
 const MAX_VISIBLE_CAPTIONS = 5;
+```
+
+### MIN_DURATION_SECS  `const`
+
+```ts
+const MIN_DURATION_SECS = 0.01;
+```
+
+### MIN_FREQUENCY_HZ  `const`
+
+```ts
+const MIN_FREQUENCY_HZ = 20;
 ```
 
 ### MUSIC_ENVIRONMENTS  `const`
@@ -212,6 +302,30 @@ type MusicTrack = {
 const NO_SPATIALISATION: Spatialisation;
 ```
 
+### OscillatorSurface  `type`
+
+```ts
+type OscillatorSurface = AudioNodeSurface & {
+    type: OscillatorWave;
+    readonly frequency: AudioParamSurface;
+    readonly start: (when?: number) => void;
+    readonly stop: (when?: number) => void;
+    onended: ((event: never) => void) | null;
+};
+```
+
+### OscillatorWave  `type`
+
+```ts
+type OscillatorWave = 'sine' | 'square' | 'sawtooth' | 'triangle' | 'custom';
+```
+
+### RELEASE_SECS  `const`
+
+```ts
+const RELEASE_SECS = 0.02;
+```
+
 ### RecordedBackend  `type`
 
 ```ts
@@ -261,6 +375,25 @@ type SoundCueService = {
 type Spatialisation = {
     readonly gain: number;
     readonly pan: number;
+};
+```
+
+### StereoPannerSurface  `type`
+
+```ts
+type StereoPannerSurface = AudioNodeSurface & {
+    readonly pan: AudioParamSurface;
+};
+```
+
+### ToneEnvelope  `type`
+
+```ts
+type ToneEnvelope = {
+    readonly points: ReadonlyArray<EnvelopePoint>;
+    readonly peakGain: number;
+    readonly startSecs: number;
+    readonly stopAtSecs: number | null;
 };
 ```
 
@@ -320,6 +453,63 @@ type VolumeSettings = {
 };
 ```
 
+### WebAudioBackend  `type`
+
+```ts
+type WebAudioBackend = AudioBackend & {
+    readonly unlock: Effect.Effect<AudioAvailability>;
+    readonly report: Effect.Effect<WebAudioReport>;
+    readonly close: Effect.Effect<void>;
+};
+```
+
+### WebAudioConstructorName  `type`
+
+```ts
+type WebAudioConstructorName = 'AudioContext' | 'webkitAudioContext';
+```
+
+### WebAudioGlobalSurface  `type`
+
+```ts
+type WebAudioGlobalSurface = {
+    readonly AudioContext?: AudioContextConstructorSurface | undefined;
+    readonly webkitAudioContext?: AudioContextConstructorSurface | undefined;
+};
+```
+
+### WebAudioOptions  `type`
+
+```ts
+type WebAudioOptions = {
+    readonly global: WebAudioGlobalSurface;
+    readonly initialMasterGain?: number;
+};
+```
+
+### WebAudioReport  `type`
+
+```ts
+type WebAudioReport = {
+    readonly availability: AudioAvailability;
+    readonly contextState: AudioContextStateSurface | null;
+    readonly constructorName: WebAudioConstructorName | null;
+    readonly stereo: boolean;
+    readonly contextAttempted: boolean;
+    readonly unlockAttempts: number;
+    readonly unlockRefusals: number;
+    readonly refusedTones: number;
+    readonly activeTones: number;
+    readonly spontaneousStateChanges: number;
+};
+```
+
+### availabilityForState  `const`
+
+```ts
+const availabilityForState: (state: AudioContextStateSurface) => AudioAvailability;
+```
+
 ### clamp01  `const`
 
 ```ts
@@ -342,6 +532,12 @@ const cueDefinition: (cueId: SoundCueId) => CueDefinition;
 
 ```ts
 const currentAvailability: Effect.Effect<AudioAvailability, never, AudioBackendPort>;
+```
+
+### drivenFrequency  `const`
+
+```ts
+const drivenFrequency: (requested: number) => number;
 ```
 
 ### effectiveMusicGain  `const`
@@ -370,6 +566,12 @@ const effectiveSfxGain: (input: {
 const firstCaptionFor: (events: ReadonlyArray<CaptionEvent>, cueId: SoundCueId) => Option.Option<CaptionEvent>;
 ```
 
+### gainAt  `const`
+
+```ts
+const gainAt: (envelope: ToneEnvelope, atSecs: number) => number;
+```
+
 ### isSoundCueId  `const`
 
 ```ts
@@ -389,6 +591,12 @@ const makeSoundCueService: (input: {
     readonly context: Effect.Effect<CueContext>;
     readonly nowSecs: Effect.Effect<number>;
 }) => Effect.Effect<SoundCueService, never, AudioBackendPort | CaptionStream>;
+```
+
+### makeWebAudioBackend  `const`
+
+```ts
+const makeWebAudioBackend: (options: WebAudioOptions) => Effect.Effect<WebAudioBackend>;
 ```
 
 ### masterNodeGain  `const`
@@ -437,10 +645,22 @@ const resolveMusicPlan: (input: {
 const spatialise: (listener: Vec3, source: Vec3) => Spatialisation;
 ```
 
+### toneEnvelope  `const`
+
+```ts
+const toneEnvelope: (request: ToneRequest, startSecs: number) => ToneEnvelope;
+```
+
 ### visibleCaptions  `const`
 
 ```ts
 const visibleCaptions: (events: ReadonlyArray<CaptionEvent>, nowSecs: number) => ReadonlyArray<CaptionEvent>;
+```
+
+### webAudioBackendLayer  `const`
+
+```ts
+const webAudioBackendLayer: (options: WebAudioOptions) => Layer.Layer<AudioBackendPort>;
 ```
 
 ## Supporting declarations

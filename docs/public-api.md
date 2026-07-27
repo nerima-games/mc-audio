@@ -377,11 +377,68 @@ day 174.61Hz sine gain 0.28 / night 130.81Hz triangle 0.24 / cave 98.0Hz sawtoot
 ---
 
 <a id="webaudio"></a>
-## 7. 未実装: WebAudio アダプタ
+## 7. WebAudio アダプタ（実装済み）
 
-`lib: ["DOM"]` が必要になるため、スケルトンには入れていない。
+```typescript
+export type WebAudioGlobalSurface = {
+  readonly AudioContext?: AudioContextConstructorSurface | undefined
+  readonly webkitAudioContext?: AudioContextConstructorSurface | undefined
+}
+export type WebAudioOptions = {
+  readonly global: WebAudioGlobalSurface
+  readonly initialMasterGain?: number
+}
+export type WebAudioBackend = AudioBackend & {
+  readonly unlock: Effect.Effect<AudioAvailability>   // ユーザジェスチャから呼ぶ
+  readonly report: Effect.Effect<WebAudioReport>
+  readonly close: Effect.Effect<void>
+}
+export const makeWebAudioBackend: (options: WebAudioOptions) => Effect.Effect<WebAudioBackend>
+export const webAudioBackendLayer: (options: WebAudioOptions) => Layer.Layer<AudioBackendPort>
+export const availabilityForState: (state: AudioContextStateSurface) => AudioAvailability
+export const DEFAULT_TONE_WAVE: OscillatorWave
+```
 
-### 実装時に移植すべき内容
+`domain/webaudio-adapter.ts`。
+
+### `lib: ["DOM"]` は**必要にならなかった**
+
+この節の以前の版は「`lib: ["DOM"]` が必要になるため入れていない」と書いていた。
+実際には要らなかった。`domain/webaudio-surface.ts` が
+アダプタが使うメンバだけを構造的に記述し、
+`test/webaudio-surface.test.ts` が fixture を**本物の `lib.dom.d.ts`** に対して
+コンパイルして「実 `AudioContext` がキャスト無しで満たす」ことを証明している。
+
+構造的に書けなかったのは `AudioNode.connect` **1 つだけ**で、
+その理由（反変にすると `AudioNode` 全体を記述する羽目になる）と
+メソッド構文の双変性が何を失うかは同ファイルのヘッダに書いてある。
+
+### `globalThis` を引数で受け取る
+
+```typescript
+makeWebAudioBackend({ global: globalThis })   // ブラウザ
+makeWebAudioBackend({ global: { AudioContext: undefined, webkitAudioContext: undefined } })  // Node
+```
+
+参照実装は `typeof AudioContext === 'undefined'` を**エンジンの中**で読んでいた。
+そのせいで Node のテストからは偽にできず、
+`audio-engine.ts` と `audio-context-helpers.ts` のテストが 0 本になった。
+feature detection と `webkitAudioContext` フォールバックはアダプタの責務だが、
+**どこを見るか**は呼び出し側が渡す。
+
+### `webAudioBackendLayer` が捨てるもの
+
+`unlock` / `report` / `close` は `AudioBackend` に無いので、
+**この Layer 経由だけで配線した consumer は context をアンロックできない**（永久に `locked`）。
+
+これは実在する落とし穴で、隠さずに置いてある。
+`AudioBackendPort` に `unlock` を足すと、下流の全リポジトリの全 fake が
+「自動再生ポリシーを持っているふり」を実装させられる。
+音を出したいホストは `makeWebAudioBackend` を 1 回呼んで値を保持し、
+`unlock` を最初のクリックハンドラに渡し、残りを Layer として提供する。
+配線は mc-compose の仕事である（`docs/porting.md` §4）。
+
+### 参照実装から移植した内容
 
 参照実装の `AudioContext` 生成（`packages/game/infrastructure/audio-context-helpers.ts:3-24`）:
 
@@ -406,14 +463,34 @@ feature detection + `Effect.try` + `catchAllCause` で、**決して失敗しな
 生成は遅延（最初の `playTone` 時、`audio-engine.ts:22-36` の `ensureContext`）。
 ノードの後始末も同様にガードしてある（`safeDisconnect` `:26-30`、`safeStop` `:32-36`）。
 
-### 新規に作らなければならないもの
+### 新規に作ったもの（参照実装に存在しない）
 
-参照実装に**存在しない**ため、移植ではなく設計が必要:
+| # | 項目 | 決定 |
+| --- | --- | --- |
+| 1 | ユーザジェスチャによるアンロック | `unlock`。`resume()` の**解決を信用せず** `state` を読み直す（Safari は suspended のまま解決する） |
+| 2 | `webkitAudioContext` フォールバック | `WebAudioGlobalSurface` の 2 つ目のメンバ。標準を優先する |
+| 3 | 保留キュー | **作らない。捨てる。** 理由は [design-notes.md](./design-notes.md#dn-6)。捨てた数は `WebAudioReport.refusedTones` |
+| 4 | サンプル再生 | **未着手。** 全て正弦波である（下記） |
 
-1. **ユーザジェスチャによるアンロック** — `locked` → `ready` への遷移
-2. **`webkitAudioContext` フォールバック** — 古い Safari
-3. **保留キュー**（作るなら） — アンロック後に鳴らし直すか、捨てるか
-4. **サンプル再生** — 参照実装は全てオシレータ合成。バッファのロード機構が無い
+### エンベロープ（参照実装に無い、が入れた）
+
+`domain/envelope.ts`。参照実装は `gain.value` をフラットに置いて
+`oscillator.stop(...)` で切っていた（`audio-engine.ts:59`, `:104`）ので、
+波形が任意の位相で切れて**全キューにクリックが乗る**。
+attack 5ms / release 20ms のランプで消してある。
+
+エラーにならず、テストも赤くならず、「なんか安っぽい」としてしか現れない種類の欠陥である。
+
+### 波形が 1 種類しか無い（既知の欠落）
+
+`ToneRequest` に `wave` フィールドが無いため、
+§6 に書いた参照実装のトラック別波形（day sine / night triangle / cave sawtooth）は
+**アダプタから到達できない**。全て `DEFAULT_TONE_WAVE = 'sine'` である。
+
+復活させるには `ToneRequest` にフィールドを足す必要があり、
+これは `planCue` と `MUSIC_TRACKS` に波及する公開 API 変更である。
+ロスターは mx-gameplay のルールと一緒に決まる（[versioning.md](./versioning.md) §4）ので、
+**アダプタがついでに決めることではない**として保留してある。
 
 ### 時刻の扱い
 

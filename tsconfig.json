@@ -8,5 +8,8 @@
     "types": ["node"]
   },
   "include": ["index.ts", "domain/**/*.ts", "test/**/*.ts", "scripts/**/*.ts", "vitest.config.ts"],
-  "exclude": ["node_modules", "coverage", "dist"]
+  // `test/fixtures/**` is excluded because it deliberately names DOM types this
+  // project cannot see. It is compiled by `test/webaudio-surface.test.ts`
+  // against the real `lib.dom.d.ts`; see `domain/webaudio-surface.ts`.
+  "exclude": ["node_modules", "coverage", "dist", "test/fixtures/**"]
 }

@@ -7,5 +7,10 @@
     "types": ["node"]
   },
   "include": ["index.ts", "domain/**/*.ts", "test/**/*.ts", "scripts/**/*.ts", "vitest.config.ts"],
-  "exclude": ["node_modules", "coverage", "dist"]
+  // `test/fixtures/**` is excluded on purpose: it names `AudioContext`,
+  // `OscillatorNode` and friends, which this project has no `lib.DOM` for. It is
+  // compiled BY a test (`test/webaudio-surface.test.ts`) with DOM turned on, and
+  // that compilation is the proof `domain/webaudio-surface.ts` rests on. It is
+  // still linted and still scanned by `pnpm check:deps`.
+  "exclude": ["node_modules", "coverage", "dist", "test/fixtures/**"]
 }

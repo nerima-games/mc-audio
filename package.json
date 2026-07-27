@@ -45,9 +45,10 @@
     "audio"
   ],
   "scripts": {
-    "typecheck": "tsc -p tsconfig.build.json --pretty false && tsc -p tsconfig.test.json --pretty false",
-    "lint": "oxlint --deny-warnings index.ts domain scripts test",
-    "lint:fix": "oxlint --fix index.ts domain scripts test",
+    "typecheck": "tsc -p tsconfig.build.json --pretty false && tsc -p tsconfig.test.json --pretty false && tsc -p tsconfig.preview.json --pretty false",
+    "lint": "oxlint --deny-warnings index.ts domain scripts test apps",
+    "lint:fix": "oxlint --fix index.ts domain scripts test apps",
+    "preview": "tsx apps/preview-soundboard/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

@@ -4,10 +4,11 @@
 
 | コマンド | 内容 |
 | --- | --- |
-| `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）と `tsconfig.test.json`（テスト+ツール）の両方 |
+| `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）、`tsconfig.test.json`（テスト+ツール）、`tsconfig.preview.json`（プレビュー）の 3 つ |
 | `pnpm lint` | oxlint。このリポジトリ唯一の lint/format 設定（prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`oxlint.json` は 5 カテゴリすべてと個別 67 ルールが `warn`、`error` は 4 つだけ。このフラグが無かった頃は実質その 4 つしかゲートになっていなかった） |
 | `pnpm check:deps` | 依存ホワイトリスト + 循環検査 + `Date.now()` 禁止 |
 | `pnpm test` | vitest（`@effect/vitest` の `it.effect` が主 API） |
+| `pnpm preview` | サウンドボードプレビュー。**ゲートではない**（`pnpm verify` は実行しない） |
 | `pnpm test:coverage` | カバレッジ計測。**閾値は未設定**（後述） |
 | `pnpm verify` | 上記 4 つ（coverage 以外）。CI と同一内容 |
 
@@ -20,9 +21,40 @@ test/caption-gate.test.ts          8 tests   字幕→ゲートの順序（3 ゲ
 test/volume.test.ts               16 tests   master 一回適用、gain 算術、空間化
 test/music-and-captions.test.ts   18 tests   BGM 遷移、字幕の可視リスト、キューロスター
 test/dependency-policy.test.ts    19 tests   16 リポジトリのグラフ、import ゲート、時計禁止
+test/api-lock.test.ts             26 tests   公開 API スナップショットの生成と判定
+test/webaudio-surface.test.ts      3 tests   構造的サブセットの証明（本物の lib.dom に対するコンパイル）
+test/envelope.test.ts             13 tests   エンベロープの算術（クリック除去）
+test/webaudio-adapter.test.ts     31 tests   ガード、アンロック、グラフ、master ノード
+test/soundboard-preview.test.ts   24 tests   プレビューの純粋部分（フレームの主張）
                                   ─────
-                                  61 tests   全て green
+                                 158 tests   全て green
 ```
+
+（このリストの以前の版は 61 と書いていたが、`test/api-lock.test.ts` の 26 を
+数え落としていた。WebAudio アダプタ着手前の実数は **87** である。）
+
+### 「lib に DOM を入れずに WebAudio を出荷する」ことの検証
+
+`test/webaudio-surface.test.ts` が**表裏 2 つ**の主張を固定している。
+片方だけでは意味が無い。
+
+| 主張 | 何を防ぐか |
+| --- | --- |
+| `test/fixtures/webaudio-surface.ts` を**本物の `lib.dom.d.ts`** に対してコンパイルして診断 0 | `domain/webaudio-surface.ts` が実在しない API を記述しても誰も気付かない、を防ぐ |
+| `tsconfig.build.json` が今も `lib: ["ES2024"]` / `types: []` で、**アダプタがその中に居る** | 誰かが `"DOM"` を足して界面型を消す、を防ぐ |
+
+fixture は `tsconfig.json` / `tsconfig.test.json` / `tsconfig.preview.json` から
+**除外**されている（DOM 型を名指しするため）。除外されていることも上のテストが固定する。
+
+この仕組みは既に 2 回仕事をしている。詳細は `domain/webaudio-surface.ts` のヘッダ:
+
+1. `AudioContextState` に 4 つ目の値 `'interrupted'` があった（iOS の着信）。
+   仕様書にもチュートリアルにも出てこない。**コンパイラだけが知っていた。**
+   これを知らないアダプタは、着信中の iOS を `ready` と報告し、
+   聞こえない音に `audible` の字幕を付ける —— DN-1 が防ごうとしている失敗そのものである
+2. `AudioNode.connect` だけは反変プロパティとして書けない
+   （書くと `AudioNode` 全体を記述する羽目になる）。メソッド構文にしてあり、
+   その双変性が何を失っているかはヘッダに明記してある
 
 ### `test/caption-gate.test.ts` が最重要である
 
@@ -36,7 +68,8 @@ test/dependency-policy.test.ts    19 tests   16 リポジトリのグラフ、im
 
 ### DOM も fake timer も使っていない
 
-61 テスト全てが Node で走る。jsdom も `AudioContext` も要らない。
+**WebAudio アダプタが入った後も**、158 テスト全てが Node で走る。
+jsdom も `AudioContext` も要らない。
 `tsconfig.base.json` の `lib` に `"DOM"` を入れていないことの直接の効果である。
 
 参照実装の字幕テスト（`packages/presentation/test/sound-captions.test.ts`, 133 LOC）は
@@ -51,7 +84,7 @@ DOM とタイマーを必要とし、テスト間でモジュールレベルの�
 | --- | --- |
 | キュー発火のユニットテスト（オーディオゲート） | ✅ `test/caption-gate.test.ts` |
 | キュー発火のユニットテスト（音量計算） | ✅ `test/volume.test.ts` |
-| サウンドボードプレビュー | ⬜ **未実装** |
+| サウンドボードプレビュー | ✅ `apps/preview-soundboard/` |
 
 ### サウンドボードプレビューについて
 
@@ -61,14 +94,25 @@ plan.md §2.3-4:「プレビューは検証対象と同居する」。
 **mc-playground-kit は要らない。** DOM だけで起動できる（mx-ui と同じ理由）。
 そもそも kit を使うと依存グラフ上で問題になる。
 
-プレビューで確認すべきこと:
+プレビューで確認すべきこと（5 点とも実装済み。ただし 3 は「耳で」ではない — 後述）:
 
-1. 全キューを一覧表示し、クリックで試聴できる
-2. **オーディオがロックされた状態（初回訪問、まだクリックしていない）で
-   字幕だけが出ることを目視できる** — これが DN-1 の目視版
-3. master / sfx / music のスライダーを動かして、二乗になっていないことを耳で確認できる
-4. 空間化: 音源をドラッグして左右のパンと距離減衰を確認できる
-5. BGM の day / night / cave を切り替えて、同じ環境で再起動しないことを確認できる
+| # | 内容 | どこで | 固定しているテスト |
+| --- | --- | --- | --- |
+| 1 | 全キューを一覧表示し、選んで発火できる | `board` パネル | `locked audio: the caption is on screen...` |
+| 2 | **ロック状態で字幕だけが出る**（DN-1 の目視版） | `board` + `graph` | 同上 / `the graph panel names where the guard stopped` |
+| 3 | master / sfx / music が二乗になっていない | `mix` パネル | `per-cue gain does not move when master moves` |
+| 4 | 空間化: 音源を動かしてパンと距離減衰 | `mix` パネル | `shows attenuation and pan changing as the source moves` |
+| 5 | BGM が同じ環境で再起動しない | `music` パネル | `says NO ACTION when the desired track is already playing` |
+
+**3 は「耳で確認」ではなく「数字で確認」である。** ターミナルなので音は鳴らない。
+DN-2 の二乗は `0.5` が `0.25` に聞こえるだけでエラーにならない種類のバグなので、
+`per-cue gain` と `master node gain` を別々の列に出して、
+master スライダーを動かしたときに**左の列が動かない**ことを見る形にしてある。
+
+プレビューが**確認できないこと**（クリックが実際に消えたか、
+9 キューが互いに区別できるか、ブラウザが実際に何をするか）は
+[apps/preview-soundboard/README.md](../apps/preview-soundboard/README.md) §2 に
+列挙してある。プレビューは検証したように見せてはならない。
 
 ## 4. 完了条件
 
@@ -76,9 +120,14 @@ plan.md §2.3-4:「プレビューは検証対象と同居する」。
 
 1. `pnpm verify` が green
 2. **WebAudio アダプタが実装され、`AudioBackendPort` の契約テストが実ブラウザで green**
-   - 特に `locked` → `ready` のユーザジェスチャアンロック
-   - **参照実装にはこの機構が存在しない**（[design-notes.md](./design-notes.md#dn-6)）ので新規設計
-3. **サウンドボードプレビューが操作可能**（上記 5 点を目視確認できる）
+   - アダプタは実装済み（`domain/webaudio-adapter.ts`）。DN-6 の 4 テストも
+     `test/webaudio-adapter.test.ts` に入った
+   - **残っているのは「実ブラウザで」の部分**。`test/fake-webaudio.ts` は
+     拒否するかどうかを**教えられている**ので、
+     「拒否されたときどう振る舞うか」は固定できても
+     「このブラウザが拒否するか」は答えられない。ブラウザで確認すべきことは
+     [apps/preview-soundboard/README.md](../apps/preview-soundboard/README.md) §2-4
+3. **サウンドボードプレビューが操作可能**（上記 5 点を目視確認できる） ✅
 4. キューロスターが確定している
    - 現在は代表 9 個の暫定。参照実装は 17 個
    - **最終ロスターは mx-gameplay のルールと一緒に決まる**（キューを鳴らすのは gameplay）

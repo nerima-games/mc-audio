@@ -81,7 +81,8 @@ it.effect('announces captions even while audio is disabled (hearing accessibilit
 | ✅ `when everything is available, the caption fires AND the sound plays` | `reason === 'audible'` |
 | ✅ `an uncaptioned cue stays uncaptioned — a null caption is authorial, not a gate` | 2 種類の「無音」を混同しない |
 | ✅ `planCue suppresses the tone but never the caption, for every non-ready state` | 純関数レベルでも同じ |
-| ⬜ `the WebAudio adapter reports 'locked' before a user gesture and 'ready' after` | アダプタ実装時 |
+| ✅ `reports 'locked' before a gesture and 'ready' after` | `test/webaudio-adapter.test.ts`。**参照実装にこの機構は無い** |
+| ✅ `an interrupted context is 'locked', not 'ready' — the iOS phone call` | `'interrupted'` はコンパイラが見つけた 4 つ目の状態 |
 
 実装は `test/caption-gate.test.ts`。
 **このリポジトリで最も重要なテストファイル**であり、
@@ -257,7 +258,7 @@ BGM が切り替わる。エラーは出ない。ただ気持ち悪い。
 ---
 
 <a id="dn-6"></a>
-## DN-6 ⬜ `AudioContext` はガード付きで生成する
+## DN-6 ✅ `AudioContext` はガード付きで生成する
 
 > plan.md §3.6:「`AudioContext` はガード付きで生成」
 
@@ -273,12 +274,32 @@ Layer 構築時ではない。
 
 | テスト名 | 主張 |
 | --- | --- |
-| ⬜ `acquiring an AudioContext in an environment without one yields 'unavailable', not a failure` | Node/SSR で落ちない |
-| ⬜ `a context that throws on construction yields 'unavailable', not a defect` | try/catch |
-| ⬜ `the context is created lazily, at the first cue, not at layer construction` | 起動時に権限を要求しない |
-| ⬜ `captions still fire when the context is unavailable` | DN-1 のゲート 3 を実アダプタで |
+| ✅ `acquiring an AudioContext in an environment without one yields 'unavailable', not a failure` | Node/SSR で落ちない |
+| ✅ `a context that throws on construction yields 'unavailable', not a defect` | try/catch |
+| ✅ `the context is created lazily, at the first cue, not at layer construction` | 起動時に権限を要求しない |
+| ✅ `captions still fire when the context is unavailable` | DN-1 のゲート 3 を実アダプタで |
 
-**参照実装にはこの 4 つとも存在しない。**
+**参照実装にはこの 4 つとも存在しない。** 実装は `test/webaudio-adapter.test.ts`。
+
+### なぜ参照実装で書けなかったのか（そして今は書けるのか）
+
+参照実装のガードは `typeof AudioContext === 'undefined'` という**グローバル読み**だった。
+Node のテストからこの式を偽にする方法が無いので、
+`audio-engine.ts` (163 LOC) と `audio-context-helpers.ts` (36 LOC) は
+**構造的にテスト不能**だった（テスト 0 本、`docs/porting.md` §6）。
+
+`makeWebAudioBackend` はグローバルを**引数で受け取る**（`WebAudioGlobalSurface`）。
+「ここには Web Audio が無い」がテストから渡せる値になり、
+上の 4 つが書けるようになった。それだけの違いである。
+
+### 拒否されたキューは**捨てる**（保留キューは作らない）
+
+`docs/public-api.md` §7 が未決としていた点の決定。理由は
+`domain/webaudio-adapter.ts` のヘッダ:
+アンロック時にまとめて鳴らすと、**もう存在しないブロックの破壊音**が鳴る。
+音は「今」についての主張なので、遅れた音は遅れた真実ではなく偽である。
+情報は既に字幕（`reason: 'gate-blocked'`）で出ているので失われない。
+捨てた数は `WebAudioReport.refusedTones` に残る。
 
 ---
 
