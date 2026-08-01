@@ -53,6 +53,7 @@ describe('public API', () => {
         "gainAt",
         "isSoundCueId",
         "makeEndAudioController",
+        "makeGameAudioHost",
         "makeRecordingBackend",
         "makeSoundCueService",
         "makeWeatherAudioController",

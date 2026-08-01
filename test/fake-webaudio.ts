@@ -145,6 +145,8 @@ export type FakeWebAudioOptions = {
   readonly pannerThrows?: boolean
   /** Creating a decoded-sample source throws, forcing synthesized fallback. */
   readonly bufferSourceThrows?: boolean
+  readonly decodeThrows?: boolean
+  readonly decodedDurationSecs?: number
   readonly resumePolicy?: ResumePolicy
   readonly initialState?: AudioContextStateSurface
 }
@@ -364,6 +366,7 @@ export class FakeAudioContext implements AudioContextSurface {
 
   readonly oscillators: Array<FakeOscillatorNode> = []
   readonly bufferSources: Array<FakeBufferSourceNode> = []
+  readonly decodedData: Array<ArrayBuffer> = []
 
   constructor(
     private readonly options: FakeWebAudioOptions,
@@ -428,6 +431,14 @@ export class FakeAudioContext implements AudioContextSurface {
     this.log.created.push(node.id)
     this.oscillators.push(node)
     return node
+  }
+
+  async decodeAudioData(audioData: ArrayBuffer): Promise<AudioBufferSurface> {
+    this.decodedData.push(audioData)
+    if (this.options.decodeThrows === true) {
+      return Promise.reject(new Error('fake: decodeAudioData refused'))
+    }
+    return Promise.resolve({ duration: this.options.decodedDurationSecs ?? 0.12 })
   }
 
   async resume(): Promise<void> {

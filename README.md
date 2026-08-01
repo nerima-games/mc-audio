@@ -102,13 +102,13 @@ WebAudio アダプタは最後に書かれ、ブラウザAPIを注入可能な�
 
 ## 現状
 
-WebAudio アダプタは実装済みである。ユーザジェスチャからの `unlock`、cue tone の再生と停止、
+WebAudio アダプタは実装済みである。ユーザジェスチャからの `unlock`、cue sample/tone の再生と停止、
 master volume と mute、同時音数上限、Node/SSR の安全な unavailable fallback、
 視線方向に追従する左右定位、冪等な `dispose` を提供する。ブラウザAPIは `WebAudioGlobalSurface` として注入するため、
 全分岐を Node 上の fake で単体テストできる。
 
 - **キューロスターは 17 個。** 参照実装の効果音ロスターを移植済み
-- **音声アセットは未同梱。** 参照実装は全てオシレータ合成で、音声ファイルが 1 つも無い
+- **音声アセットはホスト管理。** URL または `ArrayBuffer` の manifest を `preloadSamples` でデコードし、未ロード・失敗時は tone 合成へフォールバックする
 - **サウンドボードプレビューは実装済み**（`apps/preview-soundboard`）
 - **ビルド／publish はまだない。** `exports` は TypeScript ソースを直接指している
 - **カバレッジ閾値は未設定。** 99% ゲートは完成条件到達時に有効化する

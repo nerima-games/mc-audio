@@ -104,6 +104,19 @@ export const DEFAULT_TONE_WAVE: OscillatorWave = 'sine'
 /** A conservative ceiling that prevents pathological cue bursts from exhausting nodes. */
 export const DEFAULT_MAX_CONCURRENT_TONES = 32
 
+export type AudioSampleSource =
+  | { readonly kind: 'array-buffer'; readonly data: ArrayBuffer }
+  | { readonly kind: 'url'; readonly url: string }
+
+export type AudioSampleManifest = Readonly<Record<string, AudioSampleSource>>
+
+export type AudioSampleLoadReport = {
+  readonly requested: number
+  readonly loaded: number
+  readonly cached: number
+  readonly failed: number
+}
+
 /** Which spelling of the constructor the host turned out to have. */
 export type WebAudioConstructorName = 'AudioContext' | 'webkitAudioContext'
 
@@ -129,6 +142,10 @@ export type WebAudioOptions = {
   readonly maxConcurrentTones?: number
   /** Resolves an already-decoded sample; missing/failed samples use synthesis. */
   readonly resolveAudioBuffer?: (soundId: string) => AudioBufferSurface | null
+  /** Samples to decode ahead of playback. Unloaded cues retain tone fallback. */
+  readonly sampleManifest?: AudioSampleManifest
+  /** Host-owned URL transport, keeping fetch and DOM types outside the domain. */
+  readonly loadSampleData?: (url: string) => Promise<ArrayBuffer>
 }
 
 /**
@@ -185,6 +202,8 @@ export type WebAudioReport = {
  * in every downstream repository to pretend to have an autoplay policy.
  */
 export type WebAudioBackend = AudioBackend & {
+  /** Decode configured samples. Concurrent requests for one id share one load. */
+  readonly preloadSamples: (soundIds?: ReadonlyArray<string>) => Effect.Effect<AudioSampleLoadReport>
   /**
    * Run this FROM A USER GESTURE HANDLER — a click, a keydown, a touch.
    *
@@ -310,6 +329,8 @@ export const makeWebAudioBackend = (
     const refusedTonesRef = yield* Ref.make(0)
     const capacityRefusalsRef = yield* Ref.make(0)
     const stateChangesRef = yield* Ref.make(0)
+    const sampleCache = new Map<string, AudioBufferSurface>()
+    const sampleLoads = new Map<string, Promise<boolean>>()
 
     /**
      * Feature detection, as a value rather than as a global read.
@@ -465,9 +486,9 @@ export const makeWebAudioBackend = (
             let gain: GainSurface | null = null
             let panner: StereoPannerSurface | null = null
             try {
-              if (request.soundId !== undefined && options.resolveAudioBuffer !== undefined) {
+              if (request.soundId !== undefined) {
                 try {
-                  const buffer = options.resolveAudioBuffer(request.soundId)
+                  const buffer = options.resolveAudioBuffer?.(request.soundId) ?? sampleCache.get(request.soundId) ?? null
                   const {createBufferSource} = context
                   if (buffer !== null && createBufferSource !== undefined) {
                     const bufferSource = createBufferSource.call(context)
@@ -643,6 +664,72 @@ export const makeWebAudioBackend = (
       return availability
     })
 
+    const preloadSamples = (
+      soundIds?: ReadonlyArray<string>,
+    ): Effect.Effect<AudioSampleLoadReport> =>
+      Effect.gen(function* preloadConfiguredSamples() {
+        const manifest = options.sampleManifest ?? {}
+        const ids = [...new Set(soundIds ?? Object.keys(manifest))]
+        let loaded = 0
+        let cached = 0
+        let failed = 0
+
+        for (const soundId of ids) {
+          if (sampleCache.has(soundId)) {
+            cached += 1
+          } else {
+            const source = manifest[soundId]
+            if (source === undefined) {
+              failed += 1
+            } else {
+              let pending = sampleLoads.get(soundId)
+              if (pending === undefined) {
+                pending = Effect.runPromise(
+                  Effect.gen(function* loadSample() {
+                    const runtime = yield* ensureRuntime
+                    if (Option.isNone(runtime) || (yield* Ref.get(disposedRef))) {
+                      return false
+                    }
+                    const loadData = (): Promise<ArrayBuffer> => {
+                      if (source.kind === 'array-buffer') {
+                        return Promise.resolve(source.data.slice(0))
+                      }
+                      if (options.loadSampleData === undefined) {
+                        return Promise.reject(new Error('No sample URL loader configured'))
+                      }
+                      return options.loadSampleData(source.url)
+                    }
+                    const data = yield* Effect.tryPromise({
+                      catch: (cause) => cause,
+                      try: loadData,
+                    }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+                    if (data === null) {
+                      return false
+                    }
+                    const decoded = yield* Effect.tryPromise({
+                      catch: (cause) => cause,
+                      try: () => runtime.value.context.decodeAudioData(data),
+                    }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+                    if (decoded === null || (yield* Ref.get(disposedRef))) {
+                      return false
+                    }
+                    sampleCache.set(soundId, decoded)
+                    return true
+                  }),
+                ).finally(() => sampleLoads.delete(soundId))
+                sampleLoads.set(soundId, pending)
+              }
+              if (yield* Effect.promise(() => pending)) {
+                loaded += 1
+              } else {
+                failed += 1
+              }
+            }
+          }
+        }
+        return { cached, failed, loaded, requested: ids.length }
+      })
+
     const report: Effect.Effect<WebAudioReport> = Effect.gen(function*  report() {
       const runtime = yield* Ref.get(runtimeRef)
       const active = yield* Ref.get(activeRef)
@@ -682,6 +769,7 @@ export const makeWebAudioBackend = (
       }
       const runtime = yield* Ref.get(runtimeRef)
       if (Option.isNone(runtime)) {
+        sampleCache.clear()
         return
       }
       for (const tone of (yield* Ref.get(activeRef)).values()) {
@@ -689,6 +777,7 @@ export const makeWebAudioBackend = (
         yield* releaseTone(tone)
       }
       yield* Ref.set(activeRef, new Map())
+      sampleCache.clear()
       yield* Effect.tryPromise({
         catch: (cause) => cause,
         try: () => runtime.value.context.close(),
@@ -700,6 +789,7 @@ export const makeWebAudioBackend = (
       close: dispose,
       dispose,
       playTone,
+      preloadSamples,
       report,
       setMasterGain,
       setMuted,

@@ -278,6 +278,7 @@ export type AudioContextSurface = {
   readonly close: () => Promise<void>
   readonly createOscillator: () => OscillatorSurface
   readonly createBufferSource?: () => AudioBufferSourceSurface
+  readonly decodeAudioData: (audioData: ArrayBuffer) => Promise<AudioBufferSurface>
   readonly createGain: () => GainSurface
   /**
    * OPTIONAL, and honestly so: `createStereoPanner` is absent in Safari before

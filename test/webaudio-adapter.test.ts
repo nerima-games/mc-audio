@@ -60,6 +60,72 @@ const withFake = (options: FakeWebAudioOptions = {}) => {
 }
 
 describe('decoded sample playback', () => {
+  it.effect('loads URL and ArrayBuffer samples once, then plays the cached buffer', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ decodedDurationSecs: 0.25 })
+      let urlLoads = 0
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        loadSampleData: async () => {
+          urlLoads += 1
+          return new ArrayBuffer(4)
+        },
+        sampleManifest: {
+          'block.break': { kind: 'url', url: '/audio/block-break.ogg' },
+          'player.hurt': { data: new ArrayBuffer(8), kind: 'array-buffer' },
+        },
+      })
+
+      expect(yield* audio.preloadSamples()).toEqual({ cached: 0, failed: 0, loaded: 2, requested: 2 })
+      expect(yield* audio.preloadSamples()).toEqual({ cached: 2, failed: 0, loaded: 0, requested: 2 })
+      expect(urlLoads).toBe(1)
+      expect(fake.context()?.decodedData).toHaveLength(2)
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'block.break' })
+      expect(fake.context()?.bufferSources[0]?.buffer?.duration).toBe(0.25)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+    }),
+  )
+
+  it.effect('deduplicates concurrent loads of the same sample', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      let urlLoads = 0
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        loadSampleData: async () => {
+          urlLoads += 1
+          await Promise.resolve()
+          return new ArrayBuffer(4)
+        },
+        sampleManifest: { step: { kind: 'url', url: '/audio/step.ogg' } },
+      })
+
+      yield* Effect.all([audio.preloadSamples(['step']), audio.preloadSamples(['step'])], {
+        concurrency: 'unbounded',
+      })
+      expect(urlLoads).toBe(1)
+      expect(fake.context()?.decodedData).toHaveLength(1)
+    }),
+  )
+
+  it.effect('reports decode failure and retains oscillator fallback', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ decodeThrows: true })
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        sampleManifest: { missing: { data: new ArrayBuffer(4), kind: 'array-buffer' } },
+      })
+
+      expect(yield* audio.preloadSamples(['missing'])).toEqual({ cached: 0, failed: 1, loaded: 0, requested: 1 })
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'missing' })
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(1)
+    }),
+  )
+
   it.effect('uses an AudioBufferSource when the host resolves the cue sound id', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()
@@ -725,6 +791,21 @@ describe('resource limits and lifecycle', () => {
       yield* audio.playTone(CUE)
       expect(fake.constructorCalls()).toBe(1)
       expect(yield* audio.report).toMatchObject({ activeTones: 0, disposed: true })
+    }),
+  )
+
+  it.effect('clears decoded samples when disposed', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        sampleManifest: { step: { data: new ArrayBuffer(4), kind: 'array-buffer' } },
+      })
+
+      expect(yield* audio.preloadSamples()).toMatchObject({ loaded: 1 })
+      yield* audio.dispose
+
+      expect(yield* audio.preloadSamples()).toEqual({ cached: 0, failed: 1, loaded: 0, requested: 1 })
     }),
   )
 })
