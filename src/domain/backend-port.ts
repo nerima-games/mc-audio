@@ -55,6 +55,8 @@ export type AudioAvailability = (typeof AUDIO_AVAILABILITIES)[number]
 
 export type ToneRequest = {
   readonly frequency: number
+  /** Oscillator waveform; cue authoring may override the sine default. */
+  readonly wave?: 'sine' | 'square' | 'sawtooth' | 'triangle'
   /** Seconds. Inert when `loop` is true. */
   readonly durationSecs: number
   /** Final per-tone gain in [0, 1]. Master is NOT included — see domain/volume.ts. */
@@ -101,7 +103,7 @@ export type RecordedBackend = {
 export const makeRecordingBackend = (
   availability: AudioAvailability,
 ): Effect.Effect<RecordedBackend> =>
-  Effect.gen(function* () {
+  Effect.gen(function*  makeRecordingBackend() {
     const requests = yield* Ref.make<ReadonlyArray<ToneRequest>>([])
     const gains = yield* Ref.make<ReadonlyArray<number>>([])
     const nextId = yield* Ref.make(0)
@@ -114,14 +116,14 @@ export const makeRecordingBackend = (
           const id = yield* Ref.updateAndGet(nextId, (value) => value + 1)
           return { id }
         }),
-      stopTone: () => Effect.void,
       setMasterGain: (gain) => Ref.update(gains, (current) => [...current, gain]),
+      stopTone: () => Effect.void,
     }
 
     return {
       backend,
-      played: Ref.get(requests),
       masterGains: Ref.get(gains),
+      played: Ref.get(requests),
     }
   })
 
@@ -137,6 +139,6 @@ export const makeRecordingBackend = (
 export const UnavailableBackendLayer: Layer.Layer<AudioBackendPort> = Layer.succeed(AudioBackendPort, {
   availability: Effect.succeed<AudioAvailability>('unavailable'),
   playTone: () => Effect.succeed({ id: 0 }),
-  stopTone: () => Effect.void,
   setMasterGain: () => Effect.void,
+  stopTone: () => Effect.void,
 })

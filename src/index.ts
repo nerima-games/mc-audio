@@ -1,8 +1,6 @@
 /**
  * @nerima-games/mc-audio — sound cues, music, and captions.
  *
- * PRE-AUDIT FIRST CUT (叩き台). See README.md 現状.
- *
  * mc-audio is tier 1 of the four-tier architecture (plan.md §2.2). It is a
  * sink: mx-gameplay and mx-ui push cue requests in and subscribe to the caption
  * stream, and mc-audio never reaches back into the simulation. If a sound needs

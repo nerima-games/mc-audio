@@ -1,0 +1,57 @@
+import { describe, expect, it } from 'vitest'
+import * as publicApi from '../src/index'
+
+describe('public API', () => {
+  it('matches the reviewed runtime export surface', () => {
+    expect(Object.keys(publicApi).sort()).toMatchInlineSnapshot(`
+      [
+        "ATTACK_SECS",
+        "AUDIO_AVAILABILITIES",
+        "AudioBackendPort",
+        "CAPTION_DISPLAY_SECS",
+        "CAPTION_REASONS",
+        "CUE_DEFINITIONS",
+        "CaptionStream",
+        "DEFAULT_CAVE_THRESHOLD_Y",
+        "DEFAULT_TONE_WAVE",
+        "DEFAULT_VOLUME_SETTINGS",
+        "MAX_VISIBLE_CAPTIONS",
+        "MIN_DURATION_SECS",
+        "MIN_FREQUENCY_HZ",
+        "MUSIC_ENVIRONMENTS",
+        "MUSIC_TRACKS",
+        "NO_SPATIALISATION",
+        "RELEASE_SECS",
+        "SOUND_CUE_IDS",
+        "SPATIAL_DISTANCE_SCALE",
+        "SoundCuePort",
+        "UnavailableBackendLayer",
+        "VOLUME_CATEGORIES",
+        "availabilityForState",
+        "clamp01",
+        "clampPan",
+        "cueDefinition",
+        "currentAvailability",
+        "drivenFrequency",
+        "effectiveMusicGain",
+        "effectiveSfxGain",
+        "firstCaptionFor",
+        "gainAt",
+        "isSoundCueId",
+        "makeRecordingBackend",
+        "makeSoundCueService",
+        "makeWebAudioBackend",
+        "masterNodeGain",
+        "musicTrackGain",
+        "planCue",
+        "recordingCaptionLayer",
+        "resolveMusicEnvironment",
+        "resolveMusicPlan",
+        "spatialise",
+        "toneEnvelope",
+        "visibleCaptions",
+        "webAudioBackendLayer",
+      ]
+    `)
+  })
+})

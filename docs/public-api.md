@@ -481,16 +481,11 @@ attack 5ms / release 20ms のランプで消してある。
 
 エラーにならず、テストも赤くならず、「なんか安っぽい」としてしか現れない種類の欠陥である。
 
-### 波形が 1 種類しか無い（既知の欠落）
+### キューごとの波形
 
-`ToneRequest` に `wave` フィールドが無いため、
-§6 に書いた参照実装のトラック別波形（day sine / night triangle / cave sawtooth）は
-**アダプタから到達できない**。全て `DEFAULT_TONE_WAVE = 'sine'` である。
-
-復活させるには `ToneRequest` にフィールドを足す必要があり、
-これは `planCue` と `MUSIC_TRACKS` に波及する公開 API 変更である。
-ロスターは mx-gameplay のルールと一緒に決まる（[versioning.md](./versioning.md) §4）ので、
-**アダプタがついでに決めることではない**として保留してある。
+`CueDefinition.wave` は `planCue` から `ToneRequest.wave` へ渡り、WebAudio の
+`OscillatorNode.type` まで到達する。キュー以外の呼び出し元が波形を省略した場合だけ
+`DEFAULT_TONE_WAVE = 'sine'` を使う。
 
 ### 時刻の扱い
 

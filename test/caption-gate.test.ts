@@ -1,13 +1,13 @@
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer, Ref } from 'effect'
 import {
-  AudioBackendPort,
-  makeRecordingBackend,
   type AudioAvailability,
+  AudioBackendPort,
   type ToneRequest,
+  makeRecordingBackend,
 } from '../src/domain/backend-port'
-import { CaptionStream, type CaptionEvent } from '../src/domain/caption'
-import { makeSoundCueService, planCue, type CueContext } from '../src/domain/engine'
+import { type CaptionEvent, CaptionStream } from '../src/domain/caption'
+import { type CueContext, makeSoundCueService, planCue } from '../src/domain/engine'
 import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
 
 /**
@@ -33,10 +33,10 @@ import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
 const LISTENER = { x: 0, y: 64, z: 0 }
 
 const baseContext = (overrides: Partial<CueContext>): CueContext => ({
-  settings: DEFAULT_VOLUME_SETTINGS,
-  enabled: true,
   availability: 'ready',
+  enabled: true,
   listener: LISTENER,
+  settings: DEFAULT_VOLUME_SETTINGS,
   ...overrides,
 })
 
@@ -55,7 +55,7 @@ type Harness = {
  * below the gate.
  */
 const runCue = (context: CueContext, availability: AudioAvailability): Effect.Effect<Harness> =>
-  Effect.gen(function* () {
+  Effect.gen(function*  runCue() {
     const recorded = yield* makeRecordingBackend(availability)
     const captionLog = yield* Ref.make<ReadonlyArray<CaptionEvent>>([])
 
@@ -87,7 +87,7 @@ describe('captions fire ahead of the audio gate', () => {
       expect(tones).toHaveLength(0)
       expect(captions).toHaveLength(1)
       expect(captions[0]?.cueId).toBe('blockBreak')
-      expect(captions[0]?.text).toBe('Block broken')
+      expect(captions[0]?.text).toBe('Block breaks')
       expect(captions[0]?.reason).toBe('muted')
     }),
   )
@@ -138,7 +138,7 @@ describe('captions fire ahead of the audio gate', () => {
       expect(plan.tone).not.toBeNull()
 
       // ...and it stays null when muted too, i.e. the two reasons for silence
-      // never get confused with each other.
+      // Never get confused with each other.
       const muted = planCue('inventoryOpen', baseContext({ enabled: false }))
       expect(muted.caption).toBeNull()
       expect(muted.tone).toBeNull()

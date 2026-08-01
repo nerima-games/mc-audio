@@ -75,13 +75,13 @@
  */
 import { Effect, Layer, Option, Ref } from 'effect'
 import {
-  AudioBackendPort,
   type AudioAvailability,
   type AudioBackend,
+  AudioBackendPort,
   type ToneHandle,
   type ToneRequest,
 } from './backend-port'
-import { drivenFrequency, gainAt, RELEASE_SECS, toneEnvelope, type ToneEnvelope } from './envelope'
+import { RELEASE_SECS, type ToneEnvelope, drivenFrequency, gainAt, toneEnvelope } from './envelope'
 import { clamp01, clampPan } from './volume'
 import type {
   AudioContextStateSurface,
@@ -94,24 +94,7 @@ import type {
 } from './webaudio-surface'
 
 /**
- * The waveform every tone is synthesised with.
- *
- * A CONSTANT, and that is a loss worth naming rather than hiding.
- * `docs/public-api.md` §6 records the reference's per-track waveforms — day
- * sine, night triangle, cave sawtooth (`music-manager.config.ts:9-13`) — and
- * they are not reachable from here, because `ToneRequest`
- * (`domain/backend-port.ts`) has no `wave` field and `MusicTrack`
- * (`domain/music.ts`) has no wave either. The skeleton dropped it before this
- * adapter existed.
- *
- * Restoring it means adding a field to `ToneRequest`, which is a public-API
- * change (`api-lock.md` moves) touching `planCue` and `MUSIC_TRACKS`. That is a
- * decision about the cue roster, and `docs/versioning.md` §4-5 says the roster
- * is settled together with the mx-gameplay rules that fire it — so it is
- * deliberately NOT settled here, by an adapter, in passing.
- *
- * Until then every cue and every BGM track is a sine wave, and the three tracks
- * are distinguishable only by pitch.
+ * Default for callers such as BGM that do not author an explicit waveform.
  */
 export const DEFAULT_TONE_WAVE: OscillatorWave = 'sine'
 
@@ -269,7 +252,7 @@ type ContextRuntime = {
  * Cleanup that can throw turns a finished sound into an unhandled rejection.
  */
 const ignoringFailure = (run: () => void): Effect.Effect<void> =>
-  Effect.try({ try: run, catch: (cause) => cause }).pipe(Effect.catchAll(() => Effect.void))
+  Effect.try({ catch: (cause) => cause, try: run }).pipe(Effect.catchAll(() => Effect.void))
 
 /**
  * Build the adapter.
@@ -292,7 +275,7 @@ const ignoringFailure = (run: () => void): Effect.Effect<void> =>
 export const makeWebAudioBackend = (
   options: WebAudioOptions,
 ): Effect.Effect<WebAudioBackend> =>
-  Effect.gen(function* () {
+  Effect.gen(function*  makeWebAudioBackend() {
     const runtimeRef = yield* Ref.make<Option.Option<ContextRuntime>>(Option.none())
     const attemptedRef = yield* Ref.make(false)
     const masterGainValueRef = yield* Ref.make(clamp01(options.initialMasterGain ?? 0.8))
@@ -327,7 +310,7 @@ export const makeWebAudioBackend = (
       return Option.none()
     }
 
-    const ensureRuntime: Effect.Effect<Option.Option<ContextRuntime>> = Effect.gen(function* () {
+    const ensureRuntime: Effect.Effect<Option.Option<ContextRuntime>> = Effect.gen(function*  ensureRuntime() {
       const cached = yield* Ref.get(runtimeRef)
       if (Option.isSome(cached)) {
         return cached
@@ -341,14 +324,14 @@ export const makeWebAudioBackend = (
       }
 
       // Construction itself can throw: a browser that has the constructor but
-      // has exhausted its hardware contexts (Chrome caps them at six per page)
-      // throws rather than returning a dead one. The reference guarded this
-      // too and was right to (`acquireAudioContext`, `Effect.try` +
+      // Has exhausted its hardware contexts (Chrome caps them at six per page)
+      // Throws rather than returning a dead one. The reference guarded this
+      // Too and was right to (`acquireAudioContext`, `Effect.try` +
       // `catchAllCause`). Returning `none` rather than failing keeps the
       // "never fails" shape that `AudioBackend` promises.
       const built = yield* Effect.try({
-        try: () => new found.value.construct(),
         catch: (cause) => cause,
+        try: () => new found.value.construct(),
       }).pipe(Effect.catchAll(() => Effect.succeed(null)))
 
       if (built === null) {
@@ -358,6 +341,7 @@ export const makeWebAudioBackend = (
       const initialGain = yield* Ref.get(masterGainValueRef)
 
       const wired = yield* Effect.try({
+        catch: (cause) => cause,
         try: (): ContextRuntime => {
           const master = built.createGain()
           master.gain.value = initialGain
@@ -370,7 +354,6 @@ export const makeWebAudioBackend = (
             stereo: built.createStereoPanner !== undefined,
           }
         },
-        catch: (cause) => cause,
       }).pipe(Effect.catchAll(() => Effect.succeed(null)))
 
       if (wired === null) {
@@ -378,7 +361,7 @@ export const makeWebAudioBackend = (
       }
 
       // Counting spontaneous transitions is the only way an interruption that
-      // begins and ends between two cues leaves a trace. See `WebAudioReport`.
+      // Begins and ends between two cues leaves a trace. See `WebAudioReport`.
       yield* ignoringFailure(() => {
         built.onstatechange = () => {
           Effect.runSync(Ref.update(stateChangesRef, (count) => count + 1))
@@ -399,26 +382,26 @@ export const makeWebAudioBackend = (
     )
 
     const releaseTone = (tone: ActiveTone): Effect.Effect<void> =>
-      Effect.gen(function* () {
+      Effect.gen(function*  releaseTone() {
         yield* ignoringFailure(() => tone.oscillator.disconnect())
         yield* ignoringFailure(() => tone.gain.disconnect())
-        const panner = tone.panner
+        const {panner} = tone
         if (panner !== null) {
           // Bound to a local first: the narrowing above does not survive into
-          // the closure, because `tone.panner` is a property read the compiler
-          // cannot prove is stable across the call.
+          // The closure, because `tone.panner` is a property read the compiler
+          // Cannot prove is stable across the call.
           yield* ignoringFailure(() => panner.disconnect())
         }
       })
 
     const playTone = (request: ToneRequest): Effect.Effect<ToneHandle> =>
-      Effect.gen(function* () {
+      Effect.gen(function*  playTone() {
         // The id is allocated BEFORE the gate, matching `UnavailableBackendLayer`
-        // and the reference (`audio-engine.ts:40` numbers, `:42` gates). That
-        // is a trap `docs/public-api.md` §3 names and keeps on purpose, so the
-        // shape is uniform across every backend: "I got a handle" never means
+        // And the reference (`audio-engine.ts:40` numbers, `:42` gates). That
+        // Is a trap `docs/public-api.md` §3 names and keeps on purpose, so the
+        // Shape is uniform across every backend: "I got a handle" never means
         // "it played" anywhere in this repository. What is different here is
-        // that the refusal is COUNTED, so the trap is at least observable.
+        // That the refusal is COUNTED, so the trap is at least observable.
         const id = yield* Ref.updateAndGet(nextIdRef, (value) => value + 1)
         const handle: ToneHandle = { id }
 
@@ -431,10 +414,10 @@ export const makeWebAudioBackend = (
         const { context, master, stereo } = runtime.value
         if (context.state !== 'running') {
           // NO RESUME HERE. This is the exact line the reference got wrong:
-          // calling `resume()` outside a user gesture is refused anyway, and
-          // swallowing that refusal is what let it build a node graph for a
-          // sound nobody could hear. Refusing early costs one counter and
-          // keeps the graph honest.
+          // Calling `resume()` outside a user gesture is refused anyway, and
+          // Swallowing that refusal is what let it build a node graph for a
+          // Sound nobody could hear. Refusing early costs one counter and
+          // Keeps the graph honest.
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
           return handle
         }
@@ -442,9 +425,10 @@ export const makeWebAudioBackend = (
         const envelope = toneEnvelope(request, context.currentTime)
 
         const built = yield* Effect.try({
+          catch: (cause) => cause,
           try: (): ActiveTone => {
             const oscillator = context.createOscillator()
-            oscillator.type = DEFAULT_TONE_WAVE
+            oscillator.type = request.wave ?? DEFAULT_TONE_WAVE
             oscillator.frequency.value = drivenFrequency(request.frequency)
 
             const gain = context.createGain()
@@ -477,7 +461,6 @@ export const makeWebAudioBackend = (
 
             return { oscillator, gain, panner, envelope }
           },
-          catch: (cause) => cause,
         }).pipe(Effect.catchAll(() => Effect.succeed(null)))
 
         if (built === null) {
@@ -490,7 +473,7 @@ export const makeWebAudioBackend = (
         yield* ignoringFailure(() => {
           built.oscillator.onended = () => {
             Effect.runSync(
-              Effect.gen(function* () {
+              Effect.gen(function*  onended() {
                 yield* releaseTone(built)
                 yield* Ref.update(activeRef, (current) => {
                   const next = new Map(current)
@@ -513,7 +496,7 @@ export const makeWebAudioBackend = (
       })
 
     const stopTone = (handle: ToneHandle): Effect.Effect<void> =>
-      Effect.gen(function* () {
+      Effect.gen(function*  stopTone() {
         const tone = (yield* Ref.get(activeRef)).get(handle.id)
         if (tone === undefined) {
           return
@@ -527,14 +510,14 @@ export const makeWebAudioBackend = (
         const now = runtime.value.context.currentTime
 
         // Ramp down instead of stopping outright. `stopTone` is how a BGM track
-        // ends and how a looping cue is cancelled, and a loop cut mid-cycle at
-        // full amplitude is the loudest click this adapter could produce — a
-        // sustained tone is at full gain by definition, unlike a short cue
-        // which is usually already in its release when it ends.
+        // Ends and how a looping cue is cancelled, and a loop cut mid-cycle at
+        // Full amplitude is the loudest click this adapter could produce — a
+        // Sustained tone is at full gain by definition, unlike a short cue
+        // Which is usually already in its release when it ends.
         yield* ignoringFailure(() => {
           // `cancelScheduledValues` first, or the tone's own release — already
-          // on the automation timeline from `playTone` — competes with this
-          // one and the parameter jumps between the two curves.
+          // On the automation timeline from `playTone` — competes with this
+          // One and the parameter jumps between the two curves.
           tone.gain.gain.cancelScheduledValues(now)
           tone.gain.gain.setValueAtTime(gainAt(tone.envelope, now), now)
           tone.gain.gain.linearRampToValueAtTime(0, now + RELEASE_SECS)
@@ -543,15 +526,15 @@ export const makeWebAudioBackend = (
       })
 
     const setMasterGain = (gain: number): Effect.Effect<void> =>
-      Effect.gen(function* () {
+      Effect.gen(function*  setMasterGain() {
         const next = clamp01(gain)
         yield* Ref.set(masterGainValueRef, next)
 
         // Remembered even when there is no context yet, so that a settings load
-        // that happens before the first cue is not lost. The reference did this
-        // too (`masterGainValueRef`, `audio-engine.ts:19`) and it is the reason
-        // the first cue after start-up is at the player's chosen volume rather
-        // than at the default.
+        // That happens before the first cue is not lost. The reference did this
+        // Too (`masterGainValueRef`, `audio-engine.ts:19`) and it is the reason
+        // The first cue after start-up is at the player's chosen volume rather
+        // Than at the default.
         const runtime = yield* Ref.get(runtimeRef)
         if (Option.isNone(runtime)) {
           return
@@ -561,7 +544,7 @@ export const makeWebAudioBackend = (
         })
       })
 
-    const unlock: Effect.Effect<AudioAvailability> = Effect.gen(function* () {
+    const unlock: Effect.Effect<AudioAvailability> = Effect.gen(function*  unlock() {
       yield* Ref.update(unlockAttemptsRef, (count) => count + 1)
 
       const runtime = yield* ensureRuntime
@@ -570,15 +553,15 @@ export const makeWebAudioBackend = (
         return 'unavailable' as AudioAvailability
       }
 
-      const context = runtime.value.context
+      const {context} = runtime.value
 
       yield* Effect.tryPromise({
-        try: () => context.resume(),
         catch: (cause) => cause,
+        try: () => context.resume(),
       }).pipe(Effect.catchAll(() => Effect.void))
 
       // The state, not the promise. A resolved `resume()` is not a running
-      // context — see the doc comment on `WebAudioBackend.unlock`.
+      // Context — see the doc comment on `WebAudioBackend.unlock`.
       const availability = availabilityForState(context.state)
       if (availability !== 'ready') {
         yield* Ref.update(unlockRefusalsRef, (count) => count + 1)
@@ -586,37 +569,37 @@ export const makeWebAudioBackend = (
       return availability
     })
 
-    const report: Effect.Effect<WebAudioReport> = Effect.gen(function* () {
+    const report: Effect.Effect<WebAudioReport> = Effect.gen(function*  report() {
       const runtime = yield* Ref.get(runtimeRef)
       const active = yield* Ref.get(activeRef)
 
       return {
+        activeTones: active.size,
         availability: Option.match(runtime, {
           onNone: (): AudioAvailability => 'unavailable',
           onSome: (value) => availabilityForState(value.context.state),
-        }),
-        contextState: Option.match(runtime, {
-          onNone: (): AudioContextStateSurface | null => null,
-          onSome: (value) => value.context.state,
         }),
         constructorName: Option.match(runtime, {
           onNone: (): WebAudioConstructorName | null => null,
           onSome: (value) => value.constructorName,
         }),
+        contextAttempted: yield* Ref.get(attemptedRef),
+        contextState: Option.match(runtime, {
+          onNone: (): AudioContextStateSurface | null => null,
+          onSome: (value) => value.context.state,
+        }),
+        refusedTones: yield* Ref.get(refusedTonesRef),
+        spontaneousStateChanges: yield* Ref.get(stateChangesRef),
         stereo: Option.match(runtime, {
           onNone: () => false,
           onSome: (value) => value.stereo,
         }),
-        contextAttempted: yield* Ref.get(attemptedRef),
         unlockAttempts: yield* Ref.get(unlockAttemptsRef),
         unlockRefusals: yield* Ref.get(unlockRefusalsRef),
-        refusedTones: yield* Ref.get(refusedTonesRef),
-        activeTones: active.size,
-        spontaneousStateChanges: yield* Ref.get(stateChangesRef),
       }
     })
 
-    const close: Effect.Effect<void> = Effect.gen(function* () {
+    const close: Effect.Effect<void> = Effect.gen(function*  close() {
       const runtime = yield* Ref.get(runtimeRef)
       if (Option.isNone(runtime)) {
         return
@@ -626,19 +609,19 @@ export const makeWebAudioBackend = (
       }
       yield* Ref.set(activeRef, new Map())
       yield* Effect.tryPromise({
-        try: () => runtime.value.context.close(),
         catch: (cause) => cause,
+        try: () => runtime.value.context.close(),
       }).pipe(Effect.catchAll(() => Effect.void))
     })
 
     return {
       availability: currentAvailability,
-      playTone,
-      stopTone,
-      setMasterGain,
-      unlock,
-      report,
       close,
+      playTone,
+      report,
+      setMasterGain,
+      stopTone,
+      unlock,
     }
   })
 
@@ -666,8 +649,8 @@ export const webAudioBackendLayer = (
       (backend): AudioBackend => ({
         availability: backend.availability,
         playTone: backend.playTone,
-        stopTone: backend.stopTone,
         setMasterGain: backend.setMasterGain,
+        stopTone: backend.stopTone,
       }),
     ),
   )

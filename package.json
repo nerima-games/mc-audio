@@ -1,6 +1,6 @@
 {
   "name": "@nerima-games/mc-audio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Audio toolkit for the nerima-games Minecraft-clone rebuild: sound cue registry, volume categories, BGM state machine, and the caption event stream that fires ahead of the browser autoplay gate.",
   "homepage": "https://github.com/nerima-games/mc-audio#readme",

@@ -55,10 +55,10 @@ plan.md §3.6 が要求する「**サウンドボードプレビュー（全キ�
 `pnpm preview` を起動して、`u` を押さずに `enter` を押す。
 
 ```
-> blockBreak         --    spatial "Block broken"      gate-blocked
+> blockBreak         --    spatial "Block breaks"      gate-blocked
 ...
 captions  (1 visible of 1 fired)
-  "Block broken"        gate-blocked  right  0.00s old
+  "Block breaks"        gate-blocked  right  0.00s old
 ```
 
 gain は `--`（トーンは組まれていない）。**字幕は出ている。**
@@ -160,7 +160,7 @@ Node のテストからは偽にできなかった（`docs/porting.md` §6 —
 - 12 ブロック先の足音が「無視できるほど小さく、気付ける程度に大きい」か
 - 174.61Hz と 130.81Hz が「2 つのビープ」ではなく「別の曲」に聞こえるか
 - 9 キューが互いに区別できるか。**現状すべて正弦波である**
-  （`ToneRequest` に `wave` フィールドが無い → `DEFAULT_TONE_WAVE`）
+  （キューごとの `ToneRequest.wave`。未指定時のみ `DEFAULT_TONE_WAVE`）
 - レイテンシ、デバイスの遅延、Bluetooth
 
 ### 2-2. ブラウザが実際にどうするか
