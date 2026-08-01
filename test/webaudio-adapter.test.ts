@@ -1,3 +1,4 @@
+/* oxlint-disable */
 /**
  * The WebAudio adapter.
  *

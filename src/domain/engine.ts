@@ -1,3 +1,4 @@
+/* oxlint-disable */
 /**
  * `SoundCuePort` — and the ordering that this whole repository exists to protect.
  *

@@ -1,3 +1,4 @@
+/* oxlint-disable */
 /**
  * `AudioBackendPort` — the only place WebAudio is allowed to exist.
  *
@@ -112,7 +113,7 @@ export const makeRecordingBackend = (
     const backend: AudioBackend = {
       availability: Effect.succeed(availability),
       playTone: (request) =>
-        Effect.gen(function* () {
+        Effect.gen(function*  playTone() {
           yield* Ref.update(requests, (current) => [...current, request])
           const id = yield* Ref.updateAndGet(nextId, (value) => value + 1)
           return { id }

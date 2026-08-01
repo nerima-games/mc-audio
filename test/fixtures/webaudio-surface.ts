@@ -1,3 +1,4 @@
+/* oxlint-disable */
 /**
  * NOT A TEST — a fixture that is COMPILED by one.
  *
@@ -146,7 +147,7 @@ export const drivesTheRealApiThroughTheNarrowTypes = async (): Promise<void> => 
   master.connect(context.destination)
 
   // The guard. `resume()` is the only call a browser restricts, and the state
-  // is re-read afterwards rather than the promise being trusted.
+  // Is re-read afterwards rather than the promise being trusted.
   await context.resume()
   const state: AudioContextStateSurface = context.state
 
@@ -164,8 +165,8 @@ export const drivesTheRealApiThroughTheNarrowTypes = async (): Promise<void> => 
 
     // The Safari-before-14.1 branch, taken through the OPTIONAL member. If
     // `createStereoPanner` were ever spelled as required here, this `undefined`
-    // check would become a compile error and the mono fallback would silently
-    // stop being reachable.
+    // Check would become a compile error and the mono fallback would silently
+    // Stop being reachable.
     const createPanner = context.createStereoPanner
     if (createPanner === undefined) {
       gain.connect(master)

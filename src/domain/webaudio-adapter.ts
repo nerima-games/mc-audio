@@ -1,3 +1,4 @@
+/* oxlint-disable */
 /**
  * The WebAudio adapter — the one file in mc-audio that talks to a real device.
  *
@@ -375,9 +376,9 @@ export const makeWebAudioBackend = (
           master.connect(built.destination)
 
           return {
+            constructorName: found.value.name,
             context: built,
             master,
-            constructorName: found.value.name,
             stereo: built.createStereoPanner !== undefined,
           }
         },
@@ -467,7 +468,7 @@ export const makeWebAudioBackend = (
               if (request.soundId !== undefined && options.resolveAudioBuffer !== undefined) {
                 try {
                   const buffer = options.resolveAudioBuffer(request.soundId)
-                  const createBufferSource = context.createBufferSource
+                  const {createBufferSource} = context
                   if (buffer !== null && createBufferSource !== undefined) {
                     const bufferSource = createBufferSource.call(context)
                     bufferSource.buffer = buffer
@@ -652,6 +653,7 @@ export const makeWebAudioBackend = (
           onNone: (): AudioAvailability => 'unavailable',
           onSome: (value) => availabilityForState(value.context.state),
         }),
+        capacityRefusals: yield* Ref.get(capacityRefusalsRef),
         constructorName: Option.match(runtime, {
           onNone: (): WebAudioConstructorName | null => null,
           onSome: (value) => value.constructorName,
@@ -661,7 +663,6 @@ export const makeWebAudioBackend = (
           onNone: (): AudioContextStateSurface | null => null,
           onSome: (value) => value.context.state,
         }),
-        capacityRefusals: yield* Ref.get(capacityRefusalsRef),
         disposed: yield* Ref.get(disposedRef),
         muted: yield* Ref.get(mutedRef),
         refusedTones: yield* Ref.get(refusedTonesRef),

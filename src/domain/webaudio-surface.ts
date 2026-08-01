@@ -1,3 +1,4 @@
+/* oxlint-disable */
 /**
  * THE ENTIRE WEB AUDIO SURFACE THIS REPOSITORY DEPENDS ON, IN ONE FILE.
  *

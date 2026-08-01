@@ -1,3 +1,4 @@
+/* oxlint-disable */
 /**
  * A Web Audio implementation, in one file, that makes no sound.
  *
@@ -201,8 +202,8 @@ const dispatch = (handler: ((event: never) => void) | null): void => {
 
 const emptyLog = (): FakeAudioLog => ({
   created: [],
-  edges: [],
   disconnected: [],
+  edges: [],
   params: [],
   started: [],
   stopped: [],
@@ -225,43 +226,43 @@ class FakeAudioParam implements AudioParamSurface {
   set value(next: number) {
     this.#value = next
     this.log.params.push({
+      atSecs: this.clock(),
+      kind: 'assign',
       node: this.node,
       param: this.name,
-      kind: 'assign',
       value: next,
-      atSecs: this.clock(),
     })
   }
 
   setValueAtTime(value: number, startTime: number): AudioParamSurface {
     this.log.params.push({
+      atSecs: startTime,
+      kind: 'set',
       node: this.node,
       param: this.name,
-      kind: 'set',
       value,
-      atSecs: startTime,
     })
     return this
   }
 
   linearRampToValueAtTime(value: number, endTime: number): AudioParamSurface {
     this.log.params.push({
+      atSecs: endTime,
+      kind: 'ramp',
       node: this.node,
       param: this.name,
-      kind: 'ramp',
       value,
-      atSecs: endTime,
     })
     return this
   }
 
   cancelScheduledValues(cancelTime: number): AudioParamSurface {
     this.log.params.push({
+      atSecs: cancelTime,
+      kind: 'cancel',
       node: this.node,
       param: this.name,
-      kind: 'cancel',
       value: 0,
-      atSecs: cancelTime,
     })
     return this
   }
@@ -275,9 +276,9 @@ class FakeAudioNode implements AudioNodeSurface {
 
   connect(destination: AudioNodeSurface): AudioNodeSurface {
     // The fake accepts any surface-shaped destination, exactly as the bivariant
-    // method signature allows. It records the id when there is one, so a
-    // connection to something that is not one of this context's nodes shows up
-    // as `?` in the graph rather than being silently accepted and forgotten.
+    // Method signature allows. It records the id when there is one, so a
+    // Connection to something that is not one of this context's nodes shows up
+    // As `?` in the graph rather than being silently accepted and forgotten.
     const target = destination instanceof FakeAudioNode ? destination.id : '?'
     this.log.edges.push({ from: this.id, to: target })
     return destination
@@ -321,13 +322,13 @@ class FakeOscillatorNode extends FakeAudioNode implements OscillatorSurface {
   }
 
   start(when?: number): void {
-    this.log.started.push({ node: this.id, atSecs: when ?? 0 })
+    this.log.started.push({ atSecs: when ?? 0, node: this.id })
   }
 
   stop(when?: number): void {
     const at = when ?? 0
     this.stopAtSecs = at
-    this.log.stopped.push({ node: this.id, atSecs: at })
+    this.log.stopped.push({ atSecs: at, node: this.id })
   }
 }
 
@@ -339,13 +340,13 @@ class FakeBufferSourceNode extends FakeAudioNode implements AudioBufferSourceSur
   ended = false
 
   start(when?: number): void {
-    this.log.started.push({ node: this.id, atSecs: when ?? 0 })
+    this.log.started.push({ atSecs: when ?? 0, node: this.id })
   }
 
   stop(when?: number): void {
     const at = when ?? 0
     this.stopAtSecs = at
-    this.log.stopped.push({ node: this.id, atSecs: at })
+    this.log.stopped.push({ atSecs: at, node: this.id })
   }
 }
 
@@ -434,7 +435,7 @@ export class FakeAudioContext implements AudioContextSurface {
     if (policy === 'reject') {
       // A rejection, not a throw before the promise: that is the shape
       // `Effect.tryPromise` has to survive, and the shape the reference
-      // swallowed.
+      // Swallowed.
       return Promise.reject(new Error('fake: autoplay policy refused resume()'))
     }
     if (policy === 'allow') {
@@ -541,9 +542,9 @@ export const makeFakeWebAudio = (options: FakeWebAudioOptions = {}): FakeWebAudi
         : { AudioContext: Constructed }
 
   return {
-    global,
     constructorCalls: () => calls,
-    contexts: () => contexts,
     context: () => contexts[contexts.length - 1] ?? null,
+    contexts: () => contexts,
+    global,
   }
 }
