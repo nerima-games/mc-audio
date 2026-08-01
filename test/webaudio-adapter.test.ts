@@ -32,17 +32,17 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer, Ref } from 'effect'
-import { AudioBackendPort, type ToneRequest } from '../domain/backend-port'
-import { CaptionStream, type CaptionEvent } from '../domain/caption'
-import { makeSoundCueService } from '../domain/engine'
-import { ATTACK_SECS, RELEASE_SECS } from '../domain/envelope'
-import { DEFAULT_VOLUME_SETTINGS } from '../domain/volume'
+import { AudioBackendPort, type ToneRequest } from '../src/domain/backend-port'
+import { CaptionStream, type CaptionEvent } from '../src/domain/caption'
+import { makeSoundCueService } from '../src/domain/engine'
+import { ATTACK_SECS, RELEASE_SECS } from '../src/domain/envelope'
+import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
 import {
   availabilityForState,
   DEFAULT_TONE_WAVE,
   makeWebAudioBackend,
   webAudioBackendLayer,
-} from '../domain/webaudio-adapter'
+} from '../src/domain/webaudio-adapter'
 import { makeFakeWebAudio, type FakeWebAudioOptions } from './fake-webaudio'
 
 const CUE: ToneRequest = {

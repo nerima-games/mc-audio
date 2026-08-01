@@ -5,14 +5,14 @@ import {
   MAX_VISIBLE_CAPTIONS,
   visibleCaptions,
   type CaptionEvent,
-} from '../domain/caption'
-import { isSoundCueId, SOUND_CUE_IDS, CUE_DEFINITIONS } from '../domain/cue'
+} from '../src/domain/caption'
+import { isSoundCueId, SOUND_CUE_IDS, CUE_DEFINITIONS } from '../src/domain/cue'
 import {
   DEFAULT_CAVE_THRESHOLD_Y,
   resolveMusicEnvironment,
   resolveMusicPlan,
   type MusicEnvironment,
-} from '../domain/music'
+} from '../src/domain/music'
 
 describe('resolveMusicEnvironment', () => {
   it.effect('cave wins over day and night', () =>

@@ -44,7 +44,7 @@ import type {
   OscillatorWave,
   StereoPannerSurface,
   WebAudioGlobalSurface,
-} from '../../domain/webaudio-surface'
+} from '../../src/domain/webaudio-surface'
 
 declare const browserContext: AudioContext
 declare const browserNode: AudioNode

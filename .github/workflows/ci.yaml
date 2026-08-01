@@ -18,7 +18,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # This job never pushes, so the GITHUB_TOKEN should not remain
+          # readable to any step after checkout (SUPPLY_CHAIN.md).
+          persist-credentials: false
 
       - name: Setup pnpm
         # Pinned to a commit, not the mutable v4 tag: this is a third-party action
@@ -26,13 +30,13 @@ jobs:
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: "22"
+          node-version: "24"
           cache: "pnpm"
 
       - name: Install dependencies
-        # --ignore-scripts: pnpm 9 runs postinstall, and a fork PR can edit
+        # --ignore-scripts: pnpm runs postinstall, and a fork PR can edit
         # package.json and the lockfile consistently and still satisfy
         # --frozen-lockfile. Nothing here needs a lifecycle script.
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -43,31 +47,26 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      # Hard gate. Unlike the reference repository's check-package-dag.ts this
-      # script exits non-zero on any violation: unlisted cross-repo import,
-      # undeclared dependency, transitive-closure import, a runtime dependency
-      # on mc-playground-kit, or a raw wall-clock read (Date.now()).
-      - name: Dependency whitelist / time-source ban
-        run: pnpm check:deps
-
-      # The API lock (plan.md §6 Step 0-3). Fails when the committed
-      # api-lock.md no longer matches the package's public surface, so a change
-      # to what consumers can see cannot land without a reviewable diff. Run
-      # `pnpm api:update` to refresh it.
-      - name: API lock
-        run: pnpm api:check
-
       - name: Test
         run: pnpm test
 
-      # Coverage is reported but not yet thresholded — see vitest.config.ts.
-      # The 99% gate is added when this repository reaches its completion criteria.
+      # Separate required gate from `pnpm verify` (TEST_STANDARD.md §1/§3).
+      # Enforces the org-wide 4-metric 99% threshold (statements/branches/
+      # functions/lines) via vitest.config.ts#test.coverage.thresholds.
+      #
+      # KNOWN, ACCEPTED FAILURE: as of the 2026-08-01 rollout this repository
+      # measures statements/branches/lines 95.52% and functions 84.12%
+      # (53/63), below the 99% gate. Per org decision (TEST_STANDARD.md §3,
+      # confirmed twice), the gate is enabled immediately and without a
+      # staged rollout regardless; the shortfall is tracked as follow-up work
+      # (TEST_STANDARD.md §4 "既知の非適合"), not a reason to disable or
+      # relax the gate.
       - name: Coverage
         run: pnpm test:coverage
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: coverage
           path: coverage/

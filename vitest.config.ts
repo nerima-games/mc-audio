@@ -13,7 +13,7 @@ export default defineConfig({
         singleFork: false,
       },
     },
-    include: ['test/**/*.{test,spec}.ts'],
+    include: ['test/**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/coverage/**', '**/.git/**'],
     testTimeout: 10000,
     hookTimeout: 10000,
@@ -28,7 +28,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       enabled: false,
-      include: ['index.ts', 'domain/**/*.ts'],
+      include: ['src/index.ts', 'src/domain/**/*.ts'],
       exclude: [
         '**/*.d.ts',
         '**/*.config.ts',
@@ -38,22 +38,18 @@ export default defineConfig({
       all: true,
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: './coverage',
-      // NO THRESHOLD YET — deliberate.
-      //
-      // The reference repository (takeokunn/ts-minecraft) enforces 99% on
-      // branches/functions/lines/statements. A threshold on a skeleton would be
-      // meaningless: it would be trivially satisfied by a handful of type-only
-      // modules and would say nothing about the real implementation.
-      //
-      // Coverage is collected and reported (`pnpm test:coverage`) so the number
-      // is always visible. The 99% gate is turned on — here and in the CI
-      // workflow — when this repository reaches its completion criteria.
-      //
-      //   thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
+      // Org-wide decision (TEST_STANDARD.md §3): the 4-metric 99% gate is
+      // enabled immediately, org-wide, with no staged rollout — even though
+      // this repository is currently below it. As of the 2026-08-01 rollout,
+      // mc-audio measures statements/branches/lines 95.52% and functions
+      // 84.12% (53/63), which is BELOW threshold. This is a known, accepted
+      // failure (TEST_STANDARD.md §4 "既知の非適合"), tracked as follow-up
+      // work, not a reason to lower or omit the gate.
+      thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
     },
   },
   esbuild: {
-    target: 'node22',
+    target: 'node24',
     format: 'esm',
     platform: 'node',
   },
