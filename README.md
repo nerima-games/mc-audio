@@ -104,7 +104,7 @@ WebAudio アダプタは最後に書かれ、ブラウザAPIを注入可能な�
 
 WebAudio アダプタは実装済みである。ユーザジェスチャからの `unlock`、cue tone の再生と停止、
 master volume と mute、同時音数上限、Node/SSR の安全な unavailable fallback、
-冪等な `dispose` を提供する。ブラウザAPIは `WebAudioGlobalSurface` として注入するため、
+視線方向に追従する左右定位、冪等な `dispose` を提供する。ブラウザAPIは `WebAudioGlobalSurface` として注入するため、
 全分岐を Node 上の fake で単体テストできる。
 
 - **キューロスターは 17 個。** 参照実装の効果音ロスターを移植済み

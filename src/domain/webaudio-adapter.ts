@@ -456,39 +456,47 @@ export const makeWebAudioBackend = (
         const built = yield* Effect.try({
           catch: (cause) => cause,
           try: (): ActiveTone => {
-            const oscillator = context.createOscillator()
-            oscillator.type = request.wave ?? DEFAULT_TONE_WAVE
-            oscillator.frequency.value = drivenFrequency(request.frequency)
+            let oscillator: OscillatorSurface | null = null
+            let gain: GainSurface | null = null
+            let panner: StereoPannerSurface | null = null
+            try {
+              oscillator = context.createOscillator()
+              oscillator.type = request.wave ?? DEFAULT_TONE_WAVE
+              oscillator.frequency.value = drivenFrequency(request.frequency)
 
-            const gain = context.createGain()
-            for (const point of envelope.points) {
-              if (point.kind === 'set') {
-                gain.gain.setValueAtTime(point.gain, point.atSecs)
-              } else {
-                gain.gain.linearRampToValueAtTime(point.gain, point.atSecs)
+              gain = context.createGain()
+              for (const point of envelope.points) {
+                if (point.kind === 'set') {
+                  gain.gain.setValueAtTime(point.gain, point.atSecs)
+                } else {
+                  gain.gain.linearRampToValueAtTime(point.gain, point.atSecs)
+                }
               }
+
+              oscillator.connect(gain)
+
+              const createPanner = context.createStereoPanner
+              panner = stereo && createPanner !== undefined ? createPanner.call(context) : null
+
+              if (panner === null) {
+                gain.connect(master)
+              } else {
+                panner.pan.value = clampPan(request.pan)
+                gain.connect(panner)
+                panner.connect(master)
+              }
+
+              return { oscillator, gain, panner, envelope }
+            } catch (cause) {
+              for (const node of [oscillator, gain, panner]) {
+                try {
+                  node?.disconnect()
+                } catch {
+                  // Best-effort cleanup must not hide the graph construction failure.
+                }
+              }
+              throw cause
             }
-
-            oscillator.connect(gain)
-
-            // Feature detection again, at the node rather than at the context:
-            // a Safari without `createStereoPanner` gets a mono graph, and
-            // `report.stereo` says so. Silently connecting to master and
-            // leaving `pan` unapplied would make every spatialised cue sound
-            // centred, which reads as "spatialisation is broken" rather than
-            // as "this browser cannot pan".
-            const createPanner = context.createStereoPanner
-            const panner = stereo && createPanner !== undefined ? createPanner.call(context) : null
-
-            if (panner === null) {
-              gain.connect(master)
-            } else {
-              panner.pan.value = clampPan(request.pan)
-              gain.connect(panner)
-              panner.connect(master)
-            }
-
-            return { oscillator, gain, panner, envelope }
           },
         }).pipe(Effect.catchAll(() => Effect.succeed(null)))
 

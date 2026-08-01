@@ -141,13 +141,33 @@ describe('spatialise', () => {
     }),
   )
 
-  it.effect('pans by the X offset only, clamped to [-1, 1]', () =>
+  it.effect('uses world +X as right when listener direction is omitted', () =>
     Effect.sync(() => {
       expect(spatialise(LISTENER, { x: 6, y: 64, z: 0 }).pan).toBeCloseTo(0.5, 10)
       expect(spatialise(LISTENER, { x: -6, y: 64, z: 0 }).pan).toBeCloseTo(-0.5, 10)
       expect(spatialise(LISTENER, { x: 9_999, y: 64, z: 0 }).pan).toBe(1)
       // Distance on Z attenuates but does not pan.
       expect(spatialise(LISTENER, { x: 0, y: 64, z: 50 }).pan).toBe(0)
+    }),
+  )
+
+  it.effect('rotates stereo left and right with the listener', () =>
+    Effect.sync(() => {
+      const source = { x: 0, y: 64, z: 6 }
+      expect(spatialise(LISTENER, source, { x: 1, y: 0, z: 0 }).pan).toBeCloseTo(0.5, 10)
+      expect(spatialise(LISTENER, source, { x: -1, y: 0, z: 0 }).pan).toBeCloseTo(-0.5, 10)
+      expect(spatialise(LISTENER, source, { x: 100, y: 7, z: 0 }).pan).toBeCloseTo(0.5, 10)
+    }),
+  )
+
+  it.effect('falls back deterministically for unusable horizontal directions', () =>
+    Effect.sync(() => {
+      const source = { x: 6, y: 64, z: 0 }
+      expect(spatialise(LISTENER, source, { x: 0, y: 1, z: 0 }).pan).toBeCloseTo(0.5, 10)
+      expect(spatialise(LISTENER, source, { x: Number.NaN, y: 0, z: 0 }).pan).toBeCloseTo(
+        0.5,
+        10,
+      )
     }),
   )
 })

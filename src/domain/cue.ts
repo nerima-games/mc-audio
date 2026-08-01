@@ -97,8 +97,8 @@ export const cueDefinition = (cueId: SoundCueId): CueDefinition => CUE_DEFINITIO
  * Options a caller may attach to a cue.
  *
  * `position` absent means "not spatialised", which is distinct from "spatialised
- * at the listener's own position": the latter would still pan with listener
- * rotation once true 3D panning lands.
+ * at the listener's own position": the latter still passes through the
+ * listener-relative spatialisation policy.
  */
 export type CuePlayOptions = {
   readonly position?: {

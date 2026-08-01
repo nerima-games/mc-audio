@@ -400,6 +400,53 @@ describe('the node graph the adapter builds', () => {
     }),
   )
 
+  it.effect('carries listener-relative pan from cue policy into the Web Audio panner', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake()
+      const audio = yield* backend
+      yield* audio.unlock
+
+      const service = yield* makeSoundCueService({
+        context: Effect.succeed({
+          availability: 'ready' as const,
+          enabled: true,
+          listener: { x: 0, y: 64, z: 0 },
+          listenerForward: { x: 1, y: 0, z: 0 },
+          settings: DEFAULT_VOLUME_SETTINGS,
+        }),
+        nowSecs: Effect.succeed(1),
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            Layer.succeed(AudioBackendPort, audio),
+            Layer.succeed(CaptionStream, { emit: () => Effect.void }),
+          ),
+        ),
+      )
+
+      yield* service.play('blockBreak', { position: { x: 0, y: 64, z: 6 } })
+
+      expect(fake.context()?.log.params.filter((call) => call.param === 'pan')).toStrictEqual([
+        { atSecs: 0, kind: 'assign', node: 'panner#4', param: 'pan', value: 0.5 },
+      ])
+    }),
+  )
+
+  it.effect('disconnects partial cue nodes when panner construction fails', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake({ pannerThrows: true })
+      const audio = yield* backend
+      yield* audio.unlock
+
+      yield* audio.playTone(CUE)
+
+      expect(fake.context()?.log.created).toStrictEqual(['gain#1', 'osc#2', 'gain#3'])
+      expect(fake.context()?.log.disconnected).toStrictEqual(['osc#2', 'gain#3'])
+      expect((yield* audio.report).activeTones).toBe(0)
+      expect((yield* audio.report).refusedTones).toBe(1)
+    }),
+  )
+
   it.effect('schedules the envelope on the gain, not a flat value', () =>
     Effect.gen(function* () {
       // The whole reason `domain/envelope.ts` exists. A flat `gain.value` plus

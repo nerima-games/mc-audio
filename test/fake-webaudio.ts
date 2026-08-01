@@ -140,6 +140,8 @@ export type FakeWebAudioOptions = {
   readonly constructionThrows?: boolean
   /** Wiring the master gain throws, i.e. a context that is born broken. */
   readonly wiringThrows?: boolean
+  /** Creating a cue's stereo panner throws after its oscillator and gain exist. */
+  readonly pannerThrows?: boolean
   readonly resumePolicy?: ResumePolicy
   readonly initialState?: AudioContextStateSurface
 }
@@ -357,6 +359,9 @@ export class FakeAudioContext implements AudioContextSurface {
 
     if (options.stereo !== false) {
       this.createStereoPanner = (): StereoPannerSurface => {
+        if (this.options.pannerThrows === true) {
+          throw new Error('fake: createStereoPanner refused')
+        }
         const node = new FakeStereoPannerNode(this.log, this.#id('panner'), () => this.#currentTime)
         this.log.created.push(node.id)
         return node

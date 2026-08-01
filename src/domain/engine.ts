@@ -61,6 +61,8 @@ export type CueContext = {
   readonly enabled: boolean
   readonly availability: AudioAvailability
   readonly listener: Vec3
+  /** Horizontal look direction. Omit to retain world +X as stereo right. */
+  readonly listenerForward?: Vec3
 }
 
 /**
@@ -102,7 +104,7 @@ export const planCue = (
 
   const spatialisation =
     definition.spatial && options?.position !== undefined
-      ? spatialise(context.listener, options.position)
+      ? spatialise(context.listener, options.position, context.listenerForward)
       : NO_SPATIALISATION
 
   const caption =

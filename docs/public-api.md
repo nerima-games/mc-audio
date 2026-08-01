@@ -66,7 +66,7 @@ export const DEFAULT_VOLUME_SETTINGS: VolumeSettings   // { master: 0.8, sfx: 1,
 export const clamp01: (value: number) => number
 export const clampPan: (value: number) => number
 export const SPATIAL_DISTANCE_SCALE = 12
-export const spatialise: (listener: Vec3, source: Vec3) => Spatialisation
+export const spatialise: (listener: Vec3, source: Vec3, listenerForward?: Vec3) => Spatialisation
 export const NO_SPATIALISATION: Spatialisation
 
 export const effectiveSfxGain: (input: {
@@ -270,6 +270,7 @@ export type CueContext = {
   readonly enabled: boolean            // プレイヤーの ON/OFF。availability とは別物
   readonly availability: AudioAvailability
   readonly listener: Vec3
+  readonly listenerForward?: Vec3       // 水平視線方向。省略時は world +X が右
 }
 
 export type CuePlan = {
