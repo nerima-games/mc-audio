@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
 import * as publicApi from '../src/index'
+import { describe, expect, it } from 'vitest'
 
 describe('public API', () => {
   it('matches the reviewed runtime export surface', () => {
@@ -14,8 +14,17 @@ describe('public API', () => {
         "CaptionStream",
         "DEFAULT_CAVE_THRESHOLD_Y",
         "DEFAULT_MAX_CONCURRENT_TONES",
+        "DEFAULT_MAX_SIMULTANEOUS_END_SOUNDS",
         "DEFAULT_TONE_WAVE",
         "DEFAULT_VOLUME_SETTINGS",
+        "DRAGON_BATTLE_PHASES",
+        "END_AMBIENCE_FADE_SECS",
+        "END_AMBIENCE_GAIN",
+        "END_AUDIO_DIMENSIONS",
+        "END_AUDIO_EVENT_KINDS",
+        "END_EVENT_HISTORY_LIMIT",
+        "END_SOUND_DEFINITIONS",
+        "INITIAL_END_AUDIO_STATE",
         "INITIAL_WEATHER_AMBIENCE_STATE",
         "MAX_VISIBLE_CAPTIONS",
         "MIN_DURATION_SECS",
@@ -43,6 +52,7 @@ describe('public API', () => {
         "firstCaptionFor",
         "gainAt",
         "isSoundCueId",
+        "makeEndAudioController",
         "makeRecordingBackend",
         "makeSoundCueService",
         "makeWeatherAudioController",
@@ -50,6 +60,7 @@ describe('public API', () => {
         "masterNodeGain",
         "musicTrackGain",
         "planCue",
+        "planEndAudio",
         "planWeatherAmbience",
         "recordingCaptionLayer",
         "resolveMusicEnvironment",
