@@ -98,6 +98,9 @@ import type {
  */
 export const DEFAULT_TONE_WAVE: OscillatorWave = 'sine'
 
+/** A conservative ceiling that prevents pathological cue bursts from exhausting nodes. */
+export const DEFAULT_MAX_CONCURRENT_TONES = 32
+
 /** Which spelling of the constructor the host turned out to have. */
 export type WebAudioConstructorName = 'AudioContext' | 'webkitAudioContext'
 
@@ -119,6 +122,8 @@ export type WebAudioOptions = {
    * plays the first cue at full volume.
    */
   readonly initialMasterGain?: number
+  /** Maximum active tones. Additional cues are discarded and reported. */
+  readonly maxConcurrentTones?: number
 }
 
 /**
@@ -150,6 +155,8 @@ export type WebAudioReport = {
    * sounds before they clicked, which is expected and not an error.
    */
   readonly refusedTones: number
+  /** Ready-state cues discarded because `maxConcurrentTones` was reached. */
+  readonly capacityRefusals: number
   /** Tones currently scheduled or sounding. */
   readonly activeTones: number
   /**
@@ -161,6 +168,8 @@ export type WebAudioReport = {
    * and be right, having been wrong for the whole call.
    */
   readonly spontaneousStateChanges: number
+  readonly muted: boolean
+  readonly disposed: boolean
 }
 
 /**
@@ -188,6 +197,10 @@ export type WebAudioBackend = AudioBackend & {
    */
   readonly unlock: Effect.Effect<AudioAvailability>
   readonly report: Effect.Effect<WebAudioReport>
+  /** Mute without forgetting the configured master gain. */
+  readonly setMuted: (muted: boolean) => Effect.Effect<void>
+  /** Permanently release nodes and the context. Safe to call repeatedly. */
+  readonly dispose: Effect.Effect<void>
   /**
    * Release the device. For tests, previews, and page teardown.
    *
@@ -279,11 +292,18 @@ export const makeWebAudioBackend = (
     const runtimeRef = yield* Ref.make<Option.Option<ContextRuntime>>(Option.none())
     const attemptedRef = yield* Ref.make(false)
     const masterGainValueRef = yield* Ref.make(clamp01(options.initialMasterGain ?? 0.8))
+    const mutedRef = yield* Ref.make(false)
+    const disposedRef = yield* Ref.make(false)
+    const maxConcurrentTones = Math.max(
+      1,
+      Math.floor(options.maxConcurrentTones ?? DEFAULT_MAX_CONCURRENT_TONES),
+    )
     const activeRef = yield* Ref.make<ReadonlyMap<number, ActiveTone>>(new Map())
     const nextIdRef = yield* Ref.make(0)
     const unlockAttemptsRef = yield* Ref.make(0)
     const unlockRefusalsRef = yield* Ref.make(0)
     const refusedTonesRef = yield* Ref.make(0)
+    const capacityRefusalsRef = yield* Ref.make(0)
     const stateChangesRef = yield* Ref.make(0)
 
     /**
@@ -311,6 +331,9 @@ export const makeWebAudioBackend = (
     }
 
     const ensureRuntime: Effect.Effect<Option.Option<ContextRuntime>> = Effect.gen(function*  ensureRuntime() {
+      if (yield* Ref.get(disposedRef)) {
+        return Option.none<ContextRuntime>()
+      }
       const cached = yield* Ref.get(runtimeRef)
       if (Option.isSome(cached)) {
         return cached
@@ -338,7 +361,7 @@ export const makeWebAudioBackend = (
         return Option.none<ContextRuntime>()
       }
 
-      const initialGain = yield* Ref.get(masterGainValueRef)
+      const initialGain = (yield* Ref.get(mutedRef)) ? 0 : yield* Ref.get(masterGainValueRef)
 
       const wired = yield* Effect.try({
         catch: (cause) => cause,
@@ -419,6 +442,12 @@ export const makeWebAudioBackend = (
           // Sound nobody could hear. Refusing early costs one counter and
           // Keeps the graph honest.
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
+          return handle
+        }
+
+        if ((yield* Ref.get(activeRef)).size >= maxConcurrentTones) {
+          yield* Ref.update(refusedTonesRef, (count) => count + 1)
+          yield* Ref.update(capacityRefusalsRef, (count) => count + 1)
           return handle
         }
 
@@ -539,8 +568,23 @@ export const makeWebAudioBackend = (
         if (Option.isNone(runtime)) {
           return
         }
+        if (!(yield* Ref.get(mutedRef))) {
+          yield* ignoringFailure(() => {
+            runtime.value.master.gain.value = next
+          })
+        }
+      })
+
+    const setMuted = (muted: boolean): Effect.Effect<void> =>
+      Effect.gen(function*  setMuted() {
+        yield* Ref.set(mutedRef, muted)
+        const runtime = yield* Ref.get(runtimeRef)
+        if (Option.isNone(runtime)) {
+          return
+        }
+        const masterGain = yield* Ref.get(masterGainValueRef)
         yield* ignoringFailure(() => {
-          runtime.value.master.gain.value = next
+          runtime.value.master.gain.value = muted ? 0 : masterGain
         })
       })
 
@@ -588,6 +632,9 @@ export const makeWebAudioBackend = (
           onNone: (): AudioContextStateSurface | null => null,
           onSome: (value) => value.context.state,
         }),
+        capacityRefusals: yield* Ref.get(capacityRefusalsRef),
+        disposed: yield* Ref.get(disposedRef),
+        muted: yield* Ref.get(mutedRef),
         refusedTones: yield* Ref.get(refusedTonesRef),
         spontaneousStateChanges: yield* Ref.get(stateChangesRef),
         stereo: Option.match(runtime, {
@@ -599,12 +646,16 @@ export const makeWebAudioBackend = (
       }
     })
 
-    const close: Effect.Effect<void> = Effect.gen(function*  close() {
+    const dispose: Effect.Effect<void> = Effect.gen(function*  dispose() {
+      if (yield* Ref.getAndSet(disposedRef, true)) {
+        return
+      }
       const runtime = yield* Ref.get(runtimeRef)
       if (Option.isNone(runtime)) {
         return
       }
       for (const tone of (yield* Ref.get(activeRef)).values()) {
+        yield* ignoringFailure(() => tone.oscillator.stop())
         yield* releaseTone(tone)
       }
       yield* Ref.set(activeRef, new Map())
@@ -616,10 +667,12 @@ export const makeWebAudioBackend = (
 
     return {
       availability: currentAvailability,
-      close,
+      close: dispose,
+      dispose,
       playTone,
       report,
       setMasterGain,
+      setMuted,
       stopTone,
       unlock,
     }

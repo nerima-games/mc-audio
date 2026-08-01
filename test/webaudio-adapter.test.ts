@@ -548,6 +548,65 @@ describe('the master gain node', () => {
       expect(values).toStrictEqual([0.8, 1, 0])
     }),
   )
+
+  it.effect('mutes without forgetting the configured volume', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake()
+      const audio = yield* backend
+      yield* audio.unlock
+      yield* audio.setMasterGain(0.35)
+      yield* audio.setMuted(true)
+      yield* audio.setMasterGain(0.6)
+
+      expect((yield* audio.report).muted).toBe(true)
+      expect(fake.context()?.log.params.at(-1)?.value).toBe(0)
+
+      yield* audio.setMuted(false)
+      expect((yield* audio.report).muted).toBe(false)
+      expect(fake.context()?.log.params.at(-1)?.value).toBe(0.6)
+    }),
+  )
+})
+
+describe('resource limits and lifecycle', () => {
+  it.effect('discards cues beyond the configured simultaneous-tone limit', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({ global: fake.global, maxConcurrentTones: 2 })
+      yield* audio.unlock
+
+      yield* audio.playTone({ ...CUE, loop: true })
+      yield* audio.playTone({ ...CUE, loop: true })
+      yield* audio.playTone({ ...CUE, loop: true })
+
+      expect(fake.context()?.oscillators).toHaveLength(2)
+      expect(yield* audio.report).toMatchObject({
+        activeTones: 2,
+        capacityRefusals: 1,
+        refusedTones: 1,
+      })
+    }),
+  )
+
+  it.effect('disposes once and never recreates a context', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake()
+      const audio = yield* backend
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, loop: true })
+
+      yield* audio.dispose
+      const disconnected = [...(fake.context()?.log.disconnected ?? [])]
+      yield* audio.close
+
+      expect(fake.context()?.log.disconnected).toStrictEqual(disconnected)
+      expect(yield* audio.availability).toBe('unavailable')
+      expect(yield* audio.unlock).toBe('unavailable')
+      yield* audio.playTone(CUE)
+      expect(fake.constructorCalls()).toBe(1)
+      expect(yield* audio.report).toMatchObject({ activeTones: 0, disposed: true })
+    }),
+  )
 })
 
 // ---------------------------------------------------------------------------

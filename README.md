@@ -98,18 +98,18 @@ docs/                             実装情報
 `"DOM"` を締め出すことで WebAudio 固有の部分が `AudioBackendPort` の裏に**強制的に**回り、
 jsdom も `AudioContext` も無しで全部テストできる。
 
-WebAudio アダプタは最後に書く。最初ではない。
+WebAudio アダプタは最後に書かれ、ブラウザAPIを注入可能な構造型の境界に閉じ込めている。
 
 ## 現状
 
-**このリポジトリはまだ叩き台（pre-audit first cut）である。**
+WebAudio アダプタは実装済みである。ユーザジェスチャからの `unlock`、cue tone の再生と停止、
+master volume と mute、同時音数上限、Node/SSR の安全な unavailable fallback、
+冪等な `dispose` を提供する。ブラウザAPIは `WebAudioGlobalSurface` として注入するため、
+全分岐を Node 上の fake で単体テストできる。
 
-- **WebAudio アダプタは未実装。** `locked` → `ready` のユーザジェスチャアンロックは
-  参照実装に存在しないので新規設計になる
-- **キューロスターは暫定 9 個。** 参照実装は 17 個。最終ロスターは
-  キューを鳴らす mx-gameplay のルールと一緒に決まる
+- **キューロスターは 17 個。** 参照実装の効果音ロスターを移植済み
 - **音声アセットは未同梱。** 参照実装は全てオシレータ合成で、音声ファイルが 1 つも無い
-- **サウンドボードプレビューは未実装**（plan.md §3.6 の完了条件）
+- **サウンドボードプレビューは実装済み**（`apps/preview-soundboard`）
 - **ビルド／publish はまだない。** `exports` は TypeScript ソースを直接指している
 - **カバレッジ閾値は未設定。** 99% ゲートは完成条件到達時に有効化する
 

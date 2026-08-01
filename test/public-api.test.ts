@@ -13,6 +13,7 @@ describe('public API', () => {
         "CUE_DEFINITIONS",
         "CaptionStream",
         "DEFAULT_CAVE_THRESHOLD_Y",
+        "DEFAULT_MAX_CONCURRENT_TONES",
         "DEFAULT_TONE_WAVE",
         "DEFAULT_VOLUME_SETTINGS",
         "MAX_VISIBLE_CAPTIONS",

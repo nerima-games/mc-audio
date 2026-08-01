@@ -387,11 +387,14 @@ export type WebAudioGlobalSurface = {
 export type WebAudioOptions = {
   readonly global: WebAudioGlobalSurface
   readonly initialMasterGain?: number
+  readonly maxConcurrentTones?: number  // default: 32
 }
 export type WebAudioBackend = AudioBackend & {
   readonly unlock: Effect.Effect<AudioAvailability>   // ユーザジェスチャから呼ぶ
   readonly report: Effect.Effect<WebAudioReport>
-  readonly close: Effect.Effect<void>
+  readonly setMuted: (muted: boolean) => Effect.Effect<void>
+  readonly dispose: Effect.Effect<void>               // 冪等、以後は再生成しない
+  readonly close: Effect.Effect<void>                 // dispose の互換 alias
 }
 export const makeWebAudioBackend: (options: WebAudioOptions) => Effect.Effect<WebAudioBackend>
 export const webAudioBackendLayer: (options: WebAudioOptions) => Layer.Layer<AudioBackendPort>
@@ -428,7 +431,7 @@ feature detection と `webkitAudioContext` フォールバックはアダプタ�
 
 ### `webAudioBackendLayer` が捨てるもの
 
-`unlock` / `report` / `close` は `AudioBackend` に無いので、
+`unlock` / `report` / `setMuted` / `dispose` / `close` は `AudioBackend` に無いので、
 **この Layer 経由だけで配線した consumer は context をアンロックできない**（永久に `locked`）。
 
 これは実在する落とし穴で、隠さずに置いてある。
