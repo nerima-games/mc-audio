@@ -108,10 +108,28 @@ master volume と mute、同時音数上限、Node/SSR の安全な unavailable 
 全分岐を Node 上の fake で単体テストできる。
 
 - **キューロスターは 17 個。** 参照実装の効果音ロスターを移植済み
-- **音声アセットはホスト管理。** URL または `ArrayBuffer` の manifest を `preloadSamples` でデコードし、未ロード・失敗時は tone 合成へフォールバックする
+- **オリジナルPCMサンプルを同梱。** `createOriginalSampleManifest()` は全 cue と End/portal 用の短い16-bit mono WAVを実行時生成する。外部アセット、DOM、fetch、著作権付き素材は不要
+- URL または独自 `ArrayBuffer` の manifest も引き続き指定でき、未ロード・失敗時は tone 合成へフォールバックする
 - **サウンドボードプレビューは実装済み**（`apps/preview-soundboard`）
 - **ビルド／publish はまだない。** `exports` は TypeScript ソースを直接指している
 - **カバレッジ閾値は未設定。** 99% ゲートは完成条件到達時に有効化する
+
+### 標準サンプルバンク
+
+```ts
+import { Effect } from 'effect'
+import { createOriginalSampleManifest, makeWebAudioBackend } from '@nerima-games/mc-audio'
+
+const backend = makeWebAudioBackend({
+  global: globalThis,
+  sampleManifest: createOriginalSampleManifest(),
+})
+
+await Effect.runPromise(backend.preloadSamples())
+```
+
+生成器はDOM非依存で、同じ `seed` と `sampleRate` から常に同じWAVを返す。block break/place、
+footstep、mob、rain/thunder、End dragon、eye/frame/portal、End ambienceを標準manifestで網羅する。
 
 ## License
 
