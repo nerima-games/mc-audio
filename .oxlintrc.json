@@ -74,38 +74,27 @@
     "no-sync": "warn",
 
     // Style
-    "array-bracket-spacing": "warn",
-    "block-spacing": "warn",
-    "brace-style": ["warn", "1tbs", { "allowSingleLine": true }],
-    "camelcase": "warn",
-    "comma-dangle": ["warn", "always-multiline"],
-    "comma-spacing": "warn",
-    "comma-style": "warn",
-    "computed-property-spacing": "warn",
-    "eol-last": "warn",
-    "func-call-spacing": "warn",
-    "indent": "off",
-    "key-spacing": "warn",
-    "keyword-spacing": "warn",
-    "linebreak-style": ["warn", "unix"],
-    "lines-between-class-members": "warn",
+    // NOTE (2026-08-01, discovered while fixing the oxlint.json -> .oxlintrc.json
+    // filename bug that made this whole file silently ignored): the 29 formatting
+    // rules that used to live here (array-bracket-spacing, block-spacing,
+    // brace-style, camelcase, comma-dangle, comma-spacing, comma-style,
+    // computed-property-spacing, eol-last, func-call-spacing, indent, key-spacing,
+    // keyword-spacing, linebreak-style, lines-between-class-members,
+    // no-mixed-spaces-and-tabs, no-new-object, no-tabs, no-trailing-spaces,
+    // no-whitespace-before-property, object-curly-spacing, one-var,
+    // operator-linebreak, padded-blocks, quote-props, semi-spacing,
+    // space-before-blocks, space-infix-ops, space-unary-ops, spaced-comment)
+    // do not exist in oxlint 1.76.0 ("Rule '<name>' not found in plugin 'eslint'"),
+    // which makes oxlint fail to parse the config entirely (exit 1, no linting
+    // performed at all). They were apparently written against an older/aspirational
+    // rule set (this file's own header comment references oxlint 0.12) and were
+    // never actually validated because the file was never loaded until now. They
+    // have been removed so the config parses; the `"style": "warn"` category
+    // default above still enables whatever style-category rules actually exist in
+    // this oxlint version. Restoring equivalent formatting enforcement (if wanted)
+    // would need a real formatter or the @stylistic rule set, tracked separately.
     "no-array-method-this-argument": "warn",
     "no-bitwise": "warn",
-    "no-mixed-spaces-and-tabs": "error",
-    "no-new-object": "warn",
-    "no-tabs": "error",
-    "no-trailing-spaces": "warn",
-    "no-whitespace-before-property": "warn",
-    "object-curly-spacing": ["warn", "always"],
-    "one-var": ["warn", "never"],
-    "operator-linebreak": "warn",
-    "padded-blocks": ["warn", "never"],
-    "quote-props": ["warn", "as-needed"],
-    "semi-spacing": "warn",
-    "space-before-blocks": "warn",
-    "space-infix-ops": "warn",
-    "space-unary-ops": "warn",
-    "spaced-comment": "warn",
 
     // Restriction
     "default-case": "warn",
@@ -128,9 +117,17 @@
             "importNames": ["default"]
           }
         ],
+        // NOTE (2026-08-01): `patterns[].regex` is silently a no-op in oxlint 1.76.0 -
+        // verified empirically (see also the oxlint.json -> .oxlintrc.json filename
+        // fix in this same commit): a minimal repro config using
+        // `{"patterns": [{"regex": "..."}]}` produces zero diagnostics and exit 0
+        // against a file that should violate it, while the equivalent
+        // `{"patterns": [{"group": [...]}]}` glob form fires correctly. Using
+        // `group` (gitignore-style globs, with `!`-prefixed entries to exempt
+        // mc-kernel and its subpaths) instead of `regex` below.
         "patterns": [
           {
-            "regex": "^@nerima-games/(?!mc-kernel\\b).+",
+            "group": ["@nerima-games/**", "!@nerima-games/mc-kernel", "!@nerima-games/mc-kernel/**"],
             "message": "mc-audio is a Tier1 library (DEPENDENCY_POLICY.md) and must not depend on any other @nerima-games/* package. mc-kernel is universally importable and exempt."
           }
         ]
@@ -147,5 +144,5 @@
     "no-param-reassign": "off",
     "no-plusplus": "off"
   },
-  "ignore": ["node_modules/**", "coverage/**", "dist/**", ".git/**", "*.config.ts", "docs/**"]
+  "ignorePatterns": ["node_modules/**", "coverage/**", "dist/**", ".git/**", "*.config.ts", "docs/**"]
 }

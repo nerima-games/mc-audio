@@ -42,7 +42,7 @@ kernel の些細な変更が 15 リポジトリの version bump を誘発する�
 
 意図された依存グラフは**ドキュメントの側に**記録してある:
 
-- [DEPENDENCY_POLICY.md §1](https://github.com/nerima-games/.github/blob/main/DEPENDENCY_POLICY.md#1-4層の依存グラフエッジレベル)(16リポジトリ全部のエッジ一覧。実効機構は `oxlint.json` の `no-restricted-imports`)
+- [DEPENDENCY_POLICY.md §1](https://github.com/nerima-games/.github/blob/main/DEPENDENCY_POLICY.md#1-4層の依存グラフエッジレベル)(16リポジトリ全部のエッジ一覧。実効機構は `.oxlintrc.json` の `no-restricted-imports`)
 - [architecture.md](./architecture.md) の Mermaid 図
 
 publish 開始時に、ボトムアップ（kernel → 各 tier1 → worldgen → …）で
