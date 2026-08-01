@@ -1,4 +1,4 @@
-/* oxlint-disable */
+/* oxlint-disable max-params, no-magic-numbers, no-nested-ternary, no-ternary, no-undefined -- The fake mirrors WebAudio signatures and records exact timeline values, including explicit missing optional methods. */
 /**
  * A Web Audio implementation, in one file, that makes no sound.
  *

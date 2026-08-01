@@ -1,4 +1,4 @@
-/* oxlint-disable */
+/* oxlint-disable max-statements, new-cap, no-magic-numbers, no-ternary, no-undefined, sort-imports -- WebAudio setup is an ordered resource transaction; its API uses optional members, constructors held as values, normalized gain constants, and conditional node selection. */
 /**
  * The WebAudio adapter — the one file in mc-audio that talks to a real device.
  *
@@ -293,7 +293,7 @@ const ignoringFailure = (run: () => void): Effect.Effect<void> =>
 export const makeWebAudioBackend = (
   options: WebAudioOptions,
 ): Effect.Effect<WebAudioBackend> =>
-  Effect.gen(function*  makeWebAudioBackend() {
+  Effect.gen(function* buildWebAudioBackend() {
     const runtimeRef = yield* Ref.make<Option.Option<ContextRuntime>>(Option.none())
     const attemptedRef = yield* Ref.make(false)
     const masterGainValueRef = yield* Ref.make(clamp01(options.initialMasterGain ?? 0.8))
@@ -410,7 +410,7 @@ export const makeWebAudioBackend = (
     )
 
     const releaseTone = (tone: ActiveTone): Effect.Effect<void> =>
-      Effect.gen(function*  releaseTone() {
+      Effect.gen(function* releaseActiveTone() {
         yield* ignoringFailure(() => tone.source.disconnect())
         yield* ignoringFailure(() => tone.gain.disconnect())
         const {panner} = tone
@@ -423,7 +423,7 @@ export const makeWebAudioBackend = (
       })
 
     const playTone = (request: ToneRequest): Effect.Effect<ToneHandle> =>
-      Effect.gen(function*  playTone() {
+      Effect.gen(function* scheduleTone() {
         // The id is allocated BEFORE the gate, matching `UnavailableBackendLayer`
         // And the reference (`audio-engine.ts:40` numbers, `:42` gates). That
         // Is a trap `docs/public-api.md` §3 names and keeps on purpose, so the
@@ -555,7 +555,7 @@ export const makeWebAudioBackend = (
       })
 
     const stopTone = (handle: ToneHandle): Effect.Effect<void> =>
-      Effect.gen(function*  stopTone() {
+      Effect.gen(function* stopActiveTone() {
         const tone = (yield* Ref.get(activeRef)).get(handle.id)
         if (tone === undefined) {
           return
@@ -585,7 +585,7 @@ export const makeWebAudioBackend = (
       })
 
     const setMasterGain = (gain: number): Effect.Effect<void> =>
-      Effect.gen(function*  setMasterGain() {
+      Effect.gen(function* updateMasterGain() {
         const next = clamp01(gain)
         yield* Ref.set(masterGainValueRef, next)
 
@@ -606,7 +606,7 @@ export const makeWebAudioBackend = (
       })
 
     const setMuted = (muted: boolean): Effect.Effect<void> =>
-      Effect.gen(function*  setMuted() {
+      Effect.gen(function* updateMutedState() {
         yield* Ref.set(mutedRef, muted)
         const runtime = yield* Ref.get(runtimeRef)
         if (Option.isNone(runtime)) {

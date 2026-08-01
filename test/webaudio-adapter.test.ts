@@ -1,4 +1,4 @@
-/* oxlint-disable */
+/* oxlint-disable func-names, id-length, max-statements, no-magic-numbers, no-ternary, prefer-destructuring, sort-imports -- Effect generator tests use framework callbacks, tuple coordinates, and exact audio timing/gain assertions whose literals are the specification. */
 /**
  * The WebAudio adapter.
  *

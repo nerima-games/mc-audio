@@ -1,4 +1,4 @@
-/* oxlint-disable */
+/* oxlint-disable max-statements, new-cap, no-empty-function, no-magic-numbers, no-ternary, no-undefined -- This compile fixture deliberately exercises browser constructor/optional-member signatures with inert callbacks and literal audio parameters. */
 /**
  * NOT A TEST — a fixture that is COMPILED by one.
  *

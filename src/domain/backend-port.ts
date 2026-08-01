@@ -1,4 +1,4 @@
-/* oxlint-disable */
+/* oxlint-disable new-cap, no-magic-numbers -- Effect.Tag is a callable class factory; zero/one are the recorder counter's identity and increment. */
 /**
  * `AudioBackendPort` — the only place WebAudio is allowed to exist.
  *
@@ -105,7 +105,7 @@ export type RecordedBackend = {
 export const makeRecordingBackend = (
   availability: AudioAvailability,
 ): Effect.Effect<RecordedBackend> =>
-  Effect.gen(function*  makeRecordingBackend() {
+  Effect.gen(function* buildRecordingBackend() {
     const requests = yield* Ref.make<ReadonlyArray<ToneRequest>>([])
     const gains = yield* Ref.make<ReadonlyArray<number>>([])
     const nextId = yield* Ref.make(0)

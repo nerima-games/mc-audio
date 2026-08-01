@@ -1,4 +1,4 @@
-/* oxlint-disable */
+/* oxlint-disable new-cap, no-ternary, no-undefined, sort-imports -- Effect.Tag is callable; optional WebAudio inputs require explicit undefined checks and compact conditional object construction. */
 /**
  * `SoundCuePort` — and the ordering that this whole repository exists to protect.
  *
@@ -164,7 +164,7 @@ export const makeSoundCueService = (input: {
   readonly context: Effect.Effect<CueContext>
   readonly nowSecs: Effect.Effect<number>
 }): Effect.Effect<SoundCueService, never, AudioBackendPort | CaptionStream> =>
-  Effect.gen(function*  makeSoundCueService() {
+  Effect.gen(function* buildSoundCueService() {
     const backend = yield* AudioBackendPort
     const captions = yield* CaptionStream
 
