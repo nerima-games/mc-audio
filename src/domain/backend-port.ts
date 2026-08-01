@@ -54,6 +54,7 @@ export const AUDIO_AVAILABILITIES = ['unavailable', 'locked', 'ready'] as const
 export type AudioAvailability = (typeof AUDIO_AVAILABILITIES)[number]
 
 export type ToneRequest = {
+  readonly soundId?: string
   readonly frequency: number
   /** Oscillator waveform; cue authoring may override the sine default. */
   readonly wave?: 'sine' | 'square' | 'sawtooth' | 'triangle'

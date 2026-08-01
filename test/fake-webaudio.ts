@@ -97,12 +97,12 @@
  *    cap as a THRESHOLD (its mapping is testable via `constructionThrows`; the
  *    limit is not observable outside a browser).
  *
- *  - `AudioBufferSourceNode`, `PeriodicWave`, and anything to do with sample
- *    playback, because the adapter has none. When samples land
- *    (`docs/responsibility.md` § assets — the reference ships no audio files at
- *    all), this file grows and this list shrinks by one.
+ *  - `PeriodicWave` and decoded audio data. The adapter receives decoded
+ *    buffers from its host, so the fake only models BufferSource scheduling.
  */
 import type {
+  AudioBufferSourceSurface,
+  AudioBufferSurface,
   AudioContextStateSurface,
   AudioContextSurface,
   AudioNodeSurface,
@@ -142,6 +142,8 @@ export type FakeWebAudioOptions = {
   readonly wiringThrows?: boolean
   /** Creating a cue's stereo panner throws after its oscillator and gain exist. */
   readonly pannerThrows?: boolean
+  /** Creating a decoded-sample source throws, forcing synthesized fallback. */
+  readonly bufferSourceThrows?: boolean
   readonly resumePolicy?: ResumePolicy
   readonly initialState?: AudioContextStateSurface
 }
@@ -329,6 +331,24 @@ class FakeOscillatorNode extends FakeAudioNode implements OscillatorSurface {
   }
 }
 
+class FakeBufferSourceNode extends FakeAudioNode implements AudioBufferSourceSurface {
+  buffer: AudioBufferSurface | null = null
+  loop = false
+  onended: ((event: never) => void) | null = null
+  stopAtSecs: number | null = null
+  ended = false
+
+  start(when?: number): void {
+    this.log.started.push({ node: this.id, atSecs: when ?? 0 })
+  }
+
+  stop(when?: number): void {
+    const at = when ?? 0
+    this.stopAtSecs = at
+    this.log.stopped.push({ node: this.id, atSecs: at })
+  }
+}
+
 export class FakeAudioContext implements AudioContextSurface {
   #state: AudioContextStateSurface
   #currentTime = 0
@@ -342,6 +362,7 @@ export class FakeAudioContext implements AudioContextSurface {
   readonly createStereoPanner?: () => StereoPannerSurface
 
   readonly oscillators: Array<FakeOscillatorNode> = []
+  readonly bufferSources: Array<FakeBufferSourceNode> = []
 
   constructor(
     private readonly options: FakeWebAudioOptions,
@@ -391,6 +412,16 @@ export class FakeAudioContext implements AudioContextSurface {
     return node
   }
 
+  createBufferSource(): AudioBufferSourceSurface {
+    if (this.options.bufferSourceThrows === true) {
+      throw new Error('fake: createBufferSource refused')
+    }
+    const node = new FakeBufferSourceNode(this.log, this.#id('buffer'))
+    this.log.created.push(node.id)
+    this.bufferSources.push(node)
+    return node
+  }
+
   createOscillator(): OscillatorSurface {
     const node = new FakeOscillatorNode(this.log, this.#id('osc'), () => this.#currentTime)
     this.log.created.push(node.id)
@@ -430,14 +461,14 @@ export class FakeAudioContext implements AudioContextSurface {
    */
   advance(seconds: number): void {
     this.#currentTime += seconds
-    for (const oscillator of this.oscillators) {
+    for (const source of [...this.oscillators, ...this.bufferSources]) {
       if (
-        !oscillator.ended &&
-        oscillator.stopAtSecs !== null &&
-        oscillator.stopAtSecs <= this.#currentTime
+        !source.ended &&
+        source.stopAtSecs !== null &&
+        source.stopAtSecs <= this.#currentTime
       ) {
-        oscillator.ended = true
-        dispatch(oscillator.onended)
+        source.ended = true
+        dispatch(source.onended)
       }
     }
   }

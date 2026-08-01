@@ -58,6 +58,78 @@ const withFake = (options: FakeWebAudioOptions = {}) => {
   return { backend: makeWebAudioBackend({ global: fake.global }), fake }
 }
 
+describe('decoded sample playback', () => {
+  it.effect('uses an AudioBufferSource when the host resolves the cue sound id', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        resolveAudioBuffer: (soundId) => soundId === 'block.break' ? { duration: 0.12 } : null,
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'block.break' })
+
+      const context = fake.contexts()[0]
+      expect(context?.bufferSources).toHaveLength(1)
+      expect(context?.oscillators).toHaveLength(0)
+      expect(context?.bufferSources[0]?.buffer?.duration).toBe(0.12)
+      expect(context?.log.edges[1]?.from).toBe('buffer#2')
+    }),
+  )
+
+  it.effect('falls back to the oscillator when a sample cannot be resolved', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        resolveAudioBuffer: () => null,
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'missing' })
+
+      const context = fake.contexts()[0]
+      expect(context?.bufferSources).toHaveLength(0)
+      expect(context?.oscillators).toHaveLength(1)
+    }),
+  )
+
+  it.effect('falls back to the oscillator when BufferSource construction fails', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ bufferSourceThrows: true })
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        resolveAudioBuffer: () => ({ duration: 0.12 }),
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'block.break' })
+
+      const context = fake.contexts()[0]
+      expect(context?.bufferSources).toHaveLength(0)
+      expect(context?.oscillators).toHaveLength(1)
+    }),
+  )
+
+  it.effect('releases a finished BufferSource from polyphony accounting', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        resolveAudioBuffer: () => ({ duration: 0.12 }),
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'block.break' })
+      expect((yield* audio.report).activeTones).toBe(1)
+
+      fake.context()?.advance(1)
+      expect((yield* audio.report).activeTones).toBe(0)
+    }),
+  )
+})
+
 // ---------------------------------------------------------------------------
 // DN-6, row by row. These four are the ones the reference does not have.
 // ---------------------------------------------------------------------------

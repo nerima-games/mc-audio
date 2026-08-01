@@ -134,6 +134,7 @@ export const planCue = (
       }),
       loop: false,
       pan: spatialisation.pan,
+      soundId: cueId,
       wave: definition.wave,
     },
   }

@@ -84,8 +84,10 @@ import {
 import { RELEASE_SECS, type ToneEnvelope, drivenFrequency, gainAt, toneEnvelope } from './envelope'
 import { clamp01, clampPan } from './volume'
 import type {
+  AudioBufferSurface,
   AudioContextStateSurface,
   AudioContextSurface,
+  AudioScheduledSourceSurface,
   GainSurface,
   OscillatorSurface,
   OscillatorWave,
@@ -124,6 +126,8 @@ export type WebAudioOptions = {
   readonly initialMasterGain?: number
   /** Maximum active tones. Additional cues are discarded and reported. */
   readonly maxConcurrentTones?: number
+  /** Resolves an already-decoded sample; missing/failed samples use synthesis. */
+  readonly resolveAudioBuffer?: (soundId: string) => AudioBufferSurface | null
 }
 
 /**
@@ -234,7 +238,7 @@ export const availabilityForState = (state: AudioContextStateSurface): AudioAvai
 }
 
 type ActiveTone = {
-  readonly oscillator: OscillatorSurface
+  readonly source: AudioScheduledSourceSurface
   readonly gain: GainSurface
   readonly panner: StereoPannerSurface | null
   /**
@@ -406,7 +410,7 @@ export const makeWebAudioBackend = (
 
     const releaseTone = (tone: ActiveTone): Effect.Effect<void> =>
       Effect.gen(function*  releaseTone() {
-        yield* ignoringFailure(() => tone.oscillator.disconnect())
+        yield* ignoringFailure(() => tone.source.disconnect())
         yield* ignoringFailure(() => tone.gain.disconnect())
         const {panner} = tone
         if (panner !== null) {
@@ -456,13 +460,30 @@ export const makeWebAudioBackend = (
         const built = yield* Effect.try({
           catch: (cause) => cause,
           try: (): ActiveTone => {
-            let oscillator: OscillatorSurface | null = null
+            let source: AudioScheduledSourceSurface | null = null
             let gain: GainSurface | null = null
             let panner: StereoPannerSurface | null = null
             try {
-              oscillator = context.createOscillator()
-              oscillator.type = request.wave ?? DEFAULT_TONE_WAVE
-              oscillator.frequency.value = drivenFrequency(request.frequency)
+              if (request.soundId !== undefined && options.resolveAudioBuffer !== undefined) {
+                try {
+                  const buffer = options.resolveAudioBuffer(request.soundId)
+                  const createBufferSource = context.createBufferSource
+                  if (buffer !== null && createBufferSource !== undefined) {
+                    const bufferSource = createBufferSource.call(context)
+                    bufferSource.buffer = buffer
+                    bufferSource.loop = request.loop
+                    source = bufferSource
+                  }
+                } catch {
+                  // A sample resolver or source failure must not silence the cue.
+                }
+              }
+              if (source === null) {
+                const oscillator: OscillatorSurface = context.createOscillator()
+                oscillator.type = request.wave ?? DEFAULT_TONE_WAVE
+                oscillator.frequency.value = drivenFrequency(request.frequency)
+                source = oscillator
+              }
 
               gain = context.createGain()
               for (const point of envelope.points) {
@@ -473,7 +494,7 @@ export const makeWebAudioBackend = (
                 }
               }
 
-              oscillator.connect(gain)
+              source.connect(gain)
 
               const createPanner = context.createStereoPanner
               panner = stereo && createPanner !== undefined ? createPanner.call(context) : null
@@ -486,9 +507,9 @@ export const makeWebAudioBackend = (
                 panner.connect(master)
               }
 
-              return { oscillator, gain, panner, envelope }
+              return { envelope, gain, panner, source }
             } catch (cause) {
-              for (const node of [oscillator, gain, panner]) {
+              for (const node of [source, gain, panner]) {
                 try {
                   node?.disconnect()
                 } catch {
@@ -508,7 +529,7 @@ export const makeWebAudioBackend = (
         yield* Ref.update(activeRef, (current) => new Map(current).set(id, built))
 
         yield* ignoringFailure(() => {
-          built.oscillator.onended = () => {
+          built.source.onended = () => {
             Effect.runSync(
               Effect.gen(function*  onended() {
                 yield* releaseTone(built)
@@ -523,9 +544,9 @@ export const makeWebAudioBackend = (
         })
 
         yield* ignoringFailure(() => {
-          built.oscillator.start(envelope.startSecs)
+          built.source.start(envelope.startSecs)
           if (envelope.stopAtSecs !== null) {
-            built.oscillator.stop(envelope.stopAtSecs)
+            built.source.stop(envelope.stopAtSecs)
           }
         })
 
@@ -558,7 +579,7 @@ export const makeWebAudioBackend = (
           tone.gain.gain.cancelScheduledValues(now)
           tone.gain.gain.setValueAtTime(gainAt(tone.envelope, now), now)
           tone.gain.gain.linearRampToValueAtTime(0, now + RELEASE_SECS)
-          tone.oscillator.stop(now + RELEASE_SECS)
+          tone.source.stop(now + RELEASE_SECS)
         })
       })
 
@@ -663,7 +684,7 @@ export const makeWebAudioBackend = (
         return
       }
       for (const tone of (yield* Ref.get(activeRef)).values()) {
-        yield* ignoringFailure(() => tone.oscillator.stop())
+        yield* ignoringFailure(() => tone.source.stop())
         yield* releaseTone(tone)
       }
       yield* Ref.set(activeRef, new Map())

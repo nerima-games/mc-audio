@@ -34,6 +34,8 @@
  * by `pnpm check:deps`.
  */
 import type {
+  AudioBufferSourceSurface,
+  AudioBufferSurface,
   AudioContextConstructorSurface,
   AudioContextStateSurface,
   AudioContextSurface,
@@ -47,6 +49,8 @@ import type {
 } from '../../src/domain/webaudio-surface'
 
 declare const browserContext: AudioContext
+declare const browserBuffer: AudioBuffer
+declare const browserBufferSource: AudioBufferSourceNode
 declare const browserNode: AudioNode
 declare const browserParam: AudioParam
 declare const browserOscillator: OscillatorNode
@@ -57,6 +61,8 @@ declare const browserState: AudioContextState
 declare const browserWave: OscillatorType
 
 export const contextIsAnAudioContextSurface: AudioContextSurface = browserContext
+export const bufferIsAnAudioBufferSurface: AudioBufferSurface = browserBuffer
+export const bufferSourceIsAnAudioBufferSourceSurface: AudioBufferSourceSurface = browserBufferSource
 export const nodeIsAnAudioNodeSurface: AudioNodeSurface = browserNode
 export const paramIsAnAudioParamSurface: AudioParamSurface = browserParam
 export const oscillatorIsAnOscillatorSurface: OscillatorSurface = browserOscillator
