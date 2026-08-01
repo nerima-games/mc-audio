@@ -63,11 +63,11 @@
  *    pure parts; `pnpm preview` is not a gate.
  */
 import { Effect, Layer, Ref } from 'effect'
-import { AudioBackendPort } from '../../domain/backend-port'
-import { CaptionStream, type CaptionEvent } from '../../domain/caption'
-import { isSoundCueId, SOUND_CUE_IDS } from '../../domain/cue'
-import { makeSoundCueService } from '../../domain/engine'
-import { makeWebAudioBackend, type WebAudioBackend } from '../../domain/webaudio-adapter'
+import { AudioBackendPort } from '../../src/domain/backend-port'
+import { CaptionStream, type CaptionEvent } from '../../src/domain/caption'
+import { isSoundCueId, SOUND_CUE_IDS } from '../../src/domain/cue'
+import { makeSoundCueService } from '../../src/domain/engine'
+import { makeWebAudioBackend, type WebAudioBackend } from '../../src/domain/webaudio-adapter'
 import { makeFakeWebAudio, type FakeAudioContext } from '../../test/fake-webaudio'
 import { makeStyle } from './ansi'
 import { parseArguments, USAGE, type PreviewOptions } from './options'

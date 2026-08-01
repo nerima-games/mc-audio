@@ -112,7 +112,7 @@ import type {
   OscillatorWave,
   StereoPannerSurface,
   WebAudioGlobalSurface,
-} from '../domain/webaudio-surface'
+} from '../src/domain/webaudio-surface'
 
 /** How `resume()` behaves. All three happen in real browsers. */
 export type ResumePolicy =

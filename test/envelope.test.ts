@@ -20,7 +20,7 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
-import type { ToneRequest } from '../domain/backend-port'
+import type { ToneRequest } from '../src/domain/backend-port'
 import {
   ATTACK_SECS,
   drivenFrequency,
@@ -29,7 +29,7 @@ import {
   MIN_FREQUENCY_HZ,
   RELEASE_SECS,
   toneEnvelope,
-} from '../domain/envelope'
+} from '../src/domain/envelope'
 
 const tone = (overrides: Partial<ToneRequest> = {}): ToneRequest => ({
   frequency: 220,
