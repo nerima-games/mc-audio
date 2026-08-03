@@ -112,9 +112,9 @@ describe('the narrow Web Audio surface', () => {
       // the ground that `pnpm api:check` and `pnpm check:deps` both scan
       // exactly this project.
       const shipped = [
-        'domain/webaudio-adapter.ts',
-        'domain/webaudio-surface.ts',
-        'domain/envelope.ts',
+        'src/domain/webaudio-adapter.ts',
+        'src/domain/webaudio-surface.ts',
+        'src/domain/envelope.ts',
       ]
       for (const file of shipped) {
         expect(parsed.fileNames.some((name) => name.endsWith(file))).toBe(true)

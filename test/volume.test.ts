@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
-import { planCue, type CueContext } from '../domain/engine'
+import { planCue, type CueContext } from '../src/domain/engine'
 import {
   clamp01,
   clampPan,
@@ -12,8 +12,8 @@ import {
   spatialise,
   SPATIAL_DISTANCE_SCALE,
   VOLUME_CATEGORIES,
-} from '../domain/volume'
-import { musicTrackGain, MUSIC_TRACKS } from '../domain/music'
+} from '../src/domain/volume'
+import { musicTrackGain, MUSIC_TRACKS } from '../src/domain/music'
 
 const LISTENER = { x: 0, y: 64, z: 0 }
 

@@ -6,7 +6,7 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["index.ts", "domain/**/*.ts", "test/**/*.ts", "scripts/**/*.ts", "vitest.config.ts"],
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts", "vitest.config.ts"],
   // `test/fixtures/**` is excluded on purpose: it names `AudioContext`,
   // `OscillatorNode` and friends, which this project has no `lib.DOM` for. It is
   // compiled BY a test (`test/webaudio-surface.test.ts`) with DOM turned on, and

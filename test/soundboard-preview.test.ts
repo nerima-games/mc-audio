@@ -18,11 +18,11 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer, Option, Ref } from 'effect'
-import { AudioBackendPort } from '../domain/backend-port'
-import { CaptionStream, type CaptionEvent } from '../domain/caption'
-import { SOUND_CUE_IDS } from '../domain/cue'
-import { makeSoundCueService } from '../domain/engine'
-import { makeWebAudioBackend } from '../domain/webaudio-adapter'
+import { AudioBackendPort } from '../src/domain/backend-port'
+import { CaptionStream, type CaptionEvent } from '../src/domain/caption'
+import { SOUND_CUE_IDS } from '../src/domain/cue'
+import { makeSoundCueService } from '../src/domain/engine'
+import { makeWebAudioBackend } from '../src/domain/webaudio-adapter'
 import { makeStyle, bar, bipolarBar, sparkline, visibleLength } from '../apps/preview-soundboard/ansi'
 import { parseArguments } from '../apps/preview-soundboard/options'
 import {

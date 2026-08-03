@@ -13,12 +13,18 @@
 
 ## 2. なぜまだ公開しないのか
 
-plan.md §6 Step 0 / §8:
+plan.md §6 Step 0 / §8 は元々「界面安定（4 週間 API ロック無変更）まで npm 公開・バージョン
+bump 運用を開始しない」という日数計測ベースのゲートを想定していたが、この自動凍結ゲートと
+その根拠だった `api-lock.md` は org 全体で廃止された
+（[API_STANDARD.md §4](https://github.com/nerima-games/.github/blob/main/API_STANDARD.md#4-自動-apiロックスナップショットツールは使わない)）。
+現在の方針は次の通り:
 
-> npm 公開・バージョン bump 運用は**界面安定（4 週間 API ロック無変更）まで開始しない**
->
-> リスク「新規構築初期は全界面が高 churn」→ 対策「npm 公開を遅らせ dev-meta workspace で開発。
-> bump 連鎖を構造的に回避」
+> npm 公開・バージョン bump、および 0.x → 1.0.0 への昇格は、日数計測などの自動ゲートを設けず
+> **maintainer(take)による裁量判断のみ**で行う
+> （[RELEASE_STANDARD.md §4.2](https://github.com/nerima-games/.github/blob/main/RELEASE_STANDARD.md#42-新しい昇格ポリシー人間による裁量判断)）。
+
+リスク「新規構築初期は全界面が高 churn」への対策（npm 公開を遅らせ dev-meta workspace で開発し、
+bump 連鎖を構造的に回避する)という判断自体は変わらない。
 
 16 リポジトリが互いに依存している状態で早期に publish を始めると、
 kernel の些細な変更が 15 リポジトリの version bump を誘発する。
@@ -34,9 +40,9 @@ kernel の些細な変更が 15 リポジトリの version bump を誘発する�
 - 何も publish されていないので、`@nerima-games/mc-kernel` は解決できない
 - スケルトンには import すべき兄弟のコードがまだ無い
 
-意図された依存グラフは**コードとドキュメントの側に**記録してある:
+意図された依存グラフは**ドキュメントの側に**記録してある:
 
-- `scripts/check-dependency-whitelist.ts` の `REPOSITORY_POLICY.dependencyGraph`（16 行全部）
+- [DEPENDENCY_POLICY.md §1](https://github.com/nerima-games/.github/blob/main/DEPENDENCY_POLICY.md#1-4層の依存グラフエッジレベル)(16リポジトリ全部のエッジ一覧。実効機構は `.oxlintrc.json` の `no-restricted-imports`)
 - [architecture.md](./architecture.md) の Mermaid 図
 
 publish 開始時に、ボトムアップ（kernel → 各 tier1 → worldgen → …）で
@@ -58,7 +64,8 @@ mc-audio の場合、具体的には:
 
 1. `mx-gameplay` が実際にキューを発火している（採掘・Mob・天候）
 2. `mx-ui` が実際に字幕を購読して表示し、音量 UI を提供している
-3. その状態で API を 4 週間変更していない（plan.md §6 Step 3 の API ロック条件）
+3. 上記の消費・動作確認を踏まえ、maintainer が昇格を裁量判断する。日数計測などの
+   自動ゲートは設けない([RELEASE_STANDARD.md §4.2](https://github.com/nerima-games/.github/blob/main/RELEASE_STANDARD.md#42-新しい昇格ポリシー人間による裁量判断))
 4. WebAudio アダプタが実装済みで、`locked` → `ready` のアンロックが実ブラウザで動く
 5. **キューロスターが確定している** — 現在は暫定 9 個。
    ロスターは公開 API の一部であり、キューの追加は semver-minor だが、

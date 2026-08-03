@@ -5,10 +5,10 @@ import {
   makeRecordingBackend,
   type AudioAvailability,
   type ToneRequest,
-} from '../domain/backend-port'
-import { CaptionStream, type CaptionEvent } from '../domain/caption'
-import { makeSoundCueService, planCue, type CueContext } from '../domain/engine'
-import { DEFAULT_VOLUME_SETTINGS } from '../domain/volume'
+} from '../src/domain/backend-port'
+import { CaptionStream, type CaptionEvent } from '../src/domain/caption'
+import { makeSoundCueService, planCue, type CueContext } from '../src/domain/engine'
+import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
 
 /**
  * ---------------------------------------------------------------------------

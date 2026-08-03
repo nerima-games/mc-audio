@@ -16,23 +16,23 @@
  * adapter never built.
  */
 import { Option } from 'effect'
-import type { CaptionEvent } from '../../domain/caption'
-import { SOUND_CUE_IDS, type SoundCueId } from '../../domain/cue'
-import type { CueContext } from '../../domain/engine'
+import type { CaptionEvent } from '../../src/domain/caption'
+import { SOUND_CUE_IDS, type SoundCueId } from '../../src/domain/cue'
+import type { CueContext } from '../../src/domain/engine'
 import {
   DEFAULT_CAVE_THRESHOLD_Y,
   resolveMusicEnvironment,
   resolveMusicPlan,
   type MusicEnvironment,
   type MusicPlan,
-} from '../../domain/music'
+} from '../../src/domain/music'
 import {
   DEFAULT_VOLUME_SETTINGS,
   type Vec3,
   type VolumeCategory,
   type VolumeSettings,
-} from '../../domain/volume'
-import type { AudioAvailability } from '../../domain/backend-port'
+} from '../../src/domain/volume'
+import type { AudioAvailability } from '../../src/domain/backend-port'
 
 export const PANELS = ['board', 'graph', 'mix', 'music'] as const
 
