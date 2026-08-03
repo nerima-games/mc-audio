@@ -1,3 +1,4 @@
+/* oxlint-disable func-names, id-length, max-statements, no-magic-numbers, no-ternary, prefer-destructuring, sort-imports -- Effect generator tests use framework callbacks, tuple coordinates, and exact audio timing/gain assertions whose literals are the specification. */
 /**
  * The WebAudio adapter.
  *
@@ -33,30 +34,168 @@
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer, Ref } from 'effect'
 import { AudioBackendPort, type ToneRequest } from '../src/domain/backend-port'
-import { CaptionStream, type CaptionEvent } from '../src/domain/caption'
+import { type CaptionEvent, CaptionStream } from '../src/domain/caption'
 import { makeSoundCueService } from '../src/domain/engine'
 import { ATTACK_SECS, RELEASE_SECS } from '../src/domain/envelope'
 import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
 import {
-  availabilityForState,
   DEFAULT_TONE_WAVE,
+  availabilityForState,
   makeWebAudioBackend,
   webAudioBackendLayer,
 } from '../src/domain/webaudio-adapter'
-import { makeFakeWebAudio, type FakeWebAudioOptions } from './fake-webaudio'
+import { type FakeWebAudioOptions, makeFakeWebAudio } from './fake-webaudio'
 
 const CUE: ToneRequest = {
-  frequency: 220,
   durationSecs: 0.07,
+  frequency: 220,
   gain: 0.4,
-  pan: -0.5,
   loop: false,
+  pan: -0.5,
 }
 
 const withFake = (options: FakeWebAudioOptions = {}) => {
   const fake = makeFakeWebAudio(options)
-  return { fake, backend: makeWebAudioBackend({ global: fake.global }) }
+  return { backend: makeWebAudioBackend({ global: fake.global }), fake }
 }
+
+describe('decoded sample playback', () => {
+  it.effect('loads URL and ArrayBuffer samples once, then plays the cached buffer', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ decodedDurationSecs: 0.25 })
+      let urlLoads = 0
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        loadSampleData: async () => {
+          urlLoads += 1
+          return new ArrayBuffer(4)
+        },
+        sampleManifest: {
+          'block.break': { kind: 'url', url: '/audio/block-break.ogg' },
+          'player.hurt': { data: new ArrayBuffer(8), kind: 'array-buffer' },
+        },
+      })
+
+      expect(yield* audio.preloadSamples()).toEqual({ cached: 0, failed: 0, loaded: 2, requested: 2 })
+      expect(yield* audio.preloadSamples()).toEqual({ cached: 2, failed: 0, loaded: 0, requested: 2 })
+      expect(urlLoads).toBe(1)
+      expect(fake.context()?.decodedData).toHaveLength(2)
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'block.break' })
+      expect(fake.context()?.bufferSources[0]?.buffer?.duration).toBe(0.25)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+    }),
+  )
+
+  it.effect('deduplicates concurrent loads of the same sample', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      let urlLoads = 0
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        loadSampleData: async () => {
+          urlLoads += 1
+          await Promise.resolve()
+          return new ArrayBuffer(4)
+        },
+        sampleManifest: { step: { kind: 'url', url: '/audio/step.ogg' } },
+      })
+
+      yield* Effect.all([audio.preloadSamples(['step']), audio.preloadSamples(['step'])], {
+        concurrency: 'unbounded',
+      })
+      expect(urlLoads).toBe(1)
+      expect(fake.context()?.decodedData).toHaveLength(1)
+    }),
+  )
+
+  it.effect('reports decode failure and retains oscillator fallback', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ decodeThrows: true })
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        sampleManifest: { missing: { data: new ArrayBuffer(4), kind: 'array-buffer' } },
+      })
+
+      expect(yield* audio.preloadSamples(['missing'])).toEqual({ cached: 0, failed: 1, loaded: 0, requested: 1 })
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'missing' })
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(1)
+    }),
+  )
+
+  it.effect('uses an AudioBufferSource when the host resolves the cue sound id', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        resolveAudioBuffer: (soundId) => soundId === 'block.break' ? { duration: 0.12 } : null,
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'block.break' })
+
+      const context = fake.contexts()[0]
+      expect(context?.bufferSources).toHaveLength(1)
+      expect(context?.oscillators).toHaveLength(0)
+      expect(context?.bufferSources[0]?.buffer?.duration).toBe(0.12)
+      expect(context?.log.edges[1]?.from).toBe('buffer#2')
+    }),
+  )
+
+  it.effect('falls back to the oscillator when a sample cannot be resolved', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        resolveAudioBuffer: () => null,
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'missing' })
+
+      const context = fake.contexts()[0]
+      expect(context?.bufferSources).toHaveLength(0)
+      expect(context?.oscillators).toHaveLength(1)
+    }),
+  )
+
+  it.effect('falls back to the oscillator when BufferSource construction fails', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ bufferSourceThrows: true })
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        resolveAudioBuffer: () => ({ duration: 0.12 }),
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'block.break' })
+
+      const context = fake.contexts()[0]
+      expect(context?.bufferSources).toHaveLength(0)
+      expect(context?.oscillators).toHaveLength(1)
+    }),
+  )
+
+  it.effect('releases a finished BufferSource from polyphony accounting', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        resolveAudioBuffer: () => ({ duration: 0.12 }),
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'block.break' })
+      expect((yield* audio.report).activeTones).toBe(1)
+
+      fake.context()?.advance(1)
+      expect((yield* audio.report).activeTones).toBe(0)
+    }),
+  )
+})
 
 // ---------------------------------------------------------------------------
 // DN-6, row by row. These four are the ones the reference does not have.
@@ -69,7 +208,7 @@ describe('DN-6 — the AudioContext is created under a guard', () => {
       Effect.gen(function* () {
         // Node, SSR, a browser without Web Audio. The reference returned
         // `Option.none()` here too and that part was right; what it could not
-        // do was let anybody TEST it.
+        // Do was let anybody TEST it.
         const { fake, backend } = withFake({ present: false })
         const audio = yield* backend
 
@@ -91,7 +230,7 @@ describe('DN-6 — the AudioContext is created under a guard', () => {
   it.effect("a context that throws on construction yields 'unavailable', not a defect", () =>
     Effect.gen(function* () {
       // Chrome caps hardware contexts at six per page and throws on the
-      // seventh. `Effect.try` + catch, exactly as the reference did
+      // Seventh. `Effect.try` + catch, exactly as the reference did
       // (`acquireAudioContext`) — that shape was worth porting.
       const { fake, backend } = withFake({ constructionThrows: true })
       const audio = yield* backend
@@ -109,8 +248,8 @@ describe('DN-6 — the AudioContext is created under a guard', () => {
   it.effect('the context is created lazily, at the first cue, not at layer construction', () =>
     Effect.gen(function* () {
       // Building the Layer must not touch the audio hardware. A page that
-      // wires mc-audio into its Layer graph at start-up should not thereby ask
-      // the device for anything.
+      // Wires mc-audio into its Layer graph at start-up should not thereby ask
+      // The device for anything.
       const fake = makeFakeWebAudio()
       const layer = webAudioBackendLayer({ global: fake.global })
 
@@ -129,20 +268,20 @@ describe('DN-6 — the AudioContext is created under a guard', () => {
   it.effect('captions still fire when the context is unavailable', () =>
     Effect.gen(function* () {
       // DN-1 gate 3, now against the REAL adapter rather than a recording
-      // stand-in. This is the row `docs/design-notes.md` marks as the point of
-      // writing the adapter at all: the invariant was pinned for a fake
-      // backend, and this is the first time it is pinned for the code that
-      // will actually run in a browser.
+      // Stand-in. This is the row `docs/design-notes.md` marks as the point of
+      // Writing the adapter at all: the invariant was pinned for a fake
+      // Backend, and this is the first time it is pinned for the code that
+      // Will actually run in a browser.
       const { backend } = withFake({ present: false })
       const audio = yield* backend
       const log = yield* Ref.make<ReadonlyArray<CaptionEvent>>([])
 
       const service = yield* makeSoundCueService({
         context: Effect.map(audio.availability, (availability) => ({
-          settings: DEFAULT_VOLUME_SETTINGS,
-          enabled: true,
           availability,
+          enabled: true,
           listener: { x: 0, y: 64, z: 0 },
+          settings: DEFAULT_VOLUME_SETTINGS,
         })),
         nowSecs: Effect.succeed(1),
       }).pipe(
@@ -175,8 +314,8 @@ describe("the user-gesture unlock: 'locked' before, 'ready' after", () => {
     Effect.gen(function* () {
       // `docs/testing.md` §4-2 makes this a completion criterion, and
       // `docs/public-api.md` §7 lists it as new design rather than porting: a
-      // grep of the reference for `webkitAudioContext|autoplay|userGesture|
-      // unlock` returns nothing.
+      // Grep of the reference for `webkitAudioContext|autoplay|userGesture|
+      // Unlock` returns nothing.
       const { backend } = withFake({ resumePolicy: 'allow' })
       const audio = yield* backend
 
@@ -190,7 +329,7 @@ describe("the user-gesture unlock: 'locked' before, 'ready' after", () => {
     Effect.gen(function* () {
       // Chrome with no user activation. The reference did
       // `Effect.catchAllCause(() => Effect.void)` here and then built the
-      // oscillator anyway.
+      // Oscillator anyway.
       const { backend } = withFake({ resumePolicy: 'reject' })
       const audio = yield* backend
 
@@ -206,10 +345,10 @@ describe("the user-gesture unlock: 'locked' before, 'ready' after", () => {
   it.effect('a RESOLVED resume() that left the context suspended is still locked', () =>
     Effect.gen(function* () {
       // Safari does this, and it is the one that fools code trusting the
-      // promise. `unlock` re-reads `state` afterwards for exactly this case;
-      // an implementation that returned 'ready' on resolution would be green
-      // against `resumePolicy: 'reject'` and wrong on the platform where audio
-      // is most fragile.
+      // Promise. `unlock` re-reads `state` afterwards for exactly this case;
+      // An implementation that returned 'ready' on resolution would be green
+      // Against `resumePolicy: 'reject'` and wrong on the platform where audio
+      // Is most fragile.
       const { backend } = withFake({ resumePolicy: 'refuse' })
       const audio = yield* backend
 
@@ -222,8 +361,8 @@ describe("the user-gesture unlock: 'locked' before, 'ready' after", () => {
     Effect.gen(function* () {
       // `'interrupted'` is the fourth AudioContextState, found by compiling
       // `test/fixtures/webaudio-surface.ts` against the real lib.dom.d.ts. An
-      // adapter that had never heard of it treats "not suspended" as running
-      // and labels its captions `audible` for sound nobody can hear.
+      // Adapter that had never heard of it treats "not suspended" as running
+      // And labels its captions `audible` for sound nobody can hear.
       const { fake, backend } = withFake()
       const audio = yield* backend
 
@@ -241,8 +380,8 @@ describe("the user-gesture unlock: 'locked' before, 'ready' after", () => {
       expect(yield* audio.availability).toBe('ready')
 
       // Both edges were observed, which polling `state` between cues could not
-      // have done: an interruption that begins and ends between two cues leaves
-      // no other trace.
+      // Have done: an interruption that begins and ends between two cues leaves
+      // No other trace.
       expect((yield* audio.report).spontaneousStateChanges).toBeGreaterThanOrEqual(2)
     }),
   )
@@ -250,7 +389,7 @@ describe("the user-gesture unlock: 'locked' before, 'ready' after", () => {
   it.effect("a closed context is 'unavailable', not 'locked' — no gesture revives it", () =>
     Effect.gen(function* () {
       // The distinction `locked` exists to draw. Reporting `locked` here would
-      // leave a UI showing a "click to enable sound" button that can never work.
+      // Leave a UI showing a "click to enable sound" button that can never work.
       const { backend } = withFake()
       const audio = yield* backend
 
@@ -286,7 +425,7 @@ describe('a refused cue builds no nodes and is discarded, never queued', () => {
 
       const context = fake.context()
       // The master gain and its edge to destination exist — the context was
-      // created and wired. What must NOT exist is an oscillator.
+      // Created and wired. What must NOT exist is an oscillator.
       expect(context?.log.created.filter((id) => id.startsWith('osc'))).toStrictEqual([])
       expect(context?.log.started).toStrictEqual([])
       expect((yield* audio.report).refusedTones).toBe(2)
@@ -296,8 +435,8 @@ describe('a refused cue builds no nodes and is discarded, never queued', () => {
   it.effect('does not replay refused cues after unlocking', () =>
     Effect.gen(function* () {
       // The policy `domain/webaudio-adapter.ts` argues for: a block-break sound
-      // played at unlock time is about a block that is no longer there. The
-      // information already went out as a caption with reason 'gate-blocked'.
+      // Played at unlock time is about a block that is no longer there. The
+      // Information already went out as a caption with reason 'gate-blocked'.
       const { fake, backend } = withFake({ resumePolicy: 'allow' })
       const audio = yield* backend
 
@@ -315,7 +454,7 @@ describe('a refused cue builds no nodes and is discarded, never queued', () => {
         'osc#2',
       ])
       // The counter is not reset: two cues really were missed, and that stays
-      // reportable.
+      // Reportable.
       expect((yield* audio.report).refusedTones).toBe(2)
     }),
   )
@@ -323,15 +462,15 @@ describe('a refused cue builds no nodes and is discarded, never queued', () => {
   it.effect('still allocates a handle when refused, which is a documented trap', () =>
     Effect.gen(function* () {
       // `docs/public-api.md` §3 keeps this shape on purpose so that every
-      // backend behaves the same: "I got a handle" never means "it played"
-      // anywhere in this repository. Branch on `availability`.
+      // Backend behaves the same: "I got a handle" never means "it played"
+      // Anywhere in this repository. Branch on `availability`.
       const { backend } = withFake({ resumePolicy: 'reject' })
       const audio = yield* backend
 
       expect((yield* audio.playTone(CUE)).id).toBe(1)
       expect((yield* audio.playTone(CUE)).id).toBe(2)
       // What is different here: the refusal is COUNTED, so the trap is at
-      // least observable from outside.
+      // Least observable from outside.
       expect((yield* audio.report).refusedTones).toBe(2)
     }),
   )
@@ -363,7 +502,7 @@ describe('the node graph the adapter builds', () => {
   it.effect('falls back to a MONO graph when createStereoPanner is absent', () =>
     Effect.gen(function* () {
       // Safari before 14.1. Connecting to master and leaving `pan` unapplied
-      // would make every spatialised cue sound centred, which reads as
+      // Would make every spatialised cue sound centred, which reads as
       // "spatialisation is broken" rather than "this browser cannot pan".
       const { fake, backend } = withFake({ stereo: false })
       const audio = yield* backend
@@ -378,7 +517,7 @@ describe('the node graph the adapter builds', () => {
         { from: 'gain#3', to: 'gain#1' },
       ])
       // ...and the report SAYS so, which is the part that makes it a fallback
-      // rather than a silent degradation.
+      // Rather than a silent degradation.
       expect((yield* audio.report).stereo).toBe(false)
     }),
   )
@@ -387,7 +526,7 @@ describe('the node graph the adapter builds', () => {
     Effect.gen(function* () {
       // The reference used a 3D PannerNode with `positionX = pan * 10`
       // (`audio-engine.ts:74-77`), an unexplained fabricated coordinate that
-      // does not equal the stereo pan it stood in for.
+      // Does not equal the stereo pan it stood in for.
       const { fake, backend } = withFake()
       const audio = yield* backend
       yield* audio.unlock
@@ -395,8 +534,55 @@ describe('the node graph the adapter builds', () => {
 
       const panCalls = fake.context()?.log.params.filter((call) => call.param === 'pan')
       expect(panCalls).toStrictEqual([
-        { node: 'panner#4', param: 'pan', kind: 'assign', value: -0.5, atSecs: 0 },
+        { atSecs: 0, kind: 'assign', node: 'panner#4', param: 'pan', value: -0.5 },
       ])
+    }),
+  )
+
+  it.effect('carries listener-relative pan from cue policy into the Web Audio panner', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake()
+      const audio = yield* backend
+      yield* audio.unlock
+
+      const service = yield* makeSoundCueService({
+        context: Effect.succeed({
+          availability: 'ready' as const,
+          enabled: true,
+          listener: { x: 0, y: 64, z: 0 },
+          listenerForward: { x: 1, y: 0, z: 0 },
+          settings: DEFAULT_VOLUME_SETTINGS,
+        }),
+        nowSecs: Effect.succeed(1),
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            Layer.succeed(AudioBackendPort, audio),
+            Layer.succeed(CaptionStream, { emit: () => Effect.void }),
+          ),
+        ),
+      )
+
+      yield* service.play('blockBreak', { position: { x: 0, y: 64, z: 6 } })
+
+      expect(fake.context()?.log.params.filter((call) => call.param === 'pan')).toStrictEqual([
+        { atSecs: 0, kind: 'assign', node: 'panner#4', param: 'pan', value: 0.5 },
+      ])
+    }),
+  )
+
+  it.effect('disconnects partial cue nodes when panner construction fails', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake({ pannerThrows: true })
+      const audio = yield* backend
+      yield* audio.unlock
+
+      yield* audio.playTone(CUE)
+
+      expect(fake.context()?.log.created).toStrictEqual(['gain#1', 'osc#2', 'gain#3'])
+      expect(fake.context()?.log.disconnected).toStrictEqual(['osc#2', 'gain#3'])
+      expect((yield* audio.report).activeTones).toBe(0)
+      expect((yield* audio.report).refusedTones).toBe(1)
     }),
   )
 
@@ -404,7 +590,7 @@ describe('the node graph the adapter builds', () => {
     Effect.gen(function* () {
       // The whole reason `domain/envelope.ts` exists. A flat `gain.value` plus
       // `oscillator.stop()` is `audio-engine.ts:59` and `:104`, and it clicks
-      // at both ends.
+      // At both ends.
       const { fake, backend } = withFake()
       const audio = yield* backend
       yield* audio.unlock
@@ -416,10 +602,10 @@ describe('the node graph the adapter builds', () => {
       )
 
       expect(cueGain).toStrictEqual([
-        { node: 'gain#3', param: 'gain', kind: 'set', value: 0, atSecs: 0 },
-        { node: 'gain#3', param: 'gain', kind: 'ramp', value: 0.4, atSecs: ATTACK_SECS },
-        { node: 'gain#3', param: 'gain', kind: 'set', value: 0.4, atSecs: 0.07 - RELEASE_SECS },
-        { node: 'gain#3', param: 'gain', kind: 'ramp', value: 0, atSecs: 0.07 },
+        { atSecs: 0, kind: 'set', node: 'gain#3', param: 'gain', value: 0 },
+        { atSecs: ATTACK_SECS, kind: 'ramp', node: 'gain#3', param: 'gain', value: 0.4 },
+        { atSecs: 0.07 - RELEASE_SECS, kind: 'set', node: 'gain#3', param: 'gain', value: 0.4 },
+        { atSecs: 0.07, kind: 'ramp', node: 'gain#3', param: 'gain', value: 0 },
       ])
     }),
   )
@@ -428,9 +614,9 @@ describe('the node graph the adapter builds', () => {
     Effect.gen(function* () {
       // `pnpm check:deps` bans `Date.now()`, `new Date()` and
       // `performance.now()`, and the `mc-kernel-allow-time-source` escape hatch
-      // is NOT taken anywhere in this repository. Scheduling rides
+      // Is NOT taken anywhere in this repository. Scheduling rides
       // `context.currentTime`, which is the device's own monotonic clock —
-      // anticipated by `docs/public-api.md` §7 and true.
+      // Anticipated by `docs/public-api.md` §7 and true.
       const { fake, backend } = withFake()
       const audio = yield* backend
       yield* audio.unlock
@@ -438,16 +624,13 @@ describe('the node graph the adapter builds', () => {
       fake.context()?.advance(5)
       yield* audio.playTone(CUE)
 
-      expect(fake.context()?.log.started).toStrictEqual([{ node: 'osc#2', atSecs: 5 }])
-      expect(fake.context()?.log.stopped).toStrictEqual([{ node: 'osc#2', atSecs: 5.07 }])
+      expect(fake.context()?.log.started).toStrictEqual([{ atSecs: 5, node: 'osc#2' }])
+      expect(fake.context()?.log.stopped).toStrictEqual([{ atSecs: 5.07, node: 'osc#2' }])
     }),
   )
 
-  it.effect('sets the waveform, and it is the one constant this adapter has to pick', () =>
+  it.effect('uses the default waveform when the caller does not author one', () =>
     Effect.gen(function* () {
-      // `ToneRequest` has no `wave` field, so the reference's per-track
-      // waveforms (day sine / night triangle / cave sawtooth) are unreachable.
-      // Pinned so that the loss is a visible line rather than a silent default.
       const { fake, backend } = withFake()
       const audio = yield* backend
       yield* audio.unlock
@@ -455,6 +638,17 @@ describe('the node graph the adapter builds', () => {
 
       expect(fake.context()?.oscillators[0]?.type).toBe(DEFAULT_TONE_WAVE)
       expect(DEFAULT_TONE_WAVE).toBe('sine')
+    }),
+  )
+
+  it.effect('applies an authored waveform to the oscillator', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake()
+      const audio = yield* backend
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, wave: 'sawtooth' })
+
+      expect(fake.context()?.oscillators[0]?.type).toBe('sawtooth')
     }),
   )
 
@@ -483,8 +677,8 @@ describe('the master gain node', () => {
   it.effect('is the only place master turns into a number on the graph', () =>
     Effect.gen(function* () {
       // DN-2. The per-cue gain must not carry master, or a setting of 0.5
-      // sounds like 0.25. `test/volume.test.ts` pins the arithmetic; this pins
-      // that the adapter honours it — master reaches exactly one node.
+      // Sounds like 0.25. `test/volume.test.ts` pins the arithmetic; this pins
+      // That the adapter honours it — master reaches exactly one node.
       const { fake, backend } = withFake()
       const audio = yield* backend
       yield* audio.unlock
@@ -494,8 +688,8 @@ describe('the master gain node', () => {
       const context = fake.context()
       const masterWrites = context?.log.params.filter((call) => call.node === 'gain#1')
       expect(masterWrites).toStrictEqual([
-        { node: 'gain#1', param: 'gain', kind: 'assign', value: 0.8, atSecs: 0 },
-        { node: 'gain#1', param: 'gain', kind: 'assign', value: 0.5, atSecs: 0 },
+        { atSecs: 0, kind: 'assign', node: 'gain#1', param: 'gain', value: 0.8 },
+        { atSecs: 0, kind: 'assign', node: 'gain#1', param: 'gain', value: 0.5 },
       ])
 
       // ...and the cue's own peak is still its own, untouched by master.
@@ -509,8 +703,8 @@ describe('the master gain node', () => {
   it.effect('remembers a gain set before the context existed', () =>
     Effect.gen(function* () {
       // Settings load before the first cue. A master node that started at the
-      // default and was corrected on the next settings change would play the
-      // first cue at the wrong volume.
+      // Default and was corrected on the next settings change would play the
+      // First cue at the wrong volume.
       const { fake, backend } = withFake()
       const audio = yield* backend
 
@@ -520,7 +714,7 @@ describe('the master gain node', () => {
       yield* audio.unlock
 
       expect(fake.context()?.log.params).toStrictEqual([
-        { node: 'gain#1', param: 'gain', kind: 'assign', value: 0.25, atSecs: 0 },
+        { atSecs: 0, kind: 'assign', node: 'gain#1', param: 'gain', value: 0.25 },
       ])
     }),
   )
@@ -540,6 +734,80 @@ describe('the master gain node', () => {
       expect(values).toStrictEqual([0.8, 1, 0])
     }),
   )
+
+  it.effect('mutes without forgetting the configured volume', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake()
+      const audio = yield* backend
+      yield* audio.unlock
+      yield* audio.setMasterGain(0.35)
+      yield* audio.setMuted(true)
+      yield* audio.setMasterGain(0.6)
+
+      expect((yield* audio.report).muted).toBe(true)
+      expect(fake.context()?.log.params.at(-1)?.value).toBe(0)
+
+      yield* audio.setMuted(false)
+      expect((yield* audio.report).muted).toBe(false)
+      expect(fake.context()?.log.params.at(-1)?.value).toBe(0.6)
+    }),
+  )
+})
+
+describe('resource limits and lifecycle', () => {
+  it.effect('discards cues beyond the configured simultaneous-tone limit', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({ global: fake.global, maxConcurrentTones: 2 })
+      yield* audio.unlock
+
+      yield* audio.playTone({ ...CUE, loop: true })
+      yield* audio.playTone({ ...CUE, loop: true })
+      yield* audio.playTone({ ...CUE, loop: true })
+
+      expect(fake.context()?.oscillators).toHaveLength(2)
+      expect(yield* audio.report).toMatchObject({
+        activeTones: 2,
+        capacityRefusals: 1,
+        refusedTones: 1,
+      })
+    }),
+  )
+
+  it.effect('disposes once and never recreates a context', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake()
+      const audio = yield* backend
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, loop: true })
+
+      yield* audio.dispose
+      const disconnected = [...(fake.context()?.log.disconnected ?? [])]
+      yield* audio.close
+
+      expect(fake.context()?.log.disconnected).toStrictEqual(disconnected)
+      expect(yield* audio.availability).toBe('unavailable')
+      expect(yield* audio.unlock).toBe('unavailable')
+      yield* audio.playTone(CUE)
+      expect(fake.constructorCalls()).toBe(1)
+      expect(yield* audio.report).toMatchObject({ activeTones: 0, disposed: true })
+    }),
+  )
+
+  it.effect('clears decoded samples when disposed', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        sampleManifest: { step: { data: new ArrayBuffer(4), kind: 'array-buffer' } },
+      })
+
+      expect(yield* audio.preloadSamples()).toMatchObject({ loaded: 1 })
+      yield* audio.dispose
+
+      expect(yield* audio.preloadSamples()).toEqual({ cached: 0, failed: 1, loaded: 0, requested: 1 })
+    }),
+  )
 })
 
 // ---------------------------------------------------------------------------
@@ -550,13 +818,13 @@ describe('stopping a tone', () => {
   it.effect('ramps down from where the tone actually is, rather than cutting', () =>
     Effect.gen(function* () {
       // `stopTone` is how BGM ends and how a looping cue is cancelled. A loop
-      // cut mid-cycle at full amplitude is the loudest click this adapter could
-      // produce — a sustained tone is at full gain by definition.
+      // Cut mid-cycle at full amplitude is the loudest click this adapter could
+      // Produce — a sustained tone is at full gain by definition.
       const { fake, backend } = withFake()
       const audio = yield* backend
       yield* audio.unlock
 
-      const handle = yield* audio.playTone({ ...CUE, loop: true, gain: 0.28 })
+      const handle = yield* audio.playTone({ ...CUE, gain: 0.28, loop: true })
       fake.context()?.advance(3)
       yield* audio.stopTone(handle)
 
@@ -566,12 +834,12 @@ describe('stopping a tone', () => {
         .slice(2)
 
       expect(cueGain).toStrictEqual([
-        { node: 'gain#3', param: 'gain', kind: 'cancel', value: 0, atSecs: 3 },
-        { node: 'gain#3', param: 'gain', kind: 'set', value: 0.28, atSecs: 3 },
-        { node: 'gain#3', param: 'gain', kind: 'ramp', value: 0, atSecs: 3 + RELEASE_SECS },
+        { atSecs: 3, kind: 'cancel', node: 'gain#3', param: 'gain', value: 0 },
+        { atSecs: 3, kind: 'set', node: 'gain#3', param: 'gain', value: 0.28 },
+        { atSecs: 3 + RELEASE_SECS, kind: 'ramp', node: 'gain#3', param: 'gain', value: 0 },
       ])
       expect(fake.context()?.log.stopped).toStrictEqual([
-        { node: 'osc#2', atSecs: 3 + RELEASE_SECS },
+        { atSecs: 3 + RELEASE_SECS, node: 'osc#2' },
       ])
     }),
   )
@@ -597,7 +865,7 @@ describe('stopping a tone', () => {
   it.effect('ramps from the ATTACK value when stopped mid-attack, not from the peak', () =>
     Effect.gen(function* () {
       // Ramping from the peak would be a step UP for a tone cancelled during
-      // its attack: a cancel that makes the sound briefly louder.
+      // Its attack: a cancel that makes the sound briefly louder.
       const { fake, backend } = withFake()
       const audio = yield* backend
       yield* audio.unlock
@@ -629,8 +897,8 @@ describe('Safari before 14.1', () => {
   it.effect('finds the prefixed constructor when the standard one is absent', () =>
     Effect.gen(function* () {
       // `docs/public-api.md` §7 lists this as NEW work: a grep of the entire
-      // reference implementation for `webkitAudioContext` returns nothing, so
-      // that browser had no audio at all and nobody noticed.
+      // Reference implementation for `webkitAudioContext` returns nothing, so
+      // That browser had no audio at all and nobody noticed.
       const { fake, backend } = withFake({ prefixed: true })
       const audio = yield* backend
 
@@ -654,7 +922,7 @@ describe('a context that is born broken', () => {
   it.effect("reports 'unavailable' when wiring the master gain throws", () =>
     Effect.gen(function* () {
       // Construction succeeding and the first node failing is a distinct
-      // outcome from construction throwing, and both have to end as a value.
+      // Outcome from construction throwing, and both have to end as a value.
       const { backend } = withFake({ wiringThrows: true })
       const audio = yield* backend
 
@@ -666,8 +934,8 @@ describe('a context that is born broken', () => {
   it.effect('retries construction on a later call rather than caching the failure', () =>
     Effect.gen(function* () {
       // Deliberate: a page whose first context failed because six were already
-      // open can succeed later, once one has been closed. Caching "no" would
-      // make that page permanently silent.
+      // Open can succeed later, once one has been closed. Caching "no" would
+      // Make that page permanently silent.
       const { fake, backend } = withFake({ constructionThrows: true })
       const audio = yield* backend
 

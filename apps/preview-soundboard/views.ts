@@ -37,16 +37,16 @@
  */
 import { Option } from 'effect'
 import type { AudioAvailability } from '../../src/domain/backend-port'
-import { visibleCaptions, type CaptionEvent } from '../../src/domain/caption'
-import { cueDefinition, SOUND_CUE_IDS } from '../../src/domain/cue'
-import { planCue, type CuePlan } from '../../src/domain/engine'
+import { type CaptionEvent, visibleCaptions } from '../../src/domain/caption'
+import { SOUND_CUE_IDS, cueDefinition } from '../../src/domain/cue'
+import { type CuePlan, planCue } from '../../src/domain/engine'
 import { drivenFrequency, gainAt, toneEnvelope } from '../../src/domain/envelope'
-import { MUSIC_TRACKS, musicTrackGain, MUSIC_ENVIRONMENTS } from '../../src/domain/music'
+import { MUSIC_ENVIRONMENTS, MUSIC_TRACKS, musicTrackGain } from '../../src/domain/music'
 import { masterNodeGain, spatialise } from '../../src/domain/volume'
 import type { WebAudioReport } from '../../src/domain/webaudio-adapter'
 import type { FakeAudioLog } from '../../test/fake-webaudio'
-import { bar, bipolarBar, INK, padEnd, padStart, sparkline, type Style } from './ansi'
-import { cueContext, desiredMusic, selectedCue, type PreviewState } from './state'
+import { INK, type Style, bar, bipolarBar, padEnd, padStart, sparkline } from './ansi'
+import { type PreviewState, cueContext, desiredMusic, selectedCue } from './state'
 
 export type Snapshot = {
   readonly state: PreviewState
@@ -130,14 +130,10 @@ export const renderBoard = (
     const reason = plan.caption === null ? '' : plan.caption.reason
 
     return (
-      `${marker} ${padEnd(cueId, 16)}` +
-      `${padStart(gain, 7)}  ` +
-      `${padEnd(definition.spatial ? 'spatial' : 'flat', 8)}` +
-      `${padEnd(caption, 20)}` +
-      style.ink(
+      `${marker} ${padEnd(cueId, 16)}${padStart(gain, 7)}  ${padEnd(definition.spatial ? 'spatial' : 'flat', 8)}${padEnd(caption, 20)}${style.ink(
         reason === 'audible' ? INK.ready : reason === '' ? INK.muted : INK.locked,
         reason,
-      )
+      )}`
     )
   })
 
@@ -182,9 +178,8 @@ const renderCaptionPanel = (snapshot: Snapshot, style: Style): ReadonlyArray<str
       const direction =
         event.pan === undefined ? '     ' : event.pan < 0 ? ' left' : event.pan > 0 ? 'right' : ' mid '
       return (
-        `  ${padEnd(`"${event.text}"`, 22)}` +
-        style.ink(event.reason === 'audible' ? INK.ready : INK.locked, padEnd(event.reason, 14)) +
-        style.dim(`${direction}  ${age}s old`)
+        `  ${padEnd(`"${event.text}"`, 22)}${style.ink(event.reason === 'audible' ? INK.ready : INK.locked, padEnd(event.reason, 14))
+        }${style.dim(`${direction}  ${age}s old`)}`
       )
     }),
   ]
@@ -255,8 +250,8 @@ const renderRefusal = (
 ): ReadonlyArray<string> => {
   // With no context there is nothing to have detected, so the channel count is
   // UNKNOWN rather than mono. Printing "mono: no createStereoPanner" here would
-  // be the preview inventing a fact about a browser it never reached — the
-  // exact class of confident-and-wrong reporting this repository is about.
+  // Be the preview inventing a fact about a browser it never reached — the
+  // Exact class of confident-and-wrong reporting this repository is about.
   const chain =
     snapshot.report.contextState === null
       ? 'oscillator -> gain -> [panner?] -> master -> destination   (stereo unknown: no context was created)'
@@ -267,21 +262,21 @@ const renderRefusal = (
   if (plan.tone === null) {
     const gate = !snapshot.state.enabled
       ? {
-          why: 'the player muted audio (settings gate)',
           fix: "press a to turn the player's audio switch back on",
+          why: 'the player muted audio (settings gate)',
         }
       : snapshot.availability === 'unavailable'
         ? {
             why: 'there is no audio backend at all',
             // Deliberately NOT "press u". A gesture cannot conjure a Web Audio
-            // implementation, and offering one is how a UI ends up showing a
+            // Implementation, and offering one is how a UI ends up showing a
             // "click to enable sound" button that can never work — the
-            // distinction `locked` exists to draw (domain/backend-port.ts).
+            // Distinction `locked` exists to draw (domain/backend-port.ts).
             fix: 'no user gesture can fix this; restart without --absent, or press x if you closed the context',
           }
         : {
-            why: 'the browser autoplay policy has not been satisfied',
             fix: 'press u — that is the user gesture',
+            why: 'the browser autoplay policy has not been satisfied',
           }
 
     return [
@@ -371,18 +366,16 @@ export const renderMix = (
     slider('music', state.settings.music, '3 / #'),
     '',
     style.bold(`gain for ${cueId}`),
-    `  ${padEnd('per-cue gain', 20)}${padStart(plan.tone === null ? '--' : plan.tone.gain.toFixed(4), 8)}` +
-      style.dim('   must NOT change when master changes'),
-    `  ${padEnd('master node gain', 20)}${padStart(masterNodeGain(state.settings).toFixed(4), 8)}` +
-      style.dim('   the only place master becomes a number'),
+    `  ${padEnd('per-cue gain', 20)}${padStart(plan.tone === null ? '--' : plan.tone.gain.toFixed(4), 8)}${style.dim('   must NOT change when master changes')}`,
+    `  ${padEnd('master node gain', 20)}${padStart(masterNodeGain(state.settings).toFixed(4), 8)}${style.dim('   the only place master becomes a number')}`,
     `  ${padEnd('what a speaker gets', 20)}${padStart(
       plan.tone === null ? '--' : (plan.tone.gain * masterNodeGain(state.settings)).toFixed(4),
       8,
-    )}` + style.dim('   the product, applied once'),
+    )}${style.dim('   the product, applied once')}`,
     '',
     style.bold('spatialisation'),
-    `  ${padEnd('distance', 20)}${padStart(distance.toFixed(2), 8)} blocks` +
-      style.dim('   attenuation is 1/(1 + d/12)'),
+    `  ${padEnd('distance', 20)}${padStart(distance.toFixed(2), 8)} blocks${
+      style.dim('   attenuation is 1/(1 + d/12)')}`,
     `  ${padEnd('attenuation', 20)}${padStart(spatialisation.gain.toFixed(4), 8)}`,
     `  ${padEnd('pan', 20)}${padStart(spatialisation.pan.toFixed(4), 8)}`,
     `  ${' '.repeat(20)}${bipolarBar(spatialisation.pan, 12)}  ${style.dim('left    centre    right')}`,
@@ -444,7 +437,7 @@ export const renderMusic = (
         `  gain ${gain.toFixed(4)}  ${bar(gain, 16)}`
       )
     }),
-    style.dim('  every track is a sine wave: ToneRequest has no `wave` field. See DEFAULT_TONE_WAVE.'),
+    style.dim('  cue waveforms are authored in CUE_DEFINITIONS; missing values use DEFAULT_TONE_WAVE.'),
     RULE(width),
   ]
 }

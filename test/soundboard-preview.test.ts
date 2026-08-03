@@ -19,30 +19,30 @@
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer, Option, Ref } from 'effect'
 import { AudioBackendPort } from '../src/domain/backend-port'
-import { CaptionStream, type CaptionEvent } from '../src/domain/caption'
+import { type CaptionEvent, CaptionStream } from '../src/domain/caption'
 import { SOUND_CUE_IDS } from '../src/domain/cue'
 import { makeSoundCueService } from '../src/domain/engine'
 import { makeWebAudioBackend } from '../src/domain/webaudio-adapter'
-import { makeStyle, bar, bipolarBar, sparkline, visibleLength } from '../apps/preview-soundboard/ansi'
+import { bar, bipolarBar, makeStyle, sparkline, visibleLength } from '../apps/preview-soundboard/ansi'
 import { parseArguments } from '../apps/preview-soundboard/options'
 import {
+  INITIAL_STATE,
+  PANELS,
+  type PreviewState,
+  adjustPlayerY,
   adjustVolume,
   applyMusic,
   cueContext,
   cyclePanel,
-  INITIAL_STATE,
   moveCursor,
   moveSource,
-  PANELS,
   selectedCue,
   toggleEnabled,
   toggleNight,
-  adjustPlayerY,
   withCaptions,
-  type PreviewState,
 } from '../apps/preview-soundboard/state'
-import { renderFrame, type Snapshot } from '../apps/preview-soundboard/views'
-import { makeFakeWebAudio, type FakeWebAudioOptions } from './fake-webaudio'
+import { type Snapshot, renderFrame } from '../apps/preview-soundboard/views'
+import { type FakeWebAudioOptions, makeFakeWebAudio } from './fake-webaudio'
 
 const style = makeStyle(false)
 
@@ -57,7 +57,7 @@ const frameFor = (input: {
   readonly state?: (state: PreviewState) => PreviewState
   readonly play?: boolean
 }): Effect.Effect<ReadonlyArray<string>> =>
-  Effect.gen(function* () {
+  Effect.gen(function*  frameFor() {
     const fake = makeFakeWebAudio(input.fakeOptions ?? {})
     const backend = yield* makeWebAudioBackend({ global: fake.global })
     const captionLog = yield* Ref.make<ReadonlyArray<CaptionEvent>>([])
@@ -89,9 +89,8 @@ const frameFor = (input: {
 
     const context = fake.context()
     const snapshot: Snapshot = {
-      state,
+      audioClockSecs: context?.currentTime ?? 0,
       availability: yield* backend.availability,
-      report: yield* backend.report,
       log: context?.log ?? {
         created: [],
         edges: [],
@@ -100,7 +99,8 @@ const frameFor = (input: {
         started: [],
         stopped: [],
       },
-      audioClockSecs: context?.currentTime ?? 0,
+      report: yield* backend.report,
+      state,
     }
 
     return renderFrame(snapshot, style, 96, true)
@@ -113,11 +113,11 @@ describe('the frame the preview exists to show', () => {
     Effect.gen(function* () {
       // `docs/testing.md` §3-2 — 「オーディオがロックされた状態（初回訪問、まだ
       // クリックしていない）で字幕だけが出ることを目視できる」. This is DN-1's
-      // visual form and the single most important thing the app draws.
+      // Visual form and the single most important thing the app draws.
       const text = joined(yield* frameFor({ state: (s) => ({ ...s, panel: 'board' }) }))
 
       expect(text).toContain('locked')
-      expect(text).toContain('"Block broken"')
+      expect(text).toContain('"Block breaks"')
       expect(text).toContain('gate-blocked')
       // No gain, because no tone was planned — and the caption is there anyway.
       expect(text).toContain('captions  (1 visible of 1 fired)')
@@ -127,7 +127,7 @@ describe('the frame the preview exists to show', () => {
   it.effect('unlocked audio: the same cue reports audible and carries a gain', () =>
     Effect.gen(function* () {
       const text = joined(
-        yield* frameFor({ unlock: true, state: (s) => ({ ...s, panel: 'board' }) }),
+        yield* frameFor({ state: (s) => ({ ...s, panel: 'board' }), unlock: true }),
       )
 
       expect(text).toContain('ready')
@@ -139,7 +139,7 @@ describe('the frame the preview exists to show', () => {
   it.effect('the graph panel names where the guard stopped, and what it would have built', () =>
     Effect.gen(function* () {
       // "Nothing happened" is otherwise indistinguishable from "the preview is
-      // broken", which is how a preview stops being read.
+      // Broken", which is how a preview stops being read.
       const text = joined(yield* frameFor({ state: (s) => ({ ...s, panel: 'graph' }) }))
 
       expect(text).toContain('REFUSED before any node was built')
@@ -152,7 +152,7 @@ describe('the frame the preview exists to show', () => {
   it.effect('the graph panel shows the edges the adapter actually connected', () =>
     Effect.gen(function* () {
       const text = joined(
-        yield* frameFor({ unlock: true, state: (s) => ({ ...s, panel: 'graph' }) }),
+        yield* frameFor({ state: (s) => ({ ...s, panel: 'graph' }), unlock: true }),
       )
 
       expect(text).toContain('osc#2        -> gain#3')
@@ -180,7 +180,7 @@ describe('the frame the preview exists to show', () => {
       const graphPanel = (state: PreviewState): PreviewState => ({ ...state, panel: 'graph' })
 
       // 1. Locked: the context and its master node exist, and NOTHING else was
-      //    connected. The reference built the whole chain in this exact state.
+      //    Connected. The reference built the whole chain in this exact state.
       const locked = joined(yield* frameFor({ state: graphPanel }))
       expect(locked).toContain('gain#1       -> destination')
       expect(locked).not.toContain('osc#2        -> gain#3')
@@ -188,7 +188,7 @@ describe('the frame the preview exists to show', () => {
 
       // 2. Mono: no panner node exists, so the gain goes straight to master.
       const mono = joined(
-        yield* frameFor({ fakeOptions: { stereo: false }, unlock: true, state: graphPanel }),
+        yield* frameFor({ fakeOptions: { stereo: false }, state: graphPanel, unlock: true }),
       )
       expect(mono).toContain('gain#3       -> gain#1')
       expect(mono).not.toContain('panner')
@@ -199,8 +199,8 @@ describe('the frame the preview exists to show', () => {
       )
       expect(absent).toContain('(nothing connected)')
       // No NODE IDS anywhere: not even the master gain was created. Asserted on
-      // ids rather than on `-> destination`, because the "would have built"
-      // line legitimately names destination while nothing exists.
+      // Ids rather than on `-> destination`, because the "would have built"
+      // Line legitimately names destination while nothing exists.
       expect(absent).not.toContain('gain#1')
       expect(absent).not.toContain('osc#')
     }),
@@ -208,13 +208,13 @@ describe('the frame the preview exists to show', () => {
 
   it.effect('the envelope is drawn, and starts and ends at silence', () =>
     Effect.gen(function* () {
-      const lines = yield* frameFor({ unlock: true, state: (s) => ({ ...s, panel: 'graph' }) })
+      const lines = yield* frameFor({ state: (s) => ({ ...s, panel: 'graph' }), unlock: true })
       const curve = lines.find((line) => line.trim().startsWith('_'))
 
       expect(curve).toBeDefined()
       // The claim `domain/envelope.ts` makes, drawn: silence at both ends and
-      // something in between. A flat-topped block starting and ending at full
-      // height is the reference's click.
+      // Something in between. A flat-topped block starting and ending at full
+      // Height is the reference's click.
       expect(curve?.trim().startsWith('_')).toBe(true)
       expect(curve?.trim().endsWith('_')).toBe(true)
       expect(curve).toContain('8')
@@ -224,7 +224,7 @@ describe('the frame the preview exists to show', () => {
   it.effect('claims stereo is UNKNOWN when no context was ever created', () =>
     Effect.gen(function* () {
       // Printing "mono: no createStereoPanner" with no context would be the
-      // preview inventing a fact about a browser it never reached.
+      // Preview inventing a fact about a browser it never reached.
       const text = joined(
         yield* frameFor({
           fakeOptions: { present: false },
@@ -245,8 +245,8 @@ describe('the frame the preview exists to show', () => {
       const text = joined(
         yield* frameFor({
           fakeOptions: { stereo: false },
-          unlock: true,
           state: (s) => ({ ...s, panel: 'graph' }),
+          unlock: true,
         }),
       )
 
@@ -267,17 +267,17 @@ describe('the mix panel shows the arithmetic DN-2 protects', () => {
   it.effect('per-cue gain does not move when master moves; the master node does', () =>
     Effect.gen(function* () {
       // The visual form of `test/volume.test.ts`. A build that multiplied
-      // master in twice would show the left column changing with the slider.
+      // Master in twice would show the left column changing with the slider.
       const quiet = joined(
         yield* frameFor({
-          unlock: true,
           state: (s) => adjustVolume({ ...s, panel: 'mix' }, 'master', -0.5),
+          unlock: true,
         }),
       )
       const loud = joined(
         yield* frameFor({
-          unlock: true,
           state: (s) => adjustVolume({ ...s, panel: 'mix' }, 'master', 0.2),
+          unlock: true,
         }),
       )
 
@@ -295,12 +295,12 @@ describe('the mix panel shows the arithmetic DN-2 protects', () => {
   it.effect('shows attenuation and pan changing as the source moves', () =>
     Effect.gen(function* () {
       const near = joined(
-        yield* frameFor({ unlock: true, state: (s) => ({ ...s, panel: 'mix' }) }),
+        yield* frameFor({ state: (s) => ({ ...s, panel: 'mix' }), unlock: true }),
       )
       const far = joined(
         yield* frameFor({
-          unlock: true,
           state: (s) => moveSource({ ...s, panel: 'mix' }, 20),
+          unlock: true,
         }),
       )
 
@@ -316,7 +316,7 @@ describe('the music panel makes DN-5 visible', () => {
   it.effect('says NO ACTION when the desired track is already playing', () =>
     Effect.gen(function* () {
       // The whole reason the plan is printed rather than only the active track:
-      // a machine that restarted the track every frame would look identical.
+      // A machine that restarted the track every frame would look identical.
       const once = applyMusic({ ...INITIAL_STATE, panel: 'music' })
       const twice = applyMusic(once)
 
@@ -326,7 +326,7 @@ describe('the music panel makes DN-5 visible', () => {
       expect(Option.isNone(twice.lastMusicPlan?.environmentToPlay ?? Option.none())).toBe(true)
 
       const text = joined(
-        yield* frameFor({ unlock: true, play: false, state: () => twice }),
+        yield* frameFor({ play: false, state: () => twice, unlock: true }),
       )
       expect(text).toContain('play: nothing')
     }),
@@ -335,7 +335,7 @@ describe('the music panel makes DN-5 visible', () => {
   it.effect('stops and starts on a real change, and honours the strict cave threshold', () =>
     Effect.sync(() => {
       // DN-4: the comparison is strictly `<`, so standing exactly on 40 is
-      // surface. A one-block step at the threshold must not flip the music.
+      // Surface. A one-block step at the threshold must not flip the music.
       const surface = applyMusic({ ...INITIAL_STATE, playerY: 40 })
       expect(Option.getOrNull(surface.activeMusic)).toBe('day')
 
@@ -398,8 +398,8 @@ describe('state transitions', () => {
         state = adjustVolume(state, 'sfx', -0.05)
       }
       // Exactly 0, not 5.551e-17. The mix panel prints four decimals and a
-      // value of -0.0000 would read as a bug in the arithmetic it exists to
-      // vouch for.
+      // Value of -0.0000 would read as a bug in the arithmetic it exists to
+      // Vouch for.
       expect(state.settings.sfx).toBe(0)
     }),
   )
@@ -422,12 +422,12 @@ describe('option parsing', () => {
       ])
       expect(options.errors).toStrictEqual([])
       expect(options).toMatchObject({
-        panel: 'graph',
-        unlocked: true,
-        stereo: false,
-        once: true,
         ascii: true,
+        once: true,
+        panel: 'graph',
         play: 'levelUp',
+        stereo: false,
+        unlocked: true,
         width: 80,
       })
     }),
@@ -453,7 +453,7 @@ describe('option parsing', () => {
   it.effect('rejects contradictory flags rather than quietly preferring one', () =>
     Effect.sync(() => {
       // A frame that cannot be explained from its own command line is worse
-      // than an error message.
+      // Than an error message.
       expect(parseArguments(['--unlocked', '--refuse']).errors).toStrictEqual([
         '--unlocked and --refuse contradict each other',
       ])
@@ -479,7 +479,7 @@ describe('the drawing primitives', () => {
   it.effect('the pan bar distinguishes dead centre from very slightly left', () =>
     Effect.sync(() => {
       // `domain/engine.ts` omits `pan` for a non-spatial cue rather than
-      // reporting a misleading zero, so the two have to look different here.
+      // Reporting a misleading zero, so the two have to look different here.
       const centre = bipolarBar(0, 4)
       const left = bipolarBar(-1, 4)
       const right = bipolarBar(1, 4)

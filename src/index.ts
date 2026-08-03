@@ -1,8 +1,6 @@
 /**
  * @nerima-games/mc-audio — sound cues, music, and captions.
  *
- * PRE-AUDIT FIRST CUT (叩き台). See README.md 現状.
- *
  * mc-audio is tier 1 of the four-tier architecture (plan.md §2.2). It is a
  * sink: mx-gameplay and mx-ui push cue requests in and subscribe to the caption
  * stream, and mc-audio never reaches back into the simulation. If a sound needs
@@ -34,9 +32,16 @@
 export * from './domain/backend-port'
 export * from './domain/caption'
 export * from './domain/cue'
+export * from './domain/end-audio'
+export * from './domain/end-audio-controller'
 export * from './domain/engine'
 export * from './domain/envelope'
+export * from './domain/footstep'
+export * from './domain/game-audio'
 export * from './domain/music'
+export * from './domain/original-sample-bank'
 export * from './domain/volume'
 export * from './domain/webaudio-adapter'
 export * from './domain/webaudio-surface'
+export * from './domain/weather-ambience'
+export * from './domain/weather-audio-controller'

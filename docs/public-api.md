@@ -66,7 +66,7 @@ export const DEFAULT_VOLUME_SETTINGS: VolumeSettings   // { master: 0.8, sfx: 1,
 export const clamp01: (value: number) => number
 export const clampPan: (value: number) => number
 export const SPATIAL_DISTANCE_SCALE = 12
-export const spatialise: (listener: Vec3, source: Vec3) => Spatialisation
+export const spatialise: (listener: Vec3, source: Vec3, listenerForward?: Vec3) => Spatialisation
 export const NO_SPATIALISATION: Spatialisation
 
 export const effectiveSfxGain: (input: {
@@ -270,6 +270,7 @@ export type CueContext = {
   readonly enabled: boolean            // プレイヤーの ON/OFF。availability とは別物
   readonly availability: AudioAvailability
   readonly listener: Vec3
+  readonly listenerForward?: Vec3       // 水平視線方向。省略時は world +X が右
 }
 
 export type CuePlan = {
@@ -387,11 +388,14 @@ export type WebAudioGlobalSurface = {
 export type WebAudioOptions = {
   readonly global: WebAudioGlobalSurface
   readonly initialMasterGain?: number
+  readonly maxConcurrentTones?: number  // default: 32
 }
 export type WebAudioBackend = AudioBackend & {
   readonly unlock: Effect.Effect<AudioAvailability>   // ユーザジェスチャから呼ぶ
   readonly report: Effect.Effect<WebAudioReport>
-  readonly close: Effect.Effect<void>
+  readonly setMuted: (muted: boolean) => Effect.Effect<void>
+  readonly dispose: Effect.Effect<void>               // 冪等、以後は再生成しない
+  readonly close: Effect.Effect<void>                 // dispose の互換 alias
 }
 export const makeWebAudioBackend: (options: WebAudioOptions) => Effect.Effect<WebAudioBackend>
 export const webAudioBackendLayer: (options: WebAudioOptions) => Layer.Layer<AudioBackendPort>
@@ -428,7 +432,7 @@ feature detection と `webkitAudioContext` フォールバックはアダプタ�
 
 ### `webAudioBackendLayer` が捨てるもの
 
-`unlock` / `report` / `close` は `AudioBackend` に無いので、
+`unlock` / `report` / `setMuted` / `dispose` / `close` は `AudioBackend` に無いので、
 **この Layer 経由だけで配線した consumer は context をアンロックできない**（永久に `locked`）。
 
 これは実在する落とし穴で、隠さずに置いてある。
@@ -481,16 +485,11 @@ attack 5ms / release 20ms のランプで消してある。
 
 エラーにならず、テストも赤くならず、「なんか安っぽい」としてしか現れない種類の欠陥である。
 
-### 波形が 1 種類しか無い（既知の欠落）
+### キューごとの波形
 
-`ToneRequest` に `wave` フィールドが無いため、
-§6 に書いた参照実装のトラック別波形（day sine / night triangle / cave sawtooth）は
-**アダプタから到達できない**。全て `DEFAULT_TONE_WAVE = 'sine'` である。
-
-復活させるには `ToneRequest` にフィールドを足す必要があり、
-これは `planCue` と `MUSIC_TRACKS` に波及する公開 API 変更である。
-ロスターは mx-gameplay のルールと一緒に決まる（[versioning.md](./versioning.md) §4）ので、
-**アダプタがついでに決めることではない**として保留してある。
+`CueDefinition.wave` は `planCue` から `ToneRequest.wave` へ渡り、WebAudio の
+`OscillatorNode.type` まで到達する。キュー以外の呼び出し元が波形を省略した場合だけ
+`DEFAULT_TONE_WAVE = 'sine'` を使う。
 
 ### 時刻の扱い
 

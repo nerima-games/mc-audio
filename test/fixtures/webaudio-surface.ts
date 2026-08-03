@@ -1,3 +1,4 @@
+/* oxlint-disable max-statements, new-cap, no-empty-function, no-magic-numbers, no-ternary, no-undefined -- This compile fixture deliberately exercises browser constructor/optional-member signatures with inert callbacks and literal audio parameters. */
 /**
  * NOT A TEST — a fixture that is COMPILED by one.
  *
@@ -34,6 +35,8 @@
  * by `pnpm check:deps`.
  */
 import type {
+  AudioBufferSourceSurface,
+  AudioBufferSurface,
   AudioContextConstructorSurface,
   AudioContextStateSurface,
   AudioContextSurface,
@@ -47,6 +50,8 @@ import type {
 } from '../../src/domain/webaudio-surface'
 
 declare const browserContext: AudioContext
+declare const browserBuffer: AudioBuffer
+declare const browserBufferSource: AudioBufferSourceNode
 declare const browserNode: AudioNode
 declare const browserParam: AudioParam
 declare const browserOscillator: OscillatorNode
@@ -57,6 +62,8 @@ declare const browserState: AudioContextState
 declare const browserWave: OscillatorType
 
 export const contextIsAnAudioContextSurface: AudioContextSurface = browserContext
+export const bufferIsAnAudioBufferSurface: AudioBufferSurface = browserBuffer
+export const bufferSourceIsAnAudioBufferSourceSurface: AudioBufferSourceSurface = browserBufferSource
 export const nodeIsAnAudioNodeSurface: AudioNodeSurface = browserNode
 export const paramIsAnAudioParamSurface: AudioParamSurface = browserParam
 export const oscillatorIsAnOscillatorSurface: OscillatorSurface = browserOscillator
@@ -140,7 +147,7 @@ export const drivesTheRealApiThroughTheNarrowTypes = async (): Promise<void> => 
   master.connect(context.destination)
 
   // The guard. `resume()` is the only call a browser restricts, and the state
-  // is re-read afterwards rather than the promise being trusted.
+  // Is re-read afterwards rather than the promise being trusted.
   await context.resume()
   const state: AudioContextStateSurface = context.state
 
@@ -158,8 +165,8 @@ export const drivesTheRealApiThroughTheNarrowTypes = async (): Promise<void> => 
 
     // The Safari-before-14.1 branch, taken through the OPTIONAL member. If
     // `createStereoPanner` were ever spelled as required here, this `undefined`
-    // check would become a compile error and the mono fallback would silently
-    // stop being reachable.
+    // Check would become a compile error and the mono fallback would silently
+    // Stop being reachable.
     const createPanner = context.createStereoPanner
     if (createPanner === undefined) {
       gain.connect(master)

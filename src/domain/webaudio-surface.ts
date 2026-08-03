@@ -174,12 +174,22 @@ export type OscillatorWave = 'sine' | 'square' | 'sawtooth' | 'triangle' | 'cust
  * the real signature has it optional and narrowing it to required would make a
  * real `OscillatorNode` unassignable in the `stop()` case.
  */
-export type OscillatorSurface = AudioNodeSurface & {
-  type: OscillatorWave
-  readonly frequency: AudioParamSurface
+export type AudioScheduledSourceSurface = AudioNodeSurface & {
   readonly start: (when?: number) => void
   readonly stop: (when?: number) => void
   onended: ((event: never) => void) | null
+}
+
+export type AudioBufferSurface = { readonly duration: number }
+
+export type AudioBufferSourceSurface = AudioScheduledSourceSurface & {
+  buffer: AudioBufferSurface | null
+  loop: boolean
+}
+
+export type OscillatorSurface = AudioScheduledSourceSurface & {
+  type: OscillatorWave
+  readonly frequency: AudioParamSurface
 }
 
 export type GainSurface = AudioNodeSurface & {
@@ -267,6 +277,8 @@ export type AudioContextSurface = {
   readonly resume: () => Promise<void>
   readonly close: () => Promise<void>
   readonly createOscillator: () => OscillatorSurface
+  readonly createBufferSource?: () => AudioBufferSourceSurface
+  readonly decodeAudioData: (audioData: ArrayBuffer) => Promise<AudioBufferSurface>
   readonly createGain: () => GainSurface
   /**
    * OPTIONAL, and honestly so: `createStereoPanner` is absent in Safari before

@@ -75,15 +75,26 @@ export type Spatialisation = {
  * distant sound fades out instead of cutting off, and it is finite at d = 0.
  * Reference: `packages/game/domain/sound-spatial.ts:11-27`.
  */
-export const spatialise = (listener: Vec3, source: Vec3): Spatialisation => {
+export const spatialise = (
+  listener: Vec3,
+  source: Vec3,
+  listenerForward: Vec3 = { x: 0, y: 0, z: -1 },
+): Spatialisation => {
   const dx = source.x - listener.x
   const dy = source.y - listener.y
   const dz = source.z - listener.z
   const distance = Math.sqrt(dx * dx + dy * dy + dz * dz)
+  const horizontalForwardLength = Math.sqrt(
+    listenerForward.x * listenerForward.x + listenerForward.z * listenerForward.z,
+  )
+  const hasUsableForward =
+    Number.isFinite(horizontalForwardLength) && horizontalForwardLength > 0
+  const rightX = hasUsableForward ? -listenerForward.z / horizontalForwardLength : 1
+  const rightZ = hasUsableForward ? listenerForward.x / horizontalForwardLength : 0
 
   return {
     gain: 1 / (1 + distance / SPATIAL_DISTANCE_SCALE),
-    pan: clampPan(dx / SPATIAL_DISTANCE_SCALE),
+    pan: clampPan((dx * rightX + dz * rightZ) / SPATIAL_DISTANCE_SCALE),
   }
 }
 

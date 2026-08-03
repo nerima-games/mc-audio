@@ -1,3 +1,4 @@
+/* oxlint-disable new-cap, no-ternary, no-undefined, sort-imports -- Effect.Tag is callable; optional WebAudio inputs require explicit undefined checks and compact conditional object construction. */
 /**
  * `SoundCuePort` — and the ordering that this whole repository exists to protect.
  *
@@ -44,31 +45,16 @@
  * important test in this repository.
  */
 import { Context, Effect, Layer, Option } from 'effect'
-import { AudioBackendPort, type AudioAvailability, type ToneRequest } from './backend-port'
-import { CaptionStream, type CaptionEvent, type CaptionReason } from './caption'
-import { cueDefinition, type CuePlayOptions, type SoundCueId } from './cue'
+import { type AudioAvailability, AudioBackendPort, type ToneRequest } from './backend-port'
+import { type CaptionEvent, type CaptionReason, CaptionStream } from './caption'
+import { type CuePlayOptions, type SoundCueId, cueDefinition } from './cue'
 import {
-  effectiveSfxGain,
   NO_SPATIALISATION,
-  spatialise,
   type Vec3,
   type VolumeSettings,
+  effectiveSfxGain,
+  spatialise,
 } from './volume'
-
-/** Base frequency per cue. Placeholder synthesis until sample assets land. */
-const CUE_FREQUENCY: Record<SoundCueId, number> = {
-  blockBreak: 220,
-  blockPlace: 262,
-  playerHurt: 165,
-  itemPickup: 523,
-  levelUp: 659,
-  footstepGrass: 180,
-  footstepStone: 200,
-  inventoryOpen: 392,
-  inventoryClose: 349,
-}
-
-const CUE_DURATION_SECS = 0.07
 
 export type CueContext = {
   readonly settings: VolumeSettings
@@ -76,6 +62,8 @@ export type CueContext = {
   readonly enabled: boolean
   readonly availability: AudioAvailability
   readonly listener: Vec3
+  /** Horizontal look direction. Omit to retain world +X as stereo right. */
+  readonly listenerForward?: Vec3
 }
 
 /**
@@ -117,7 +105,7 @@ export const planCue = (
 
   const spatialisation =
     definition.spatial && options?.position !== undefined
-      ? spatialise(context.listener, options.position)
+      ? spatialise(context.listener, options.position, context.listenerForward)
       : NO_SPATIALISATION
 
   const caption =
@@ -125,8 +113,8 @@ export const planCue = (
       ? null
       : {
           cueId,
-          text: definition.caption,
           reason,
+          text: definition.caption,
           ...(definition.spatial ? { pan: spatialisation.pan } : {}),
         }
 
@@ -137,16 +125,18 @@ export const planCue = (
   return {
     caption,
     tone: {
-      frequency: CUE_FREQUENCY[cueId],
-      durationSecs: CUE_DURATION_SECS,
+      durationSecs: definition.durationSecs,
+      frequency: definition.frequency,
       gain: effectiveSfxGain({
         baseGain: definition.baseGain,
         sfxVolume: context.settings.sfx,
         spatialGain: spatialisation.gain,
         ...(options?.gainScale === undefined ? {} : { gainScale: options.gainScale }),
       }),
-      pan: spatialisation.pan,
       loop: false,
+      pan: spatialisation.pan,
+      soundId: cueId,
+      wave: definition.wave,
     },
   }
 }
@@ -174,19 +164,19 @@ export const makeSoundCueService = (input: {
   readonly context: Effect.Effect<CueContext>
   readonly nowSecs: Effect.Effect<number>
 }): Effect.Effect<SoundCueService, never, AudioBackendPort | CaptionStream> =>
-  Effect.gen(function* () {
+  Effect.gen(function* buildSoundCueService() {
     const backend = yield* AudioBackendPort
     const captions = yield* CaptionStream
 
     return {
       play: (cueId, options) =>
-        Effect.gen(function* () {
+        Effect.gen(function*  play() {
           const context = yield* input.context
           const plan = planCue(cueId, context, options)
 
           // ────────────────────────────────────────────────────────────────
           // THE ORDERING. The caption goes out here, before anything below
-          // this line can decide not to make a sound. Do not move it.
+          // This line can decide not to make a sound. Do not move it.
           // See the module header and test/caption-gate.test.ts.
           // ────────────────────────────────────────────────────────────────
           if (plan.caption !== null) {

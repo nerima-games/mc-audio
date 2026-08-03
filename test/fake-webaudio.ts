@@ -1,3 +1,4 @@
+/* oxlint-disable max-params, no-magic-numbers, no-nested-ternary, no-ternary, no-undefined -- The fake mirrors WebAudio signatures and records exact timeline values, including explicit missing optional methods. */
 /**
  * A Web Audio implementation, in one file, that makes no sound.
  *
@@ -97,12 +98,12 @@
  *    cap as a THRESHOLD (its mapping is testable via `constructionThrows`; the
  *    limit is not observable outside a browser).
  *
- *  - `AudioBufferSourceNode`, `PeriodicWave`, and anything to do with sample
- *    playback, because the adapter has none. When samples land
- *    (`docs/responsibility.md` § assets — the reference ships no audio files at
- *    all), this file grows and this list shrinks by one.
+ *  - `PeriodicWave` and decoded audio data. The adapter receives decoded
+ *    buffers from its host, so the fake only models BufferSource scheduling.
  */
 import type {
+  AudioBufferSourceSurface,
+  AudioBufferSurface,
   AudioContextStateSurface,
   AudioContextSurface,
   AudioNodeSurface,
@@ -140,6 +141,12 @@ export type FakeWebAudioOptions = {
   readonly constructionThrows?: boolean
   /** Wiring the master gain throws, i.e. a context that is born broken. */
   readonly wiringThrows?: boolean
+  /** Creating a cue's stereo panner throws after its oscillator and gain exist. */
+  readonly pannerThrows?: boolean
+  /** Creating a decoded-sample source throws, forcing synthesized fallback. */
+  readonly bufferSourceThrows?: boolean
+  readonly decodeThrows?: boolean
+  readonly decodedDurationSecs?: number
   readonly resumePolicy?: ResumePolicy
   readonly initialState?: AudioContextStateSurface
 }
@@ -197,8 +204,8 @@ const dispatch = (handler: ((event: never) => void) | null): void => {
 
 const emptyLog = (): FakeAudioLog => ({
   created: [],
-  edges: [],
   disconnected: [],
+  edges: [],
   params: [],
   started: [],
   stopped: [],
@@ -221,43 +228,43 @@ class FakeAudioParam implements AudioParamSurface {
   set value(next: number) {
     this.#value = next
     this.log.params.push({
+      atSecs: this.clock(),
+      kind: 'assign',
       node: this.node,
       param: this.name,
-      kind: 'assign',
       value: next,
-      atSecs: this.clock(),
     })
   }
 
   setValueAtTime(value: number, startTime: number): AudioParamSurface {
     this.log.params.push({
+      atSecs: startTime,
+      kind: 'set',
       node: this.node,
       param: this.name,
-      kind: 'set',
       value,
-      atSecs: startTime,
     })
     return this
   }
 
   linearRampToValueAtTime(value: number, endTime: number): AudioParamSurface {
     this.log.params.push({
+      atSecs: endTime,
+      kind: 'ramp',
       node: this.node,
       param: this.name,
-      kind: 'ramp',
       value,
-      atSecs: endTime,
     })
     return this
   }
 
   cancelScheduledValues(cancelTime: number): AudioParamSurface {
     this.log.params.push({
+      atSecs: cancelTime,
+      kind: 'cancel',
       node: this.node,
       param: this.name,
-      kind: 'cancel',
       value: 0,
-      atSecs: cancelTime,
     })
     return this
   }
@@ -271,9 +278,9 @@ class FakeAudioNode implements AudioNodeSurface {
 
   connect(destination: AudioNodeSurface): AudioNodeSurface {
     // The fake accepts any surface-shaped destination, exactly as the bivariant
-    // method signature allows. It records the id when there is one, so a
-    // connection to something that is not one of this context's nodes shows up
-    // as `?` in the graph rather than being silently accepted and forgotten.
+    // Method signature allows. It records the id when there is one, so a
+    // Connection to something that is not one of this context's nodes shows up
+    // As `?` in the graph rather than being silently accepted and forgotten.
     const target = destination instanceof FakeAudioNode ? destination.id : '?'
     this.log.edges.push({ from: this.id, to: target })
     return destination
@@ -317,13 +324,31 @@ class FakeOscillatorNode extends FakeAudioNode implements OscillatorSurface {
   }
 
   start(when?: number): void {
-    this.log.started.push({ node: this.id, atSecs: when ?? 0 })
+    this.log.started.push({ atSecs: when ?? 0, node: this.id })
   }
 
   stop(when?: number): void {
     const at = when ?? 0
     this.stopAtSecs = at
-    this.log.stopped.push({ node: this.id, atSecs: at })
+    this.log.stopped.push({ atSecs: at, node: this.id })
+  }
+}
+
+class FakeBufferSourceNode extends FakeAudioNode implements AudioBufferSourceSurface {
+  buffer: AudioBufferSurface | null = null
+  loop = false
+  onended: ((event: never) => void) | null = null
+  stopAtSecs: number | null = null
+  ended = false
+
+  start(when?: number): void {
+    this.log.started.push({ atSecs: when ?? 0, node: this.id })
+  }
+
+  stop(when?: number): void {
+    const at = when ?? 0
+    this.stopAtSecs = at
+    this.log.stopped.push({ atSecs: at, node: this.id })
   }
 }
 
@@ -340,6 +365,8 @@ export class FakeAudioContext implements AudioContextSurface {
   readonly createStereoPanner?: () => StereoPannerSurface
 
   readonly oscillators: Array<FakeOscillatorNode> = []
+  readonly bufferSources: Array<FakeBufferSourceNode> = []
+  readonly decodedData: Array<ArrayBuffer> = []
 
   constructor(
     private readonly options: FakeWebAudioOptions,
@@ -357,6 +384,9 @@ export class FakeAudioContext implements AudioContextSurface {
 
     if (options.stereo !== false) {
       this.createStereoPanner = (): StereoPannerSurface => {
+        if (this.options.pannerThrows === true) {
+          throw new Error('fake: createStereoPanner refused')
+        }
         const node = new FakeStereoPannerNode(this.log, this.#id('panner'), () => this.#currentTime)
         this.log.created.push(node.id)
         return node
@@ -386,6 +416,16 @@ export class FakeAudioContext implements AudioContextSurface {
     return node
   }
 
+  createBufferSource(): AudioBufferSourceSurface {
+    if (this.options.bufferSourceThrows === true) {
+      throw new Error('fake: createBufferSource refused')
+    }
+    const node = new FakeBufferSourceNode(this.log, this.#id('buffer'))
+    this.log.created.push(node.id)
+    this.bufferSources.push(node)
+    return node
+  }
+
   createOscillator(): OscillatorSurface {
     const node = new FakeOscillatorNode(this.log, this.#id('osc'), () => this.#currentTime)
     this.log.created.push(node.id)
@@ -393,12 +433,20 @@ export class FakeAudioContext implements AudioContextSurface {
     return node
   }
 
+  async decodeAudioData(audioData: ArrayBuffer): Promise<AudioBufferSurface> {
+    this.decodedData.push(audioData)
+    if (this.options.decodeThrows === true) {
+      return Promise.reject(new Error('fake: decodeAudioData refused'))
+    }
+    return Promise.resolve({ duration: this.options.decodedDurationSecs ?? 0.12 })
+  }
+
   async resume(): Promise<void> {
     const policy = this.options.resumePolicy ?? 'allow'
     if (policy === 'reject') {
       // A rejection, not a throw before the promise: that is the shape
       // `Effect.tryPromise` has to survive, and the shape the reference
-      // swallowed.
+      // Swallowed.
       return Promise.reject(new Error('fake: autoplay policy refused resume()'))
     }
     if (policy === 'allow') {
@@ -425,14 +473,14 @@ export class FakeAudioContext implements AudioContextSurface {
    */
   advance(seconds: number): void {
     this.#currentTime += seconds
-    for (const oscillator of this.oscillators) {
+    for (const source of [...this.oscillators, ...this.bufferSources]) {
       if (
-        !oscillator.ended &&
-        oscillator.stopAtSecs !== null &&
-        oscillator.stopAtSecs <= this.#currentTime
+        !source.ended &&
+        source.stopAtSecs !== null &&
+        source.stopAtSecs <= this.#currentTime
       ) {
-        oscillator.ended = true
-        dispatch(oscillator.onended)
+        source.ended = true
+        dispatch(source.onended)
       }
     }
   }
@@ -505,9 +553,9 @@ export const makeFakeWebAudio = (options: FakeWebAudioOptions = {}): FakeWebAudi
         : { AudioContext: Constructed }
 
   return {
-    global,
     constructorCalls: () => calls,
-    contexts: () => contexts,
     context: () => contexts[contexts.length - 1] ?? null,
+    contexts: () => contexts,
+    global,
   }
 }
