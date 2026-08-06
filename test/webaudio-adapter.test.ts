@@ -755,6 +755,25 @@ describe('the master gain node', () => {
 })
 
 describe('resource limits and lifecycle', () => {
+  it.effect('does not allocate nodes or consume polyphony for a silent loop', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({ global: fake.global, maxConcurrentTones: 1 })
+      yield* audio.unlock
+
+      expect((yield* audio.playTone({ ...CUE, gain: 0, loop: true })).id).toBe(1)
+      expect(fake.context()?.log.created).toStrictEqual(['gain#1'])
+      expect(yield* audio.report).toMatchObject({
+        activeTones: 0,
+        capacityRefusals: 0,
+        refusedTones: 0,
+      })
+
+      yield* audio.playTone({ ...CUE, loop: true })
+      expect(fake.context()?.oscillators).toHaveLength(1)
+    }),
+  )
+
   it.effect('discards cues beyond the configured simultaneous-tone limit', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()

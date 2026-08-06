@@ -471,13 +471,16 @@ export const makeWebAudioBackend = (
           return handle
         }
 
+        const envelope = toneEnvelope(request, context.currentTime)
+        if (envelope.peakGain === 0) {
+          return handle
+        }
+
         if ((yield* Ref.get(activeRef)).size >= maxConcurrentTones) {
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
           yield* Ref.update(capacityRefusalsRef, (count) => count + 1)
           return handle
         }
-
-        const envelope = toneEnvelope(request, context.currentTime)
 
         const built = yield* Effect.try({
           catch: (cause) => cause,
