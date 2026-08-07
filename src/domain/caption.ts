@@ -90,15 +90,15 @@ export const visibleCaptions = (
   events: ReadonlyArray<CaptionEvent>,
   nowSecs: number,
 ): ReadonlyArray<CaptionEvent> => {
-  const live = events.filter((event) => nowSecs - event.atSecs < CAPTION_DISPLAY_SECS && nowSecs >= event.atSecs)
-
   // Latest occurrence of each distinct text wins, so a repeated cue refreshes
   // its row rather than stacking a second one.
   const latestByText = new Map<string, CaptionEvent>()
-  for (const event of live) {
-    const existing = latestByText.get(event.text)
-    if (existing === undefined || event.atSecs >= existing.atSecs) {
-      latestByText.set(event.text, event)
+  for (const event of events) {
+    if (nowSecs - event.atSecs < CAPTION_DISPLAY_SECS && nowSecs >= event.atSecs) {
+      const existing = latestByText.get(event.text)
+      if (existing === undefined || event.atSecs >= existing.atSecs) {
+        latestByText.set(event.text, event)
+      }
     }
   }
 
