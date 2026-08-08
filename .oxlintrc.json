@@ -95,6 +95,15 @@
     // would need a real formatter or the @stylistic rule set, tracked separately.
     "no-array-method-this-argument": "warn",
     "no-bitwise": "warn",
+    // `x`/`y`/`z` are the universal 3D-vector field names (`Vec3` in
+    // src/domain/volume.ts and every spatial-audio call site that constructs
+    // one). Vec3 is internal (not re-exported from src/index.ts) so renaming
+    // is not an API-compat concern, but it would still touch every
+    // construction site across src/ and apps/ for a rule whose whole purpose
+    // is discouraging *unclear* short names — x/y/z are the opposite of
+    // unclear in a coordinate type. Exempting them via the rule's own
+    // `exceptions` option rather than disabling `id-length` entirely.
+    "id-length": ["warn", { "exceptions": ["x", "y", "z"] }],
 
     // Restriction
     "default-case": "warn",
@@ -144,5 +153,42 @@
     "no-param-reassign": "off",
     "no-plusplus": "off"
   },
+  // Strictness policy: `src/**` (production audio domain code) stays fully
+  // strict under the `style`/`restriction` category defaults above — every
+  // rule that fires there is meant to be fixed in code, never disabled here.
+  // `test/**`, `apps/**` (the preview-soundboard dev tool) and `scripts/**`
+  // are dev-tooling/spec code, not shipped product: numeric literals in
+  // assertions (durations, gains, frequencies), short loop/index identifiers,
+  // ternaries in ad-hoc CLI rendering, and unsorted object keys in fixtures
+  // are accepted there by design and were never actually fixed, only
+  // silently unenforced before oxlint was correctly wired up (see the
+  // 2026-08-01 NOTE above on this file being ignored under its old name).
+  // `no-shadow` is deliberately excluded from this override — it is an
+  // explicit correctness rule in the "Suspicious" section above, not a
+  // style-category default, so shadowing bugs in tests get fixed in code too.
+  "overrides": [
+    {
+      "files": ["test/**", "apps/**", "scripts/**"],
+      "rules": {
+        "no-magic-numbers": "off",
+        "id-length": "off",
+        "no-ternary": "off",
+        "no-nested-ternary": "off",
+        "sort-keys": "off",
+        "sort-imports": "off",
+        "capitalized-comments": "off",
+        "no-undefined": "off",
+        "func-names": "off",
+        "max-statements": "off",
+        "prefer-destructuring": "off",
+        "no-continue": "off",
+        "max-params": "off",
+        "new-cap": "off",
+        "no-use-before-define": "off",
+        "complexity": "off",
+        "no-void": "off"
+      }
+    }
+  ],
   "ignorePatterns": ["node_modules/**", "coverage/**", "dist/**", ".git/**", "*.config.ts", "docs/**"]
 }
