@@ -39,15 +39,36 @@ export type VolumeSettings = {
  */
 export const DEFAULT_VOLUME_SETTINGS: VolumeSettings = {
   master: 0.8,
-  sfx: 1,
   music: 0.55,
+  sfx: 1,
 }
 
-export const clamp01 = (value: number): number =>
-  Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0
+/** The gain value representing full, unattenuated volume. */
+const UNITY_GAIN = 1
 
-export const clampPan = (value: number): number =>
-  Number.isFinite(value) ? Math.min(1, Math.max(-1, value)) : 0
+/** The gain value representing silence — also `clamp01`'s fallback for non-finite input. */
+const SILENT_GAIN = 0
+
+/** Pan value representing dead centre — also `clampPan`'s fallback for non-finite input. */
+const CENTER_PAN = 0
+
+/** `clampPan`'s bounds: hard right and hard left. */
+const MAX_PAN = 1
+const MIN_PAN = -1
+
+export const clamp01 = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return SILENT_GAIN
+  }
+  return Math.min(UNITY_GAIN, Math.max(SILENT_GAIN, value))
+}
+
+export const clampPan = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return CENTER_PAN
+  }
+  return Math.min(MAX_PAN, Math.max(MIN_PAN, value))
+}
 
 /**
  * Distance at which a sound is attenuated to half amplitude, in blocks.
@@ -66,6 +87,29 @@ export type Spatialisation = {
   readonly gain: number
   /** Stereo position in [-1, 1]; negative is left. */
   readonly pan: number
+}
+
+/** Below this horizontal length, `listenerForward` is treated as unusable (looking straight up/down). */
+const MIN_FORWARD_LENGTH = 0
+
+/** Fallback "right" unit vector (+x) used when the listener has no usable horizontal forward direction. */
+const DEFAULT_RIGHT_X = 1
+const DEFAULT_RIGHT_Z = 0
+
+/** The horizontal "right" direction implied by `listenerForward`, or the +x fallback. */
+const listenerRight = (
+  listenerForward: Vec3,
+  horizontalForwardLength: number,
+): { readonly x: number; readonly z: number } => {
+  const hasUsableForward =
+    Number.isFinite(horizontalForwardLength) && horizontalForwardLength > MIN_FORWARD_LENGTH
+  if (!hasUsableForward) {
+    return { x: DEFAULT_RIGHT_X, z: DEFAULT_RIGHT_Z }
+  }
+  return {
+    x: -listenerForward.z / horizontalForwardLength,
+    z: listenerForward.x / horizontalForwardLength,
+  }
 }
 
 /**
@@ -87,14 +131,11 @@ export const spatialise = (
   const horizontalForwardLength = Math.sqrt(
     listenerForward.x * listenerForward.x + listenerForward.z * listenerForward.z,
   )
-  const hasUsableForward =
-    Number.isFinite(horizontalForwardLength) && horizontalForwardLength > 0
-  const rightX = hasUsableForward ? -listenerForward.z / horizontalForwardLength : 1
-  const rightZ = hasUsableForward ? listenerForward.x / horizontalForwardLength : 0
+  const right = listenerRight(listenerForward, horizontalForwardLength)
 
   return {
-    gain: 1 / (1 + distance / SPATIAL_DISTANCE_SCALE),
-    pan: clampPan((dx * rightX + dz * rightZ) / SPATIAL_DISTANCE_SCALE),
+    gain: UNITY_GAIN / (UNITY_GAIN + distance / SPATIAL_DISTANCE_SCALE),
+    pan: clampPan((dx * right.x + dz * right.z) / SPATIAL_DISTANCE_SCALE),
   }
 }
 
@@ -107,13 +148,20 @@ export const NO_SPATIALISATION: Spatialisation = { gain: 1, pan: 0 }
  *
  * Reference: `packages/game/application/sound-manager-playback.ts:31-36`.
  */
+const MIN_GAIN_SCALE = 0
+
 export const effectiveSfxGain = (input: {
   readonly baseGain: number
   readonly sfxVolume: number
   readonly spatialGain: number
   readonly gainScale?: number
 }): number =>
-  clamp01(input.baseGain * input.sfxVolume * input.spatialGain * Math.max(0, input.gainScale ?? 1))
+  clamp01(
+    input.baseGain *
+      input.sfxVolume *
+      input.spatialGain *
+      Math.max(MIN_GAIN_SCALE, input.gainScale ?? UNITY_GAIN),
+  )
 
 /**
  * Per-track gain for music. Master is deliberately absent — see the module header.

@@ -126,6 +126,46 @@ describe('decoded sample playback', () => {
     }),
   )
 
+  it.effect('counts a requested id with no manifest entry as failed, not silently skipped', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        sampleManifest: { step: { data: new ArrayBuffer(4), kind: 'array-buffer' } },
+      })
+
+      expect(yield* audio.preloadSamples(['step', 'unknown-id'])).toEqual({
+        cached: 0,
+        failed: 1,
+        loaded: 1,
+        requested: 2,
+      })
+    }),
+  )
+
+  it.effect('fails a URL sample when no loadSampleData loader was configured', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        sampleManifest: { step: { kind: 'url', url: '/audio/step.ogg' } },
+      })
+
+      expect(yield* audio.preloadSamples(['step'])).toEqual({
+        cached: 0,
+        failed: 1,
+        loaded: 0,
+        requested: 1,
+      })
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'step' })
+      // The load failed, so playback falls back to the synthesized oscillator
+      // rather than a decoded buffer.
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(1)
+    }),
+  )
+
   it.effect('uses an AudioBufferSource when the host resolves the cue sound id', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()
@@ -586,6 +626,23 @@ describe('the node graph the adapter builds', () => {
     }),
   )
 
+  it.effect('still reports the original construction failure when best-effort cleanup itself fails', () =>
+    Effect.gen(function* () {
+      // The cleanup catch after a failed graph build is best-effort: a node
+      // refusing to disconnect (already disconnected, or a closed context)
+      // must not replace or hide the panner-construction failure that
+      // triggered cleanup in the first place.
+      const { backend } = withFake({ disconnectThrows: true, pannerThrows: true })
+      const audio = yield* backend
+      yield* audio.unlock
+
+      yield* audio.playTone(CUE)
+
+      expect((yield* audio.report).activeTones).toBe(0)
+      expect((yield* audio.report).refusedTones).toBe(1)
+    }),
+  )
+
   it.effect('schedules the envelope on the gain, not a flat value', () =>
     Effect.gen(function* () {
       // The whole reason `domain/envelope.ts` exists. A flat `gain.value` plus
@@ -752,6 +809,20 @@ describe('the master gain node', () => {
       expect(fake.context()?.log.params.at(-1)?.value).toBe(0.6)
     }),
   )
+
+  it.effect('remembers a mute set before the context existed', () =>
+    Effect.gen(function* () {
+      // Same shape as "remembers a gain set before the context existed"
+      // above: a settings load can happen before the first cue, and muting
+      // has nothing to write to yet.
+      const { fake, backend } = withFake()
+      const audio = yield* backend
+
+      yield* audio.setMuted(true)
+      expect(fake.constructorCalls()).toBe(0)
+      expect((yield* audio.report).muted).toBe(true)
+    }),
+  )
 })
 
 describe('resource limits and lifecycle', () => {
@@ -813,6 +884,19 @@ describe('resource limits and lifecycle', () => {
     }),
   )
 
+  it.effect('disposes cleanly even when the device refuses to close', () =>
+    Effect.gen(function* () {
+      const { backend } = withFake({ closeThrows: true })
+      const audio = yield* backend
+      yield* audio.unlock
+
+      yield* audio.dispose
+
+      expect(yield* audio.report).toMatchObject({ disposed: true })
+      expect(yield* audio.availability).toBe('unavailable')
+    }),
+  )
+
   it.effect('clears decoded samples when disposed', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()
@@ -825,6 +909,21 @@ describe('resource limits and lifecycle', () => {
       yield* audio.dispose
 
       expect(yield* audio.preloadSamples()).toEqual({ cached: 0, failed: 1, loaded: 0, requested: 1 })
+    }),
+  )
+
+  it.effect('disposes cleanly when no context was ever built', () =>
+    Effect.gen(function* () {
+      // Unlike the test above, nothing here calls unlock, playTone, or
+      // preloadSamples — none of which ever ran, so ensureRuntime never ran
+      // either. dispose() must not assume a runtime exists just because it
+      // is the natural end of a backend's life.
+      const { fake, backend } = withFake()
+      const audio = yield* backend
+
+      yield* audio.dispose
+      expect(fake.constructorCalls()).toBe(0)
+      expect(yield* audio.report).toMatchObject({ activeTones: 0, disposed: true })
     }),
   )
 })

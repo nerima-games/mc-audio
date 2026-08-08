@@ -4,6 +4,7 @@ import { AudioBackendPort, makeRecordingBackend } from '../src/domain/backend-po
 import { CaptionStream } from '../src/domain/caption'
 import { CUE_DEFINITIONS, SOUND_CUE_IDS, isSoundCueId } from '../src/domain/cue'
 import { makeSoundCueService } from '../src/domain/engine'
+import { footstepCueFor } from '../src/domain/footstep'
 import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
 
 const EXPECTED_CUE_IDS = [
@@ -27,6 +28,13 @@ const EXPECTED_CUE_IDS = [
 ] as const
 
 describe('sound cue contract', () => {
+  it('maps only classified audible surfaces to spatial footsteps', () => {
+    expect(footstepCueFor('grass')).toBe('footstepGrass')
+    expect(footstepCueFor('wood')).toBe('footstepWood')
+    expect(footstepCueFor('stone')).toBe('footstepStone')
+    expect(footstepCueFor('default')).toBeUndefined()
+  })
+
   it('pins the complete reference roster and the unknown-id boundary', () => {
     expect(SOUND_CUE_IDS).toStrictEqual(EXPECTED_CUE_IDS)
     expect(EXPECTED_CUE_IDS.every(isSoundCueId)).toBe(true)

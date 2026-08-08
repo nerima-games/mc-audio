@@ -148,4 +148,14 @@ describe('End audio controller', () => {
     expect(released.sort()).toStrictEqual([1, 2, 3])
     expect(stopped).toStrictEqual([2, 1])
   })
+
+  it('floors a non-finite nowSecs to the start of the clock rather than propagating NaN', () => {
+    const record = recorder(true)
+    const controller = makeEndAudioController(record.port)
+    controller.update(endSnapshot({
+      events: [{ id: 'roar', kind: 'dragonRoar', position: { x: 0, y: 64, z: 0 } }],
+      nowSecs: Number.NaN,
+    }))
+    expect(controller.state().lastPlayedAtSecs.dragonRoar).toBe(0)
+  })
 })

@@ -15,8 +15,8 @@
  * the environment "changed" from `day` to `day` is the obvious bug here, and
  * it is silent — you would hear a permanently retriggering note, not an error.
  */
-import { Option } from 'effect'
 import { clamp01, effectiveMusicGain } from './volume'
+import { Option } from 'effect'
 
 export const MUSIC_ENVIRONMENTS = ['day', 'night', 'cave'] as const
 
@@ -52,7 +52,10 @@ export const resolveMusicEnvironment = (context: MusicEnvironmentContext): Music
   if (context.playerY < threshold) {
     return 'cave'
   }
-  return context.isNight ? 'night' : 'day'
+  if (context.isNight) {
+    return 'night'
+  }
+  return 'day'
 }
 
 export type MusicTrack = {
@@ -62,9 +65,9 @@ export type MusicTrack = {
 
 /** `TRACKS` in `packages/game/application/music-manager.config.ts:9-13`. */
 export const MUSIC_TRACKS: Record<MusicEnvironment, MusicTrack> = {
-  day: { frequency: 174.61, baseGain: 0.28 },
-  night: { frequency: 130.81, baseGain: 0.24 },
-  cave: { frequency: 98, baseGain: 0.2 },
+  cave: { baseGain: 0.2, frequency: 98 },
+  day: { baseGain: 0.28, frequency: 174.61 },
+  night: { baseGain: 0.24, frequency: 130.81 },
 }
 
 export type MusicPlan = {
@@ -88,18 +91,18 @@ export const resolveMusicPlan = (input: {
 }): MusicPlan => {
   if (!input.enabled) {
     return {
-      shouldStopActiveTrack: Option.isSome(input.active),
       environmentToPlay: Option.none(),
+      shouldStopActiveTrack: Option.isSome(input.active),
     }
   }
 
   if (Option.isSome(input.active) && input.active.value === input.desired) {
-    return { shouldStopActiveTrack: false, environmentToPlay: Option.none() }
+    return { environmentToPlay: Option.none(), shouldStopActiveTrack: false }
   }
 
   return {
-    shouldStopActiveTrack: Option.isSome(input.active),
     environmentToPlay: Option.some(input.desired),
+    shouldStopActiveTrack: Option.isSome(input.active),
   }
 }
 

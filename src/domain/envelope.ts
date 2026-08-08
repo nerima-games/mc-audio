@@ -46,6 +46,7 @@
  * passed in for the same reason `nowSecs` is passed into `makeSoundCueService`.
  */
 import type { ToneRequest } from './backend-port'
+import { clamp01 } from './volume'
 
 /**
  * Rise time from silence to full gain.
@@ -122,9 +123,6 @@ export type ToneEnvelope = {
   readonly stopAtSecs: number | null
 }
 
-const clampGain = (value: number): number =>
-  Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0
-
 /**
  * The frequency an oscillator should actually be driven at.
  *
@@ -134,8 +132,45 @@ const clampGain = (value: number): number =>
  * whose definition is wrong, and that is visible at a glance rather than
  * audible never.
  */
-export const drivenFrequency = (requested: number): number =>
-  Number.isFinite(requested) ? Math.max(MIN_FREQUENCY_HZ, requested) : MIN_FREQUENCY_HZ
+export const drivenFrequency = (requested: number): number => {
+  if (Number.isFinite(requested)) {
+    return Math.max(MIN_FREQUENCY_HZ, requested)
+  }
+  return MIN_FREQUENCY_HZ
+}
+
+/** `startSecs` falls back to the start of the audio clock when the caller passes something non-finite. */
+const NO_START_SECS = 0
+
+const resolveStart = (startSecs: number): number => {
+  if (Number.isFinite(startSecs)) {
+    return startSecs
+  }
+  return NO_START_SECS
+}
+
+const resolveDurationSecs = (requestedDurationSecs: number): number => {
+  if (Number.isFinite(requestedDurationSecs)) {
+    return requestedDurationSecs
+  }
+  return MIN_DURATION_SECS
+}
+
+/**
+ * Scale attack and release together when they do not fit inside `duration`,
+ * rather than clipping whichever is checked second. `SUSTAIN_FRACTION` leaves
+ * a sliver of sustain so that the four points never coincide.
+ */
+const SUSTAIN_FRACTION = 0.9
+const FULL_SCALE = 1
+
+const envelopeScale = (shaped: number, duration: number): number => {
+  const fittable = duration * SUSTAIN_FRACTION
+  if (shaped > fittable) {
+    return fittable / shaped
+  }
+  return FULL_SCALE
+}
 
 /**
  * The gain curve for one tone.
@@ -157,51 +192,100 @@ export const drivenFrequency = (requested: number): number =>
  * sound, and never a shape whose points are out of order.
  */
 export const toneEnvelope = (request: ToneRequest, startSecs: number): ToneEnvelope => {
-  const peakGain = clampGain(request.gain)
-  const start = Number.isFinite(startSecs) ? startSecs : 0
+  const peakGain = clamp01(request.gain)
+  const start = resolveStart(startSecs)
 
   if (request.loop) {
     // A looping tone has an attack and then nothing: it is stopped by
     // `stopTone`, at which point the adapter schedules its own release. Giving
-    // it a release here would fade the BGM out a fixed distance into the track
-    // and leave it silent but still running.
+    // It a release here would fade the BGM out a fixed distance into the track
+    // And leave it silent but still running.
     return {
-      points: [
-        { kind: 'set', atSecs: start, gain: 0 },
-        { kind: 'ramp', atSecs: start + ATTACK_SECS, gain: peakGain },
-      ],
       peakGain,
+      points: [
+        { atSecs: start, gain: 0, kind: 'set' },
+        { atSecs: start + ATTACK_SECS, gain: peakGain, kind: 'ramp' },
+      ],
       startSecs: start,
       stopAtSecs: null,
     }
   }
 
-  const duration = Math.max(
-    MIN_DURATION_SECS,
-    Number.isFinite(request.durationSecs) ? request.durationSecs : MIN_DURATION_SECS,
-  )
+  const duration = Math.max(MIN_DURATION_SECS, resolveDurationSecs(request.durationSecs))
   const end = start + duration
-
-  // Scale attack and release together when they do not fit, rather than
-  // clipping whichever is checked second. `0.9` leaves a sliver of sustain so
-  // that `sustainSecs` is never negative and the four points never coincide.
-  const shaped = ATTACK_SECS + RELEASE_SECS
-  const scale = shaped > duration * 0.9 ? (duration * 0.9) / shaped : 1
-  const attack = ATTACK_SECS * scale
-  const release = RELEASE_SECS * scale
+  const scale = envelopeScale(ATTACK_SECS + RELEASE_SECS, duration)
 
   return {
-    points: [
-      { kind: 'set', atSecs: start, gain: 0 },
-      { kind: 'ramp', atSecs: start + attack, gain: peakGain },
-      { kind: 'set', atSecs: end - release, gain: peakGain },
-      { kind: 'ramp', atSecs: end, gain: 0 },
-    ],
     peakGain,
+    points: [
+      { atSecs: start, gain: 0, kind: 'set' },
+      { atSecs: start + ATTACK_SECS * scale, gain: peakGain, kind: 'ramp' },
+      { atSecs: end - RELEASE_SECS * scale, gain: peakGain, kind: 'set' },
+      { atSecs: end, gain: 0, kind: 'ramp' },
+    ],
     startSecs: start,
     stopAtSecs: end,
   }
 }
+
+/** The gain to report when there is nothing scheduled, or once every scheduled point is behind `atSecs`. */
+const NO_POINTS_GAIN = 0
+/** Loop step between adjacent points, and the offset from `length` to the last index. */
+const ADJACENT_STEP = 1
+
+type EnvelopeSegment = {
+  readonly current: EnvelopePoint
+  readonly previous: EnvelopePoint
+}
+
+/**
+ * The adjacent pair of points straddling `atSecs`, or `null` if `atSecs` is past every point.
+ *
+ * Whichever pair this returns, `previous.atSecs < atSecs <= current.atSecs`
+ * strictly: either it is the first pair (so `gainAt`'s own `atSecs <=
+ * first.atSecs` guard already ruled out `atSecs <= previous.atSecs`), or an
+ * earlier pair already failed to match (so `atSecs > previous.atSecs` there
+ * too). `interpolateSegment` below relies on that strictness to divide safely.
+ */
+const findSegment = (
+  points: ReadonlyArray<EnvelopePoint>,
+  atSecs: number,
+): EnvelopeSegment | null => {
+  for (let index = ADJACENT_STEP; index < points.length; index += ADJACENT_STEP) {
+    const previous = points[index - ADJACENT_STEP]
+    const current = points[index]
+    if (previous && current && atSecs <= current.atSecs) {
+      return { current, previous }
+    }
+  }
+  return null
+}
+
+/**
+ * The gain within a segment at `atSecs`.
+ *
+ * A `set` point is a step: the value holds until the instant it is set, And
+ * only a `ramp` interpolates. Treating both as ramps would draw a curve the
+ * Browser does not produce.
+ */
+const interpolateSegment = (segment: EnvelopeSegment, atSecs: number): number => {
+  const { current, previous } = segment
+  if (current.kind === 'set') {
+    return previous.gain
+  }
+  const span = current.atSecs - previous.atSecs
+  return previous.gain + ((current.gain - previous.gain) * (atSecs - previous.atSecs)) / span
+}
+
+/**
+ * The gain to report once `atSecs` is past every scheduled point: the last point's gain.
+ *
+ * `gainAt` only calls this after its own `!first` guard has already proven
+ * `points` non-empty, so the index below is safe without a redundant check
+ * that no caller could ever exercise.
+ */
+const lastGain = (points: ReadonlyArray<EnvelopePoint>): number =>
+  points[points.length - ADJACENT_STEP]!.gain
 
 /**
  * The gain at an instant, by the same interpolation a browser performs.
@@ -217,34 +301,18 @@ export const toneEnvelope = (request: ToneRequest, startSecs: number): ToneEnvel
  * extrapolate.
  */
 export const gainAt = (envelope: ToneEnvelope, atSecs: number): number => {
-  const points = envelope.points
-  const first = points[0]
-  if (first === undefined) {
-    return 0
+  const { points } = envelope
+  const [first] = points
+  if (!first) {
+    return NO_POINTS_GAIN
   }
   if (atSecs <= first.atSecs) {
     return first.gain
   }
 
-  for (let index = 1; index < points.length; index += 1) {
-    const previous = points[index - 1]
-    const current = points[index]
-    if (previous === undefined || current === undefined || atSecs > current.atSecs) {
-      continue
-    }
-
-    // A `set` point is a step: the value holds until the instant it is set, and
-    // only a `ramp` interpolates. Treating both as ramps would draw a curve the
-    // browser does not produce.
-    if (current.kind === 'set') {
-      return previous.gain
-    }
-    const span = current.atSecs - previous.atSecs
-    if (span <= 0) {
-      return current.gain
-    }
-    return previous.gain + ((current.gain - previous.gain) * (atSecs - previous.atSecs)) / span
+  const segment = findSegment(points, atSecs)
+  if (!segment) {
+    return lastGain(points)
   }
-
-  return points[points.length - 1]?.gain ?? 0
+  return interpolateSegment(segment, atSecs)
 }

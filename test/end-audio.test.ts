@@ -138,4 +138,36 @@ describe('End audio planning', () => {
       ).events,
     ).toStrictEqual([])
   })
+
+  it('floors a non-finite nowSecs and a non-finite sound limit rather than propagating NaN', () => {
+    const plan = planEndAudio(
+      snapshot({ events: [event('dragonRoar', 'roar')], nowSecs: Number.NaN }),
+    )
+    expect(plan.events).toHaveLength(1)
+    expect(plan.nextState.lastPlayedAtSecs.dragonRoar).toBe(0)
+
+    const noSlots = planEndAudio(
+      snapshot({
+        events: [event('dragonRoar', 'roar')],
+        maxSimultaneousSounds: Number.NaN,
+      }),
+    )
+    expect(noSlots.loops).toStrictEqual([])
+    expect(noSlots.events).toStrictEqual([])
+  })
+
+  it('keeps the earlier of two same-priority (same-kind) events on a sort tie', () => {
+    // Every EndAudioEventKind has a distinct priority except when compared to
+    // itself, so two events of the same kind is the only way to reach the
+    // sort's index-based tie-break. selectEventPlans then applies this kind's
+    // cooldown against itself, so only the first survives — which is exactly
+    // what proves the tie-break preserved arrival order rather than reversing it.
+    const plan = planEndAudio(
+      snapshot({
+        events: [event('dragonHurt', 'first', 0), event('dragonHurt', 'second', 1)],
+      }),
+    )
+    expect(plan.events).toHaveLength(1)
+    expect(plan.events[0]?.eventId).toBe('first')
+  })
 })
