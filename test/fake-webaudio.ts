@@ -149,6 +149,15 @@ export type FakeWebAudioOptions = {
   readonly decodedDurationSecs?: number
   readonly resumePolicy?: ResumePolicy
   readonly initialState?: AudioContextStateSurface
+  /**
+   * Every node's `disconnect()` throws. A real implementation can refuse
+   * this too (e.g. a node already disconnected, or a closed context), and
+   * the adapter's best-effort cleanup after a failed graph build must not
+   * let that refusal hide the original failure.
+   */
+  readonly disconnectThrows?: boolean
+  /** `context.close()` rejects, i.e. the device refuses to release cleanly. */
+  readonly closeThrows?: boolean
 }
 
 export type ParamCall = {
@@ -274,6 +283,7 @@ class FakeAudioNode implements AudioNodeSurface {
   constructor(
     protected readonly log: FakeAudioLog,
     readonly id: string,
+    private readonly disconnectThrows: boolean = false,
   ) {}
 
   connect(destination: AudioNodeSurface): AudioNodeSurface {
@@ -287,6 +297,9 @@ class FakeAudioNode implements AudioNodeSurface {
   }
 
   disconnect(): void {
+    if (this.disconnectThrows) {
+      throw new Error('fake: disconnect refused')
+    }
     this.log.disconnected.push(this.id)
   }
 }
@@ -294,8 +307,8 @@ class FakeAudioNode implements AudioNodeSurface {
 class FakeGainNode extends FakeAudioNode implements GainSurface {
   readonly gain: AudioParamSurface
 
-  constructor(log: FakeAudioLog, id: string, clock: () => number) {
-    super(log, id)
+  constructor(log: FakeAudioLog, id: string, clock: () => number, disconnectThrows: boolean) {
+    super(log, id, disconnectThrows)
     this.gain = new FakeAudioParam(log, id, 'gain', clock)
   }
 }
@@ -303,8 +316,8 @@ class FakeGainNode extends FakeAudioNode implements GainSurface {
 class FakeStereoPannerNode extends FakeAudioNode implements StereoPannerSurface {
   readonly pan: AudioParamSurface
 
-  constructor(log: FakeAudioLog, id: string, clock: () => number) {
-    super(log, id)
+  constructor(log: FakeAudioLog, id: string, clock: () => number, disconnectThrows: boolean) {
+    super(log, id, disconnectThrows)
     this.pan = new FakeAudioParam(log, id, 'pan', clock)
   }
 }
@@ -318,8 +331,8 @@ class FakeOscillatorNode extends FakeAudioNode implements OscillatorSurface {
   stopAtSecs: number | null = null
   ended = false
 
-  constructor(log: FakeAudioLog, id: string, clock: () => number) {
-    super(log, id)
+  constructor(log: FakeAudioLog, id: string, clock: () => number, disconnectThrows: boolean) {
+    super(log, id, disconnectThrows)
     this.frequency = new FakeAudioParam(log, id, 'frequency', clock)
   }
 
@@ -380,14 +393,19 @@ export class FakeAudioContext implements AudioContextSurface {
   ) {
     onConstruct?.()
     this.#state = options.initialState ?? 'suspended'
-    this.destination = new FakeAudioNode(this.log, 'destination')
+    this.destination = new FakeAudioNode(this.log, 'destination', options.disconnectThrows === true)
 
     if (options.stereo !== false) {
       this.createStereoPanner = (): StereoPannerSurface => {
         if (this.options.pannerThrows === true) {
           throw new Error('fake: createStereoPanner refused')
         }
-        const node = new FakeStereoPannerNode(this.log, this.#id('panner'), () => this.#currentTime)
+        const node = new FakeStereoPannerNode(
+          this.log,
+          this.#id('panner'),
+          () => this.#currentTime,
+          this.options.disconnectThrows === true,
+        )
         this.log.created.push(node.id)
         return node
       }
@@ -411,7 +429,12 @@ export class FakeAudioContext implements AudioContextSurface {
     if (this.options.wiringThrows === true && this.log.created.length === 0) {
       throw new Error('fake: createGain refused')
     }
-    const node = new FakeGainNode(this.log, this.#id('gain'), () => this.#currentTime)
+    const node = new FakeGainNode(
+      this.log,
+      this.#id('gain'),
+      () => this.#currentTime,
+      this.options.disconnectThrows === true,
+    )
     this.log.created.push(node.id)
     return node
   }
@@ -420,14 +443,19 @@ export class FakeAudioContext implements AudioContextSurface {
     if (this.options.bufferSourceThrows === true) {
       throw new Error('fake: createBufferSource refused')
     }
-    const node = new FakeBufferSourceNode(this.log, this.#id('buffer'))
+    const node = new FakeBufferSourceNode(this.log, this.#id('buffer'), this.options.disconnectThrows === true)
     this.log.created.push(node.id)
     this.bufferSources.push(node)
     return node
   }
 
   createOscillator(): OscillatorSurface {
-    const node = new FakeOscillatorNode(this.log, this.#id('osc'), () => this.#currentTime)
+    const node = new FakeOscillatorNode(
+      this.log,
+      this.#id('osc'),
+      () => this.#currentTime,
+      this.options.disconnectThrows === true,
+    )
     this.log.created.push(node.id)
     this.oscillators.push(node)
     return node
@@ -457,6 +485,9 @@ export class FakeAudioContext implements AudioContextSurface {
   }
 
   async close(): Promise<void> {
+    if (this.options.closeThrows === true) {
+      return Promise.reject(new Error('fake: close() refused'))
+    }
     this.#transition('closed')
     return Promise.resolve()
   }

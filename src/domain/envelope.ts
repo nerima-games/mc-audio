@@ -232,15 +232,21 @@ export const toneEnvelope = (request: ToneRequest, startSecs: number): ToneEnvel
 const NO_POINTS_GAIN = 0
 /** Loop step between adjacent points, and the offset from `length` to the last index. */
 const ADJACENT_STEP = 1
-/** Below this span, a `ramp`'s two points are effectively simultaneous — hold the later value instead of dividing by ~0. */
-const MIN_SPAN = 0
 
 type EnvelopeSegment = {
   readonly current: EnvelopePoint
   readonly previous: EnvelopePoint
 }
 
-/** The adjacent pair of points straddling `atSecs`, or `null` if `atSecs` is past every point. */
+/**
+ * The adjacent pair of points straddling `atSecs`, or `null` if `atSecs` is past every point.
+ *
+ * Whichever pair this returns, `previous.atSecs < atSecs <= current.atSecs`
+ * strictly: either it is the first pair (so `gainAt`'s own `atSecs <=
+ * first.atSecs` guard already ruled out `atSecs <= previous.atSecs`), or an
+ * earlier pair already failed to match (so `atSecs > previous.atSecs` there
+ * too). `interpolateSegment` below relies on that strictness to divide safely.
+ */
 const findSegment = (
   points: ReadonlyArray<EnvelopePoint>,
   atSecs: number,
@@ -268,20 +274,18 @@ const interpolateSegment = (segment: EnvelopeSegment, atSecs: number): number =>
     return previous.gain
   }
   const span = current.atSecs - previous.atSecs
-  if (span <= MIN_SPAN) {
-    return current.gain
-  }
   return previous.gain + ((current.gain - previous.gain) * (atSecs - previous.atSecs)) / span
 }
 
-/** The gain to report once `atSecs` is past every scheduled point: the last point's gain. */
-const lastGain = (points: ReadonlyArray<EnvelopePoint>): number => {
-  const last = points[points.length - ADJACENT_STEP]
-  if (!last) {
-    return NO_POINTS_GAIN
-  }
-  return last.gain
-}
+/**
+ * The gain to report once `atSecs` is past every scheduled point: the last point's gain.
+ *
+ * `gainAt` only calls this after its own `!first` guard has already proven
+ * `points` non-empty, so the index below is safe without a redundant check
+ * that no caller could ever exercise.
+ */
+const lastGain = (points: ReadonlyArray<EnvelopePoint>): number =>
+  points[points.length - ADJACENT_STEP]!.gain
 
 /**
  * The gain at an instant, by the same interpolation a browser performs.

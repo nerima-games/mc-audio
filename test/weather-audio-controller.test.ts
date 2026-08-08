@@ -67,4 +67,19 @@ describe('weather audio controller', () => {
     expect(record.released.sort()).toStrictEqual([1, 2])
     expect(record.stopped).toStrictEqual([1])
   })
+
+  it('ignores every update once disposed, rather than resurrecting released loops', () => {
+    const record = recorder()
+    const controller = makeWeatherAudioController(record.port)
+    controller.update(weather('rain'))
+    controller.dispose()
+    record.created.length = 0
+    record.gains.length = 0
+
+    controller.update(weather('rain'))
+
+    expect(record.created).toStrictEqual([])
+    expect(record.gains).toStrictEqual([])
+    expect(controller.state()).toStrictEqual({ lastThunderEventId: null, mode: 'rain' })
+  })
 })

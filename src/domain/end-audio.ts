@@ -126,8 +126,19 @@ const isEventAllowed = (
     case 'exitPortal':
     case 'dragonReward':
       return dimension === 'end' && phase === 'defeated'
-    default:
-      return false
+    // Unreachable: the cases above already exhaust every EndAudioEventKind
+    // Member, so `kind` is narrowed to `never` here. This arm exists only so
+    // A future addition to END_AUDIO_EVENT_KINDS fails to compile instead of
+    // Silently being allowed nowhere. v8's coverage-ignore pragma below is
+    // Fixed, lowercase syntax (vitest.dev/guide/coverage#ignoring-code).
+    // oxlint-disable-next-line capitalized-comments
+    /* v8 ignore start */
+    default: {
+      const exhaustive: never = kind
+      return exhaustive
+    }
+    // oxlint-disable-next-line capitalized-comments
+    /* v8 ignore stop */
   }
 }
 

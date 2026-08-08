@@ -1,13 +1,19 @@
 import { describe, expect, it } from '@effect/vitest'
-import { Effect, Layer, Ref } from 'effect'
+import { Effect, Layer, Option, Ref } from 'effect'
 import {
   type AudioAvailability,
   AudioBackendPort,
   type ToneRequest,
   makeRecordingBackend,
 } from '../src/domain/backend-port'
-import { type CaptionEvent, CaptionStream } from '../src/domain/caption'
-import { type CueContext, makeSoundCueService, planCue } from '../src/domain/engine'
+import type { CaptionEvent } from '../src/domain/caption'
+import {
+  type CueContext,
+  firstCaptionFor,
+  makeSoundCueService,
+  planCue,
+  recordingCaptionLayer,
+} from '../src/domain/engine'
 import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
 
 /**
@@ -61,9 +67,7 @@ const runCue = (context: CueContext, availability: AudioAvailability): Effect.Ef
 
     const layers = Layer.merge(
       Layer.succeed(AudioBackendPort, recorded.backend),
-      Layer.succeed(CaptionStream, {
-        emit: (event) => Ref.update(captionLog, (current) => [...current, event]),
-      }),
+      recordingCaptionLayer((event) => Ref.update(captionLog, (current) => [...current, event])),
     )
 
     const service = yield* makeSoundCueService({
@@ -180,6 +184,39 @@ describe('planCue', () => {
       expect(plan.caption?.pan).toBeUndefined()
       // A UI sound is not in the world, so a position must not move it.
       expect(plan.tone?.pan).toBe(0)
+    }),
+  )
+
+  it.effect('scales the tone gain by an explicit gainScale, and leaves it unscaled without one', () =>
+    Effect.sync(() => {
+      const unscaled = planCue('blockBreak', baseContext({}))
+      const scaled = planCue('blockBreak', baseContext({}), { gainScale: 0.5 })
+
+      expect(unscaled.tone?.gain).toBeGreaterThan(0)
+      expect(scaled.tone?.gain).toBeCloseTo((unscaled.tone?.gain ?? 0) * 0.5, 10)
+    }),
+  )
+})
+
+describe('firstCaptionFor', () => {
+  const CAPTIONS: ReadonlyArray<CaptionEvent> = [
+    { atSecs: 1, cueId: 'blockBreak', reason: 'audible', text: 'Block breaks' },
+    { atSecs: 2, cueId: 'levelUp', reason: 'audible', text: 'Level up!' },
+    { atSecs: 3, cueId: 'blockBreak', reason: 'muted', text: 'Block breaks' },
+  ]
+
+  it.effect('finds the first event matching a cue id, not the most recent one', () =>
+    Effect.sync(() => {
+      const found = firstCaptionFor(CAPTIONS, 'blockBreak')
+      expect(Option.isSome(found)).toBe(true)
+      expect(Option.getOrThrow(found).atSecs).toBe(1)
+    }),
+  )
+
+  it.effect('is none when no event matches the cue id', () =>
+    Effect.sync(() => {
+      expect(firstCaptionFor(CAPTIONS, 'thunderClap')).toStrictEqual(Option.none())
+      expect(firstCaptionFor([], 'blockBreak')).toStrictEqual(Option.none())
     }),
   )
 })

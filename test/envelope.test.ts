@@ -29,6 +29,7 @@ import {
   MIN_FREQUENCY_HZ,
   RELEASE_SECS,
   toneEnvelope,
+  type ToneEnvelope,
 } from '../src/domain/envelope'
 
 const tone = (overrides: Partial<ToneRequest> = {}): ToneRequest => ({
@@ -239,6 +240,52 @@ describe('clamping', () => {
       const envelope = toneEnvelope(tone(), 10)
       expect(gainAt(envelope, 9)).toBe(0)
       expect(gainAt(envelope, 1000)).toBe(0)
+    }),
+  )
+
+  it.effect('floors a non-finite startSecs to the start of the clock', () =>
+    Effect.sync(() => {
+      // The audio clock (`AudioContextSurface.currentTime`) is always finite
+      // in practice, but toneEnvelope guards the boundary anyway rather than
+      // scheduling NaN automation.
+      for (const startSecs of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        const envelope = toneEnvelope(tone(), startSecs)
+        expect(envelope.startSecs).toBe(0)
+        expect(gainAt(envelope, 0)).toBe(0)
+      }
+    }),
+  )
+})
+
+describe('gainAt on a hand-built envelope', () => {
+  it.effect('reports silence for an envelope with no points at all', () =>
+    Effect.sync(() => {
+      // Not producible by toneEnvelope, which always schedules at least two
+      // points, but ToneEnvelope is an exported type and gainAt is a general
+      // function over it — a caller could hand it an empty schedule.
+      const empty: ToneEnvelope = { peakGain: 0, points: [], startSecs: 0, stopAtSecs: null }
+      expect(gainAt(empty, 0)).toBe(0)
+      expect(gainAt(empty, 5)).toBe(0)
+    }),
+  )
+
+  it.effect('interpolates linearly between two ramp points at arbitrary gains', () =>
+    Effect.sync(() => {
+      // A hand-built two-point ramp, independent of toneEnvelope's own shape,
+      // pinning gainAt's interpolation arithmetic directly.
+      const ramp: ToneEnvelope = {
+        peakGain: 1,
+        points: [
+          { atSecs: 0, gain: 0, kind: 'set' },
+          { atSecs: 10, gain: 1, kind: 'ramp' },
+        ],
+        startSecs: 0,
+        stopAtSecs: 10,
+      }
+      expect(gainAt(ramp, 0)).toBe(0)
+      expect(gainAt(ramp, 2.5)).toBeCloseTo(0.25, 10)
+      expect(gainAt(ramp, 5)).toBeCloseTo(0.5, 10)
+      expect(gainAt(ramp, 10)).toBeCloseTo(1, 10)
     }),
   )
 })

@@ -586,6 +586,13 @@ export const makeWebAudioBackend = (
         }
 
         const runtime = yield* Ref.get(runtimeRef)
+        // Unreachable: `tone` above only exists in `activeRef` because
+        // `playTone` put it there, and `playTone` cannot add an entry without
+        // `ensureRuntime` first setting `runtimeRef` to Some — which it never
+        // Unsets. v8's coverage-ignore pragma below is fixed, lowercase
+        // Syntax (vitest.dev/guide/coverage#ignoring-code).
+        // oxlint-disable-next-line capitalized-comments
+        /* v8 ignore next 3 */
         if (Option.isNone(runtime)) {
           return
         }
