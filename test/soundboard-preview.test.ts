@@ -57,7 +57,7 @@ const frameFor = (input: {
   readonly state?: (state: PreviewState) => PreviewState
   readonly play?: boolean
 }): Effect.Effect<ReadonlyArray<string>> =>
-  Effect.gen(function*  frameFor() {
+  Effect.gen(function*  buildFrame() {
     const fake = makeFakeWebAudio(input.fakeOptions ?? {})
     const backend = yield* makeWebAudioBackend({ global: fake.global })
     const captionLog = yield* Ref.make<ReadonlyArray<CaptionEvent>>([])

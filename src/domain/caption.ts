@@ -1,3 +1,4 @@
+/* oxlint-disable new-cap -- Context.Tag is a callable class factory. */
 /**
  * The caption event stream.
  *
@@ -91,12 +92,12 @@ export const visibleCaptions = (
   nowSecs: number,
 ): ReadonlyArray<CaptionEvent> => {
   // Latest occurrence of each distinct text wins, so a repeated cue refreshes
-  // its row rather than stacking a second one.
+  // Its row rather than stacking a second one.
   const latestByText = new Map<string, CaptionEvent>()
   for (const event of events) {
     if (nowSecs - event.atSecs < CAPTION_DISPLAY_SECS && nowSecs >= event.atSecs) {
       const existing = latestByText.get(event.text)
-      if (existing === undefined || event.atSecs >= existing.atSecs) {
+      if (!existing || event.atSecs >= existing.atSecs) {
         latestByText.set(event.text, event)
       }
     }

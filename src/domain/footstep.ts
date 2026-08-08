@@ -14,6 +14,10 @@ export const footstepCueFor = (surface: FootstepSurface): SoundCueId | undefined
     case 'stone':
       return 'footstepStone'
     case 'default':
-      return undefined
+      return
+    default: {
+      const exhaustive: never = surface
+      return exhaustive
+    }
   }
 }

@@ -20,6 +20,7 @@
  * definition is a type error, and `SOUND_CUE_IDS` is derived from the roster, so
  * a definition without a cue is impossible.
  */
+import type { Vec3 } from './volume'
 
 export const SOUND_CUE_IDS = [
   'blockBreak',
@@ -101,11 +102,7 @@ export const cueDefinition = (cueId: SoundCueId): CueDefinition => CUE_DEFINITIO
  * listener-relative spatialisation policy.
  */
 export type CuePlayOptions = {
-  readonly position?: {
-    readonly x: number
-    readonly y: number
-    readonly z: number
-  }
+  readonly position?: Vec3
   /** Extra per-call scaling, e.g. a quieter footstep while sneaking. Clamped to >= 0. */
   readonly gainScale?: number
 }

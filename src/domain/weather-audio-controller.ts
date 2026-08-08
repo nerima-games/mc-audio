@@ -1,10 +1,11 @@
 import {
   INITIAL_WEATHER_AMBIENCE_STATE,
   WEATHER_FADE_SECS,
-  planWeatherAmbience,
+  type WeatherAmbiencePlan,
   type WeatherAmbienceState,
   type WeatherAudioSnapshot,
   type WeatherLoopKind,
+  planWeatherAmbience,
 } from './weather-ambience'
 
 export type WeatherAudioHandle = { readonly id: number }
@@ -27,6 +28,37 @@ export type WeatherAudioController = {
   readonly state: () => WeatherAmbienceState
 }
 
+/** Stop and release any loop the plan no longer wants running. */
+const stopUnwantedLoops = (input: {
+  readonly loops: Map<WeatherLoopKind, WeatherAudioHandle>
+  readonly desired: ReadonlySet<WeatherLoopKind>
+  readonly port: WeatherAudioPort
+}): void => {
+  for (const [kind, handle] of input.loops) {
+    if (!input.desired.has(kind)) {
+      input.port.stopLoop(handle, WEATHER_FADE_SECS)
+      input.port.release(handle)
+      input.loops.delete(kind)
+    }
+  }
+}
+
+/** Start each planned loop that isn't already running, and retune the ones that are. */
+const startOrRetuneLoops = (input: {
+  readonly loops: Map<WeatherLoopKind, WeatherAudioHandle>
+  readonly plan: WeatherAmbiencePlan
+  readonly port: WeatherAudioPort
+}): void => {
+  for (const loop of input.plan.loops) {
+    const existing = input.loops.get(loop.kind)
+    if (!existing) {
+      input.loops.set(loop.kind, input.port.createLoop(loop.kind, loop.gain))
+    } else {
+      input.port.setLoopGain(existing, loop.gain, loop.fadeSecs)
+    }
+  }
+}
+
 export const makeWeatherAudioController = (port: WeatherAudioPort): WeatherAudioController => {
   const loops = new Map<WeatherLoopKind, WeatherAudioHandle>()
   const transient = new Set<WeatherAudioHandle>()
@@ -34,25 +66,14 @@ export const makeWeatherAudioController = (port: WeatherAudioPort): WeatherAudio
   let disposed = false
 
   const update = (snapshot: WeatherAudioSnapshot): void => {
-    if (disposed) return
+    if (disposed) {
+      return
+    }
     const plan = planWeatherAmbience(snapshot, currentState)
     const desired = new Set(plan.loops.map((loop) => loop.kind))
 
-    for (const [kind, handle] of loops) {
-      if (!desired.has(kind)) {
-        port.stopLoop(handle, WEATHER_FADE_SECS)
-        port.release(handle)
-        loops.delete(kind)
-      }
-    }
-    for (const loop of plan.loops) {
-      const existing = loops.get(loop.kind)
-      if (existing === undefined) {
-        loops.set(loop.kind, port.createLoop(loop.kind, loop.gain))
-      } else {
-        port.setLoopGain(existing, loop.gain, loop.fadeSecs)
-      }
-    }
+    stopUnwantedLoops({ desired, loops, port })
+    startOrRetuneLoops({ loops, plan, port })
     if (plan.thunder !== null) {
       transient.add(port.playThunder(plan.thunder))
     }
@@ -60,13 +81,17 @@ export const makeWeatherAudioController = (port: WeatherAudioPort): WeatherAudio
   }
 
   const dispose = (): void => {
-    if (disposed) return
+    if (disposed) {
+      return
+    }
     disposed = true
     for (const handle of loops.values()) {
       port.stopLoop(handle, WEATHER_FADE_SECS)
       port.release(handle)
     }
-    for (const handle of transient) port.release(handle)
+    for (const handle of transient) {
+      port.release(handle)
+    }
     loops.clear()
     transient.clear()
   }

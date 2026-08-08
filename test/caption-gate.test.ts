@@ -55,7 +55,7 @@ type Harness = {
  * below the gate.
  */
 const runCue = (context: CueContext, availability: AudioAvailability): Effect.Effect<Harness> =>
-  Effect.gen(function*  runCue() {
+  Effect.gen(function*  executeCue() {
     const recorded = yield* makeRecordingBackend(availability)
     const captionLog = yield* Ref.make<ReadonlyArray<CaptionEvent>>([])
 
