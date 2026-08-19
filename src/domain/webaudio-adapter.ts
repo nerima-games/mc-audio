@@ -79,205 +79,47 @@ import {
   type AudioAvailability,
   type AudioBackend,
   AudioBackendPort,
+  type MusicRequest,
   type ToneHandle,
   type ToneRequest,
-} from './backend-port'
-import { RELEASE_SECS, type ToneEnvelope, drivenFrequency, gainAt, toneEnvelope } from './envelope'
-import { clamp01, clampPan } from './volume'
+} from './backend-port.js'
+import type { AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
+import { RELEASE_SECS, gainAt, toneEnvelope } from './envelope.js'
+import { clamp01, clampNonNegative } from './volume.js'
+import {
+  availabilityForState,
+  findWebAudioConstructor,
+  type ContextRuntime,
+  type WebAudioConstructorName,
+} from './webaudio-runtime.js'
 import type {
   AudioBufferSurface,
-  AudioContextStateSurface,
   AudioContextSurface,
+  AudioContextStateSurface,
   AudioScheduledSourceSurface,
-  GainSurface,
-  OscillatorSurface,
-  OscillatorWave,
-  StereoPannerSurface,
-  WebAudioGlobalSurface,
-} from './webaudio-surface'
+} from './webaudio-surface.js'
+import type {
+  WebAudioBackend,
+  WebAudioOptions,
+  WebAudioReport,
+} from './webaudio-backend-types.js'
+import { preloadAudioSamples } from './webaudio-samples.js'
+import { buildToneGraph, type ActiveTone } from './webaudio-tone-graph.js'
 
-/**
- * Default for callers such as BGM that do not author an explicit waveform.
- */
-export const DEFAULT_TONE_WAVE: OscillatorWave = 'sine'
+export { DEFAULT_TONE_WAVE } from './webaudio-tone-graph.js'
 
 /** A conservative ceiling that prevents pathological cue bursts from exhausting nodes. */
 export const DEFAULT_MAX_CONCURRENT_TONES = 32
 
-export type AudioSampleSource =
-  | { readonly kind: 'array-buffer'; readonly data: ArrayBuffer }
-  | { readonly kind: 'url'; readonly url: string }
-
-export type AudioSampleManifest = Readonly<Record<string, AudioSampleSource>>
-
-export type AudioSampleLoadReport = {
-  readonly requested: number
-  readonly loaded: number
-  readonly cached: number
-  readonly failed: number
-}
-
-/** Which spelling of the constructor the host turned out to have. */
-export type WebAudioConstructorName = 'AudioContext' | 'webkitAudioContext'
-
-export type WebAudioOptions = {
-  /**
-   * Where to look for a constructor. In a browser this is `globalThis`; in a
-   * test it is an object; in Node it is
-   * `{ AudioContext: undefined, webkitAudioContext: undefined }` — the spelling
-   * `WebAudioGlobalSurface` exists to make possible, because "I checked and
-   * there is none" should look different from "I forgot".
-   */
-  readonly global: WebAudioGlobalSurface
-  /**
-   * The master node's gain before any `setMasterGain` call.
-   *
-   * Defaults to `DEFAULT_VOLUME_SETTINGS.master`. It matters because the
-   * context may be created long after the player's settings were loaded: a
-   * master node that starts at 1 and is corrected on the next settings change
-   * plays the first cue at full volume.
-   */
-  readonly initialMasterGain?: number
-  /** Maximum active tones. Additional cues are discarded and reported. */
-  readonly maxConcurrentTones?: number
-  /** Resolves an already-decoded sample; missing/failed samples use synthesis. */
-  readonly resolveAudioBuffer?: (soundId: string) => AudioBufferSurface | null
-  /** Samples to decode ahead of playback. Unloaded cues retain tone fallback. */
-  readonly sampleManifest?: AudioSampleManifest
-  /** Host-owned URL transport, keeping fetch and DOM types outside the domain. */
-  readonly loadSampleData?: (url: string) => Promise<ArrayBuffer>
-}
-
-/**
- * Everything the adapter knows about its own state, as one value.
- *
- * This type is the answer to "why could I not hear that". It exists because the
- * reference could not answer it — `docs/design-notes.md` DN-1's table has two
- * rows marked 「テストが無い」 precisely because the states they describe were
- * not represented anywhere. A field here is a question somebody asked while
- * debugging silence.
- */
-export type WebAudioReport = {
-  readonly availability: AudioAvailability
-  /** `null` until the context is created; see `makeWebAudioBackend` on laziness. */
-  readonly contextState: AudioContextStateSurface | null
-  /** `null` when the host had neither constructor. */
-  readonly constructorName: WebAudioConstructorName | null
-  /** `false` when `createStereoPanner` was absent, i.e. sound is MONO. */
-  readonly stereo: boolean
-  /** `true` once construction has been attempted, successfully or not. */
-  readonly contextAttempted: boolean
-  /** How many times `unlock` was run. */
-  readonly unlockAttempts: number
-  /** How many of those left the context not running. The autoplay refusals. */
-  readonly unlockRefusals: number
-  /**
-   * Cues the guard refused, and therefore DISCARDED. Never queued.
-   * A non-zero value here with `availability: 'ready'` means the player missed
-   * sounds before they clicked, which is expected and not an error.
-   */
-  readonly refusedTones: number
-  /** Ready-state cues discarded because `maxConcurrentTones` was reached. */
-  readonly capacityRefusals: number
-  /** Tones currently scheduled or sounding. */
-  readonly activeTones: number
-  /**
-   * How many times the browser changed `state` without being asked.
-   *
-   * The iOS interruption counter. A phone call that starts and ends while the
-   * page is open moves the context to `'interrupted'` and back, and polling
-   * `state` would see neither edge. Without this the report would say `ready`
-   * and be right, having been wrong for the whole call.
-   */
-  readonly spontaneousStateChanges: number
-  readonly muted: boolean
-  readonly disposed: boolean
-}
-
-/**
- * The backend, plus the three things only a real one can offer.
- *
- * `unlock` is not on `AudioBackend` because no pure or recording backend has
- * anything to do with a user gesture; putting it there would oblige every fake
- * in every downstream repository to pretend to have an autoplay policy.
- */
-export type WebAudioBackend = AudioBackend & {
-  /** Decode configured samples. Concurrent requests for one id share one load. */
-  readonly preloadSamples: (soundIds?: ReadonlyArray<string>) => Effect.Effect<AudioSampleLoadReport>
-  /**
-   * Run this FROM A USER GESTURE HANDLER — a click, a keydown, a touch.
-   *
-   * Returns the availability that resulted, and never fails. A refusal is the
-   * ordinary outcome, not an exception: browsers refuse for reasons the page
-   * cannot inspect (the gesture was not "activating", the tab is in the
-   * background, an iOS interruption is still in force), and there is nothing to
-   * do about any of them except report `locked` and let the UI say "click to
-   * enable sound".
-   *
-   * Note it re-reads `state` AFTER `resume()` resolves rather than trusting the
-   * resolution. A resolved `resume()` does not mean a running context; Safari
-   * in particular resolves while still suspended. Trusting the promise is how a
-   * page ends up sure it has audio and silent.
-   */
-  readonly unlock: Effect.Effect<AudioAvailability>
-  readonly report: Effect.Effect<WebAudioReport>
-  /** Mute without forgetting the configured master gain. */
-  readonly setMuted: (muted: boolean) => Effect.Effect<void>
-  /** Permanently release nodes and the context. Safe to call repeatedly. */
-  readonly dispose: Effect.Effect<void>
-  /**
-   * Release the device. For tests, previews, and page teardown.
-   *
-   * A closed context is `unavailable`, not `locked`: no gesture revives it, and
-   * reporting `locked` would leave a UI showing a "click to enable" button that
-   * can never work.
-   */
-  readonly close: Effect.Effect<void>
-}
-
-/**
- * The state-to-availability mapping, exported because it is the load-bearing
- * decision in the file and deserves to be tested and printed on its own.
- *
- * `'interrupted'` maps to `locked`, and `domain/webaudio-surface.ts` explains
- * where that state came from. It is the right answer for the same reason
- * `'suspended'` is: a backend exists, sound is not currently reaching the
- * player, and a user gesture may fix it.
- *
- * `'closed'` maps to `unavailable` and NOT to `locked`, because a gesture will
- * not fix it. That is the distinction `locked` exists to draw.
- */
-export const availabilityForState = (state: AudioContextStateSurface): AudioAvailability => {
-  if (state === 'running') {
-    return 'ready'
-  }
-  if (state === 'closed') {
-    return 'unavailable'
-  }
-  return 'locked'
-}
-
-type ActiveTone = {
-  readonly source: AudioScheduledSourceSurface
-  readonly gain: GainSurface
-  readonly panner: StereoPannerSurface | null
-  /**
-   * The curve this tone was scheduled with, kept so that `stopTone` can ramp
-   * down FROM WHERE THE TONE ACTUALLY IS rather than from its peak.
-   *
-   * Ramping from the peak would be a step UP for a tone stopped during its
-   * attack — a cancel that makes the sound briefly louder, which is the
-   * opposite of what cancelling means.
-   */
-  readonly envelope: ToneEnvelope
-}
-
-type ContextRuntime = {
-  readonly context: AudioContextSurface
-  readonly master: GainSurface
-  readonly constructorName: WebAudioConstructorName
-  readonly stereo: boolean
-}
+export type { AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
+export { availabilityForState } from './webaudio-runtime.js'
+export type { WebAudioConstructorName } from './webaudio-runtime.js'
+export type {
+  WebAudioBackend,
+  WebAudioOptions,
+  WebAudioReport,
+  WebAudioStreamSourceOptions,
+} from './webaudio-backend-types.js'
 
 /**
  * Run something against a node that may already be gone.
@@ -290,6 +132,67 @@ type ContextRuntime = {
  */
 const ignoringFailure = (run: () => void): Effect.Effect<void> =>
   Effect.try({ catch: (cause) => cause, try: run }).pipe(Effect.catchAll(() => Effect.void))
+
+const resolvePlaybackRate = (playbackRate: number | undefined): number =>
+  playbackRate !== undefined && Number.isFinite(playbackRate) && playbackRate > 0 ? playbackRate : 1
+
+const sampleDurationSecs = (
+  buffer: AudioBufferSurface,
+  playbackRate: number,
+  fallbackDurationSecs: number,
+): number =>
+  Number.isFinite(buffer.duration) && buffer.duration >= 0
+    ? buffer.duration / playbackRate
+    : fallbackDurationSecs
+
+const resolveSampleBuffer = (
+  request: ToneRequest,
+  options: WebAudioOptions,
+  sampleCache: ReadonlyMap<string, AudioBufferSurface>,
+): AudioBufferSurface | null => {
+  const { soundId } = request
+  if (soundId === undefined) {
+    return null
+  }
+  try {
+    return options.resolveAudioBuffer?.(soundId) ?? sampleCache.get(soundId) ?? null
+  } catch {
+    return null
+  }
+}
+
+type StreamSourceRequestOptions = {
+  readonly context: AudioContextSurface
+  readonly createStreamSource: WebAudioOptions['createStreamSource']
+  readonly request: ToneRequest
+  readonly sampleManifest: AudioSampleManifest
+}
+
+const streamSourceForRequest = ({
+  context,
+  createStreamSource,
+  request,
+  sampleManifest,
+}: StreamSourceRequestOptions): Effect.Effect<AudioScheduledSourceSurface | null> => {
+  if (request.stream !== true) {
+    return Effect.succeed(null)
+  }
+
+  const { soundId } = request
+  if (soundId === undefined || createStreamSource === undefined) {
+    return Effect.succeed(null)
+  }
+
+  const source = sampleManifest[soundId]
+  if (source === undefined || source.stream !== true) {
+    return Effect.succeed(null)
+  }
+
+  return Effect.try({
+    catch: (cause) => cause,
+    try: () => createStreamSource({ context, request, soundId, source }),
+  }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+}
 
 /**
  * Build the adapter.
@@ -331,6 +234,11 @@ export const makeWebAudioBackend = (
     const stateChangesRef = yield* Ref.make(0)
     const sampleCache = new Map<string, AudioBufferSurface>()
     const sampleLoads = new Map<string, Promise<boolean>>()
+    const preloadedStreams = new Set<string>()
+    const sampleManifest = options.sampleManifest ?? {}
+    const autoPreloadStartedRef = yield* Ref.make(false)
+    const autoPreloadEffectRef = yield* Ref.make<Effect.Effect<void>>(Effect.void)
+    const hasConfiguredPreloads = Object.values(sampleManifest).some((source) => source.preload === true)
 
     /**
      * Feature detection, as a value rather than as a global read.
@@ -341,21 +249,6 @@ export const makeWebAudioBackend = (
      * `webkitAudioContext` across the whole reference implementation returns
      * nothing, so that browser had no audio at all and nobody noticed.
      */
-    const findConstructor = (): Option.Option<{
-      readonly construct: new () => AudioContextSurface
-      readonly name: WebAudioConstructorName
-    }> => {
-      const standard = options.global.AudioContext
-      if (standard !== undefined) {
-        return Option.some({ construct: standard, name: 'AudioContext' })
-      }
-      const prefixed = options.global.webkitAudioContext
-      if (prefixed !== undefined) {
-        return Option.some({ construct: prefixed, name: 'webkitAudioContext' })
-      }
-      return Option.none()
-    }
-
     const ensureRuntime: Effect.Effect<Option.Option<ContextRuntime>> = Effect.gen(function*  ensureRuntime() {
       if (yield* Ref.get(disposedRef)) {
         return Option.none<ContextRuntime>()
@@ -367,7 +260,7 @@ export const makeWebAudioBackend = (
 
       yield* Ref.set(attemptedRef, true)
 
-      const found = findConstructor()
+      const found = findWebAudioConstructor(options.global)
       if (Option.isNone(found)) {
         return Option.none<ContextRuntime>()
       }
@@ -419,6 +312,10 @@ export const makeWebAudioBackend = (
 
       const runtime = Option.some(wired)
       yield* Ref.set(runtimeRef, runtime)
+      if (hasConfiguredPreloads && !(yield* Ref.get(autoPreloadStartedRef))) {
+        yield* Ref.set(autoPreloadStartedRef, true)
+        yield* Effect.forkDaemon(yield* Ref.get(autoPreloadEffectRef))
+      }
       return runtime
     })
 
@@ -429,6 +326,51 @@ export const makeWebAudioBackend = (
         onSome: (runtime) => availabilityForState(runtime.context.state),
       }),
     )
+
+    const loadSample = (
+      _soundId: string,
+      source: AudioSampleSource,
+    ): Effect.Effect<AudioBufferSurface | null> =>
+      Effect.gen(function* loadSampleEffect() {
+        const runtime = yield* ensureRuntime
+        if (Option.isNone(runtime) || (yield* Ref.get(disposedRef))) {
+          return null
+        }
+        const loadData = (): Promise<ArrayBuffer> => {
+          if (source.kind === 'array-buffer') {
+            return Promise.resolve(source.data.slice(0))
+          }
+          if (options.loadSampleData === undefined) {
+            return Promise.reject(new Error('No sample URL loader configured'))
+          }
+          return options.loadSampleData(source.url)
+        }
+        const data = yield* Effect.tryPromise({
+          catch: (cause) => cause,
+          try: loadData,
+        }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+        if (data === null) {
+          return null
+        }
+        const decoded = yield* Effect.tryPromise({
+          catch: (cause) => cause,
+          try: () => runtime.value.context.decodeAudioData(data),
+        }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+        if (decoded === null || (yield* Ref.get(disposedRef))) {
+          return null
+        }
+        return decoded
+      })
+
+    const preloadSamples = (soundIds?: ReadonlyArray<string>): Effect.Effect<AudioSampleLoadReport> =>
+      preloadAudioSamples(soundIds, {
+        cache: sampleCache,
+        loadSample,
+        manifest: sampleManifest,
+        pendingLoads: sampleLoads,
+        preloadStream: options.preloadStream,
+        preloadedStreams,
+      })
 
     const releaseTone = (tone: ActiveTone): Effect.Effect<void> =>
       Effect.gen(function* releaseActiveTone() {
@@ -471,7 +413,21 @@ export const makeWebAudioBackend = (
           return handle
         }
 
-        const envelope = toneEnvelope(request, context.currentTime)
+        if (request.soundId !== undefined && sampleManifest[request.soundId] !== undefined) {
+          yield* preloadSamples([request.soundId]).pipe(Effect.asVoid)
+        }
+
+        const playbackRate = resolvePlaybackRate(request.playbackRate)
+        const sampleBuffer = resolveSampleBuffer(request, options, sampleCache)
+        const canUseSample = sampleBuffer !== null && context.createBufferSource !== undefined
+        const scheduledRequest =
+          canUseSample && sampleBuffer !== null && !request.loop
+            ? {
+                ...request,
+                durationSecs: sampleDurationSecs(sampleBuffer, playbackRate, request.durationSecs),
+              }
+            : request
+        const envelope = toneEnvelope(scheduledRequest, context.currentTime)
         if (envelope.peakGain === 0) {
           return handle
         }
@@ -482,68 +438,26 @@ export const makeWebAudioBackend = (
           return handle
         }
 
+        const streamSource = yield* streamSourceForRequest({
+          context,
+          createStreamSource: options.createStreamSource,
+          request,
+          sampleManifest,
+        })
+
         const built = yield* Effect.try({
           catch: (cause) => cause,
-          try: (): ActiveTone => {
-            let source: AudioScheduledSourceSurface | null = null
-            let gain: GainSurface | null = null
-            let panner: StereoPannerSurface | null = null
-            try {
-              if (request.soundId !== undefined) {
-                try {
-                  const buffer = options.resolveAudioBuffer?.(request.soundId) ?? sampleCache.get(request.soundId) ?? null
-                  const {createBufferSource} = context
-                  if (buffer !== null && createBufferSource !== undefined) {
-                    const bufferSource = createBufferSource.call(context)
-                    bufferSource.buffer = buffer
-                    bufferSource.loop = request.loop
-                    source = bufferSource
-                  }
-                } catch {
-                  // A sample resolver or source failure must not silence the cue.
-                }
-              }
-              if (source === null) {
-                const oscillator: OscillatorSurface = context.createOscillator()
-                oscillator.type = request.wave ?? DEFAULT_TONE_WAVE
-                oscillator.frequency.value = drivenFrequency(request.frequency)
-                source = oscillator
-              }
-
-              gain = context.createGain()
-              for (const point of envelope.points) {
-                if (point.kind === 'set') {
-                  gain.gain.setValueAtTime(point.gain, point.atSecs)
-                } else {
-                  gain.gain.linearRampToValueAtTime(point.gain, point.atSecs)
-                }
-              }
-
-              source.connect(gain)
-
-              const createPanner = context.createStereoPanner
-              panner = stereo && createPanner !== undefined ? createPanner.call(context) : null
-
-              if (panner === null) {
-                gain.connect(master)
-              } else {
-                panner.pan.value = clampPan(request.pan)
-                gain.connect(panner)
-                panner.connect(master)
-              }
-
-              return { envelope, gain, panner, source }
-            } catch (cause) {
-              for (const node of [source, gain, panner]) {
-                try {
-                  node?.disconnect()
-                } catch {
-                  // Best-effort cleanup must not hide the graph construction failure.
-                }
-              }
-              throw cause
-            }
-          },
+          try: () =>
+            buildToneGraph({
+              context,
+              envelope,
+              master,
+              playbackRate,
+              request,
+              sampleBuffer: canUseSample ? sampleBuffer : null,
+              stereo,
+              streamSource,
+            }),
         }).pipe(Effect.catchAll(() => Effect.succeed(null)))
 
         if (built === null) {
@@ -615,6 +529,20 @@ export const makeWebAudioBackend = (
         })
       })
 
+    const setToneGain = (handle: ToneHandle, gain: number): Effect.Effect<void> =>
+      Effect.gen(function* updateToneGain() {
+        const tone = (yield* Ref.get(activeRef)).get(handle.id)
+        if (tone === undefined) {
+          return
+        }
+        yield* ignoringFailure(() => {
+        tone.gain.gain.value = clampNonNegative(gain)
+        })
+      })
+
+    const isToneActive = (handle: ToneHandle): Effect.Effect<boolean> =>
+      Effect.map(Ref.get(activeRef), (active) => active.has(handle.id))
+
     const setMasterGain = (gain: number): Effect.Effect<void> =>
       Effect.gen(function* updateMasterGain() {
         const next = clamp01(gain)
@@ -674,71 +602,33 @@ export const makeWebAudioBackend = (
       return availability
     })
 
-    const preloadSamples = (
-      soundIds?: ReadonlyArray<string>,
-    ): Effect.Effect<AudioSampleLoadReport> =>
-      Effect.gen(function* preloadConfiguredSamples() {
-        const manifest = options.sampleManifest ?? {}
-        const ids = [...new Set(soundIds ?? Object.keys(manifest))]
-        let loaded = 0
-        let cached = 0
-        let failed = 0
-
-        for (const soundId of ids) {
-          if (sampleCache.has(soundId)) {
-            cached += 1
-          } else {
-            const source = manifest[soundId]
-            if (source === undefined) {
-              failed += 1
-            } else {
-              let pending = sampleLoads.get(soundId)
-              if (pending === undefined) {
-                pending = Effect.runPromise(
-                  Effect.gen(function* loadSample() {
-                    const runtime = yield* ensureRuntime
-                    if (Option.isNone(runtime) || (yield* Ref.get(disposedRef))) {
-                      return false
-                    }
-                    const loadData = (): Promise<ArrayBuffer> => {
-                      if (source.kind === 'array-buffer') {
-                        return Promise.resolve(source.data.slice(0))
-                      }
-                      if (options.loadSampleData === undefined) {
-                        return Promise.reject(new Error('No sample URL loader configured'))
-                      }
-                      return options.loadSampleData(source.url)
-                    }
-                    const data = yield* Effect.tryPromise({
-                      catch: (cause) => cause,
-                      try: loadData,
-                    }).pipe(Effect.catchAll(() => Effect.succeed(null)))
-                    if (data === null) {
-                      return false
-                    }
-                    const decoded = yield* Effect.tryPromise({
-                      catch: (cause) => cause,
-                      try: () => runtime.value.context.decodeAudioData(data),
-                    }).pipe(Effect.catchAll(() => Effect.succeed(null)))
-                    if (decoded === null || (yield* Ref.get(disposedRef))) {
-                      return false
-                    }
-                    sampleCache.set(soundId, decoded)
-                    return true
-                  }),
-                ).finally(() => sampleLoads.delete(soundId))
-                sampleLoads.set(soundId, pending)
-              }
-              if (yield* Effect.promise(() => pending)) {
-                loaded += 1
-              } else {
-                failed += 1
-              }
-            }
-          }
-        }
-        return { cached, failed, loaded, requested: ids.length }
+    const playMusic = (request: MusicRequest): Effect.Effect<ToneHandle> =>
+      Effect.gen(function* scheduleMusic() {
+        yield* preloadSamples([request.soundId]).pipe(Effect.asVoid)
+        return yield* playTone({
+          durationSecs: 1,
+          frequency: 20,
+          gain: request.gain,
+          loop: false,
+          naturalDuration: true,
+          pan: 0,
+          playbackRate: request.playbackRate,
+          sampleOnly: true,
+          soundId: request.soundId,
+          stream: request.stream,
+        })
       })
+
+    const autoPreload = preloadAudioSamples(undefined, {
+      cache: sampleCache,
+      loadSample,
+      manifest: sampleManifest,
+      onlyPreload: true,
+      pendingLoads: sampleLoads,
+      preloadStream: options.preloadStream,
+      preloadedStreams,
+    }).pipe(Effect.asVoid, Effect.catchAllCause(() => Effect.void))
+    yield* Ref.set(autoPreloadEffectRef, autoPreload)
 
     const report: Effect.Effect<WebAudioReport> = Effect.gen(function*  report() {
       const runtime = yield* Ref.get(runtimeRef)
@@ -780,6 +670,8 @@ export const makeWebAudioBackend = (
       const runtime = yield* Ref.get(runtimeRef)
       if (Option.isNone(runtime)) {
         sampleCache.clear()
+        preloadedStreams.clear()
+        sampleLoads.clear()
         return
       }
       for (const tone of (yield* Ref.get(activeRef)).values()) {
@@ -788,6 +680,8 @@ export const makeWebAudioBackend = (
       }
       yield* Ref.set(activeRef, new Map())
       sampleCache.clear()
+      preloadedStreams.clear()
+      sampleLoads.clear()
       yield* Effect.tryPromise({
         catch: (cause) => cause,
         try: () => runtime.value.context.close(),
@@ -796,13 +690,15 @@ export const makeWebAudioBackend = (
 
     return {
       availability: currentAvailability,
-      close: dispose,
       dispose,
+      isToneActive,
+      playMusic,
       playTone,
       preloadSamples,
       report,
       setMasterGain,
       setMuted,
+      setToneGain,
       stopTone,
       unlock,
     }
@@ -811,7 +707,8 @@ export const makeWebAudioBackend = (
 /**
  * The adapter as a Layer, for a host that only needs `AudioBackendPort`.
  *
- * Note what this DISCARDS: `unlock`, `report` and `close` are not on
+ * Note what this DISCARDS: `unlock`, `report`, `setMuted`, `dispose` and
+ * `preloadSamples` are not on
  * `AudioBackend`, so a consumer wired only through this Layer cannot unlock the
  * context and will stay `locked` forever. That is a real foot-gun and it is
  * left visible rather than papered over — the alternative is widening
@@ -831,8 +728,11 @@ export const webAudioBackendLayer = (
       makeWebAudioBackend(options),
       (backend): AudioBackend => ({
         availability: backend.availability,
+        isToneActive: backend.isToneActive,
+        playMusic: backend.playMusic,
         playTone: backend.playTone,
         setMasterGain: backend.setMasterGain,
+        setToneGain: backend.setToneGain,
         stopTone: backend.stopTone,
       }),
     ),

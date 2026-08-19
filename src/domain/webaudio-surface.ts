@@ -185,6 +185,7 @@ export type AudioBufferSurface = { readonly duration: number }
 export type AudioBufferSourceSurface = AudioScheduledSourceSurface & {
   buffer: AudioBufferSurface | null
   loop: boolean
+  readonly playbackRate: AudioParamSurface
 }
 
 export type OscillatorSurface = AudioScheduledSourceSurface & {

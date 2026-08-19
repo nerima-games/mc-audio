@@ -449,7 +449,7 @@ export const renderNotes = (snapshot: Snapshot, style: Style): ReadonlyArray<str
 
 export const KEY_HELP = [
   'up/down select cue   enter play   tab panel   1!2@3# volumes   , . move source',
-  'u unlock (user gesture)   a mute   i interrupt (iOS call)   x close context',
+  'u unlock (user gesture)   a mute   i interrupt (iOS call)   x dispose context',
   '[ ] caption clock   - + audio clock   w s player Y   n night   m run music machine   q quit',
 ] as const
 

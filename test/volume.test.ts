@@ -3,6 +3,7 @@ import { Effect } from 'effect'
 import { planCue, type CueContext } from '../src/domain/engine'
 import {
   clamp01,
+  clampNonNegative,
   clampPan,
   DEFAULT_VOLUME_SETTINGS,
   effectiveMusicGain,
@@ -102,9 +103,9 @@ describe('effectiveSfxGain', () => {
     }),
   )
 
-  it.effect('clamps into [0, 1] so a loud cue cannot clip the mix', () =>
+  it.effect('keeps a loud cue finite without clipping its official event gain', () =>
     Effect.sync(() => {
-      expect(effectiveSfxGain({ baseGain: 10, sfxVolume: 10, spatialGain: 1 })).toBe(1)
+      expect(effectiveSfxGain({ baseGain: 10, sfxVolume: 10, spatialGain: 1 })).toBe(100)
     }),
   )
 })
@@ -113,7 +114,7 @@ describe('effectiveMusicGain', () => {
   it.effect('is base times the music category, clamped', () =>
     Effect.sync(() => {
       expect(effectiveMusicGain({ baseGain: 0.4, musicVolume: 0.5 })).toBeCloseTo(0.2, 10)
-      expect(effectiveMusicGain({ baseGain: 2, musicVolume: 2 })).toBe(1)
+      expect(effectiveMusicGain({ baseGain: 2, musicVolume: 2 })).toBe(4)
     }),
   )
 })
@@ -130,6 +131,19 @@ describe('spatialise', () => {
     Effect.sync(() => {
       const far = spatialise(LISTENER, { x: SPATIAL_DISTANCE_SCALE, y: 64, z: 0 })
       expect(far.gain).toBeCloseTo(0.5, 10)
+    }),
+  )
+
+  it.effect('applies a positive distance offset to attenuation without changing pan', () =>
+    Effect.sync(() => {
+      const offset = spatialise(LISTENER, { x: 6, y: 64, z: 0 }, { distanceOffset: 6 })
+      expect(offset.gain).toBeCloseTo(0.5, 10)
+      expect(offset.pan).toBeCloseTo(0.5, 10)
+      expect(spatialise(LISTENER, LISTENER, { distanceOffset: -1 })).toStrictEqual({ gain: 1, pan: 0 })
+      expect(spatialise(LISTENER, LISTENER, { distanceOffset: Number.NaN })).toStrictEqual({
+        gain: 1,
+        pan: 0,
+      })
     }),
   )
 
@@ -154,17 +168,17 @@ describe('spatialise', () => {
   it.effect('rotates stereo left and right with the listener', () =>
     Effect.sync(() => {
       const source = { x: 0, y: 64, z: 6 }
-      expect(spatialise(LISTENER, source, { x: 1, y: 0, z: 0 }).pan).toBeCloseTo(0.5, 10)
-      expect(spatialise(LISTENER, source, { x: -1, y: 0, z: 0 }).pan).toBeCloseTo(-0.5, 10)
-      expect(spatialise(LISTENER, source, { x: 100, y: 7, z: 0 }).pan).toBeCloseTo(0.5, 10)
+      expect(spatialise(LISTENER, source, { listenerForward: { x: 1, y: 0, z: 0 } }).pan).toBeCloseTo(0.5, 10)
+      expect(spatialise(LISTENER, source, { listenerForward: { x: -1, y: 0, z: 0 } }).pan).toBeCloseTo(-0.5, 10)
+      expect(spatialise(LISTENER, source, { listenerForward: { x: 100, y: 7, z: 0 } }).pan).toBeCloseTo(0.5, 10)
     }),
   )
 
   it.effect('falls back deterministically for unusable horizontal directions', () =>
     Effect.sync(() => {
       const source = { x: 6, y: 64, z: 0 }
-      expect(spatialise(LISTENER, source, { x: 0, y: 1, z: 0 }).pan).toBeCloseTo(0.5, 10)
-      expect(spatialise(LISTENER, source, { x: Number.NaN, y: 0, z: 0 }).pan).toBeCloseTo(
+      expect(spatialise(LISTENER, source, { listenerForward: { x: 0, y: 1, z: 0 } }).pan).toBeCloseTo(0.5, 10)
+      expect(spatialise(LISTENER, source, { listenerForward: { x: Number.NaN, y: 0, z: 0 } }).pan).toBeCloseTo(
         0.5,
         10,
       )
@@ -178,6 +192,15 @@ describe('clamps', () => {
       expect(clamp01(Number.NaN)).toBe(0)
       expect(clamp01(Number.POSITIVE_INFINITY)).toBe(0)
       expect(clamp01(0.3)).toBe(0.3)
+    }),
+  )
+
+  it.effect('clampNonNegative preserves finite values above unity', () =>
+    Effect.sync(() => {
+      expect(clampNonNegative(Number.NaN)).toBe(0)
+      expect(clampNonNegative(Number.POSITIVE_INFINITY)).toBe(0)
+      expect(clampNonNegative(-1)).toBe(0)
+      expect(clampNonNegative(2.4)).toBe(2.4)
     }),
   )
 

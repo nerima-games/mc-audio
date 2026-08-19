@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer } from 'effect'
+import { EpochMillis, FixedClockLayer, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import { AudioBackendPort, makeRecordingBackend } from '../src/domain/backend-port'
 import { CaptionStream } from '../src/domain/caption'
 import { CUE_DEFINITIONS, SOUND_CUE_IDS, isSoundCueId } from '../src/domain/cue'
@@ -56,8 +57,17 @@ describe('sound cue contract', () => {
           listener: { x: 0, y: 64, z: 0 },
           settings: DEFAULT_VOLUME_SETTINGS,
         }),
-        nowSecs: Effect.succeed(0),
-      }).pipe(Effect.provide(layers))
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            layers,
+            FixedClockLayer({
+              monotonicSecs: MonotonicTimeSecs(0),
+              wallClockEpochMillis: EpochMillis(0),
+            }),
+          ),
+        ),
+      )
 
       for (const cueId of SOUND_CUE_IDS) {
         yield* service.play(cueId, { position: { x: 1, y: 64, z: 0 } })

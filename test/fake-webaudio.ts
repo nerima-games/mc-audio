@@ -141,6 +141,8 @@ export type FakeWebAudioOptions = {
   readonly constructionThrows?: boolean
   /** Wiring the master gain throws, i.e. a context that is born broken. */
   readonly wiringThrows?: boolean
+  /** Creating a cue gain throws after the oscillator has been allocated. */
+  readonly cueGainThrows?: boolean
   /** Creating a cue's stereo panner throws after its oscillator and gain exist. */
   readonly pannerThrows?: boolean
   /** Creating a decoded-sample source throws, forcing synthesized fallback. */
@@ -163,7 +165,7 @@ export type FakeWebAudioOptions = {
 export type ParamCall = {
   /** The node id, e.g. `gain#2`. */
   readonly node: string
-  readonly param: 'gain' | 'frequency' | 'pan'
+  readonly param: 'gain' | 'frequency' | 'pan' | 'playbackRate'
   readonly kind: 'assign' | 'set' | 'ramp' | 'cancel'
   readonly value: number
   /** The scheduled time. Equal to the virtual `currentTime` for `assign`. */
@@ -348,11 +350,17 @@ class FakeOscillatorNode extends FakeAudioNode implements OscillatorSurface {
 }
 
 class FakeBufferSourceNode extends FakeAudioNode implements AudioBufferSourceSurface {
+  readonly playbackRate: AudioParamSurface
   buffer: AudioBufferSurface | null = null
   loop = false
   onended: ((event: never) => void) | null = null
   stopAtSecs: number | null = null
   ended = false
+
+  constructor(log: FakeAudioLog, id: string, clock: () => number, disconnectThrows: boolean) {
+    super(log, id, disconnectThrows)
+    this.playbackRate = new FakeAudioParam(log, id, 'playbackRate', clock)
+  }
 
   start(when?: number): void {
     this.log.started.push({ atSecs: when ?? 0, node: this.id })
@@ -426,7 +434,8 @@ export class FakeAudioContext implements AudioContextSurface {
   }
 
   createGain(): GainSurface {
-    if (this.options.wiringThrows === true && this.log.created.length === 0) {
+    const creatingMaster = this.log.created.length === 0
+    if ((this.options.wiringThrows === true && creatingMaster) || (this.options.cueGainThrows === true && !creatingMaster)) {
       throw new Error('fake: createGain refused')
     }
     const node = new FakeGainNode(
@@ -443,7 +452,12 @@ export class FakeAudioContext implements AudioContextSurface {
     if (this.options.bufferSourceThrows === true) {
       throw new Error('fake: createBufferSource refused')
     }
-    const node = new FakeBufferSourceNode(this.log, this.#id('buffer'), this.options.disconnectThrows === true)
+    const node = new FakeBufferSourceNode(
+      this.log,
+      this.#id('buffer'),
+      () => this.#currentTime,
+      this.options.disconnectThrows === true,
+    )
     this.log.created.push(node.id)
     this.bufferSources.push(node)
     return node

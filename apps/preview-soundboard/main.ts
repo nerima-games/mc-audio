@@ -63,6 +63,7 @@
  *    pure parts; `pnpm preview` is not a gate.
  */
 import { Effect, Layer, Ref } from 'effect'
+import { ClockPort, EpochMillis } from '@nerima-games/mc-kernel'
 import { AudioBackendPort } from '../../src/domain/backend-port'
 import { CaptionStream, type CaptionEvent } from '../../src/domain/caption'
 import { isSoundCueId, SOUND_CUE_IDS } from '../../src/domain/cue'
@@ -151,17 +152,20 @@ const program = Effect.gen(function* () {
   let state: PreviewState = selectPanel(INITIAL_STATE, options.panel)
 
   const layers = Layer.merge(
-    Layer.succeed(AudioBackendPort, backend),
-    Layer.succeed(CaptionStream, {
-      emit: (event) => Ref.update(captionLog, (current) => [...current, event]),
+    Layer.merge(
+      Layer.succeed(AudioBackendPort, backend),
+      Layer.succeed(CaptionStream, {
+        emit: (event) => Ref.update(captionLog, (current) => [...current, event]),
+      }),
+    ),
+    Layer.succeed(ClockPort, {
+      monotonicSecs: Effect.sync(() => state.nowSecs),
+      wallClockEpochMillis: Effect.succeed(EpochMillis(0)),
     }),
   )
 
   const service = yield* makeSoundCueService({
-    // Both of these are read at the moment a cue fires, which is why they are
-    // Effects closing over `state` rather than values captured now.
     context: Effect.map(backend.availability, (availability) => cueContext(state, availability)),
-    nowSecs: Effect.sync(() => state.nowSecs),
   }).pipe(Effect.provide(layers))
 
   const snapshot = (): Effect.Effect<Snapshot> =>
@@ -271,8 +275,8 @@ const program = Effect.gen(function* () {
           return true
         }
         case 'x':
-          yield* backend.close
-          state = note(state, 'context closed — unavailable, and no gesture revives it')
+          yield* backend.dispose
+          state = note(state, 'context disposed — unavailable, and no gesture revives it')
           return true
         case '[':
           state = advanceCaptionClock(state, -0.25)

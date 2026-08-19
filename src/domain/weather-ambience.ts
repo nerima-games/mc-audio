@@ -1,4 +1,5 @@
-import { type Vec3, clamp01, spatialise } from './volume'
+import { clamp01, spatialise } from './volume.js'
+import type { Position } from '@nerima-games/mc-kernel'
 
 export const WEATHER_MODES = ['clear', 'rain', 'thunder', 'snow'] as const
 
@@ -7,14 +8,14 @@ export type WeatherMode = (typeof WEATHER_MODES)[number]
 export type ThunderEvent = {
   readonly id: string
   readonly occurredAtSecs: number
-  readonly position: Vec3
+  readonly position: Position
 }
 
 export type WeatherAudioSnapshot = {
   readonly mode: WeatherMode
   readonly intensity: number
-  readonly listener: Vec3
-  readonly listenerForward?: Vec3
+  readonly listener: Position
+  readonly listenerForward?: Position
   /** Zero is outdoors, one is completely enclosed. */
   readonly occlusion: number
   readonly thunder?: ThunderEvent
@@ -88,7 +89,9 @@ const resolveThunder = (
     return { lastThunderEventId: event.id, plan: null }
   }
 
-  const spatial = spatialise(snapshot.listener, event.position, snapshot.listenerForward)
+  const spatial = spatialise(snapshot.listener, event.position, {
+    listenerForward: snapshot.listenerForward,
+  })
   const distance = Math.hypot(
     event.position.x - snapshot.listener.x,
     event.position.y - snapshot.listener.y,

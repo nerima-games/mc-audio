@@ -7,7 +7,7 @@
  *
  * The reference implementation set a flat gain and then cut the oscillator off:
  *
- *     gainNode.gain.value = clamp01(request.gain)          // audio-engine.ts:59
+ *     gainNode.gain.value = clampNonNegative(request.gain) // audio-engine.ts:59
  *     ...
  *     oscillator.stop(context.currentTime + duration)      // audio-engine.ts:104
  *
@@ -45,8 +45,8 @@
  * (`AudioContextSurface.currentTime`), never a wall clock. `startSecs` is
  * passed in for the same reason `nowSecs` is passed into `makeSoundCueService`.
  */
-import type { ToneRequest } from './backend-port'
-import { clamp01 } from './volume'
+import type { ToneRequest } from './backend-port.js'
+import { clampNonNegative } from './volume.js'
 
 /**
  * Rise time from silence to full gain.
@@ -107,11 +107,11 @@ export type EnvelopePoint = {
 
 export type ToneEnvelope = {
   readonly points: ReadonlyArray<EnvelopePoint>
-  /** Peak gain, after clamping. */
+  /** Peak gain, after finite/non-negative clamping. */
   readonly peakGain: number
   readonly startSecs: number
   /**
-   * When to stop the oscillator, or `null` for a looping tone.
+   * When to stop the oscillator, or `null` for looping/naturally-ending audio.
    *
    * `null` rather than `Infinity` because the two mean different things to the
    * adapter: `null` is "never call `stop`", and a music track that had `stop`
@@ -192,14 +192,13 @@ const envelopeScale = (shaped: number, duration: number): number => {
  * sound, and never a shape whose points are out of order.
  */
 export const toneEnvelope = (request: ToneRequest, startSecs: number): ToneEnvelope => {
-  const peakGain = clamp01(request.gain)
+  const peakGain = clampNonNegative(request.gain)
   const start = resolveStart(startSecs)
 
-  if (request.loop) {
-    // A looping tone has an attack and then nothing: it is stopped by
-    // `stopTone`, at which point the adapter schedules its own release. Giving
-    // It a release here would fade the BGM out a fixed distance into the track
-    // And leave it silent but still running.
+  if (request.loop || request.naturalDuration === true) {
+    // A loop or a decoded/streamed track with its own natural duration has an
+    // Attack and then nothing: `stopTone` schedules the release for a loop,
+    // While a finite sample reaches its own end and invokes `onended`.
     return {
       peakGain,
       points: [

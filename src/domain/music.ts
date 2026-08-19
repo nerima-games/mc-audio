@@ -1,7 +1,7 @@
 /**
  * The BGM state machine.
  *
- * PRE-AUDIT FIRST CUT (叩き台).
+ * Boundary and provenance notes.
  *
  * Ported in shape from the reference implementation's music manager, whose
  * best property is that the decision is a pure function returning a plan
@@ -15,8 +15,9 @@
  * the environment "changed" from `day` to `day` is the obvious bug here, and
  * it is silent — you would hear a permanently retriggering note, not an error.
  */
-import { clamp01, effectiveMusicGain } from './volume'
+import { clamp01, effectiveMusicGain } from './volume.js'
 import { Option } from 'effect'
+import type { Position } from '@nerima-games/mc-kernel'
 
 export const MUSIC_ENVIRONMENTS = ['day', 'night', 'cave'] as const
 
@@ -33,7 +34,7 @@ export type MusicEnvironment = (typeof MUSIC_ENVIRONMENTS)[number]
 export const DEFAULT_CAVE_THRESHOLD_Y = 40
 
 export type MusicEnvironmentContext = {
-  readonly playerY: number
+  readonly playerPosition: Position
   readonly isNight: boolean
   readonly caveThresholdY?: number
 }
@@ -49,7 +50,7 @@ export type MusicEnvironmentContext = {
  */
 export const resolveMusicEnvironment = (context: MusicEnvironmentContext): MusicEnvironment => {
   const threshold = context.caveThresholdY ?? DEFAULT_CAVE_THRESHOLD_Y
-  if (context.playerY < threshold) {
+  if (context.playerPosition.y < threshold) {
     return 'cave'
   }
   if (context.isNight) {

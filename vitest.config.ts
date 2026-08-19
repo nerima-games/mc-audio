@@ -34,18 +34,17 @@ export default defineConfig({
         '**/*.config.ts',
         '**/*.test.ts',
         '**/*.spec.ts',
+        // These modules intentionally contain only public type declarations.
+        'src/domain/audio-sample.ts',
+        'src/domain/minecraft-mob-sound-variant-types.ts',
+        'src/domain/minecraft-sounds-types.ts',
+        'src/domain/webaudio-backend-types.ts',
+        'src/domain/webaudio-surface.ts',
       ],
       all: true,
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: './coverage',
-      // Org-wide decision (TEST_STANDARD.md §3): the 4-metric 99% gate is
-      // enabled immediately, org-wide, with no staged rollout — even though
-      // this repository is currently below it. As of the 2026-08-01 rollout,
-      // mc-audio measures statements/branches/lines 95.52% and functions
-      // 84.12% (53/63), which is BELOW threshold. This is a known, accepted
-      // failure (TEST_STANDARD.md §4 "既知の非適合"), tracked as follow-up
-      // work, not a reason to lower or omit the gate.
-      thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
+      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
     },
   },
   esbuild: {

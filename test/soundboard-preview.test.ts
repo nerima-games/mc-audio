@@ -18,6 +18,7 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer, Option, Ref } from 'effect'
+import { ClockPort, EpochMillis } from '@nerima-games/mc-kernel'
 import { AudioBackendPort } from '../src/domain/backend-port'
 import { type CaptionEvent, CaptionStream } from '../src/domain/caption'
 import { SOUND_CUE_IDS } from '../src/domain/cue'
@@ -66,13 +67,18 @@ const frameFor = (input: {
 
     const service = yield* makeSoundCueService({
       context: Effect.map(backend.availability, (availability) => cueContext(state, availability)),
-      nowSecs: Effect.sync(() => state.nowSecs),
     }).pipe(
       Effect.provide(
         Layer.merge(
-          Layer.succeed(AudioBackendPort, backend),
-          Layer.succeed(CaptionStream, {
-            emit: (event) => Ref.update(captionLog, (current) => [...current, event]),
+          Layer.merge(
+            Layer.succeed(AudioBackendPort, backend),
+            Layer.succeed(CaptionStream, {
+              emit: (event) => Ref.update(captionLog, (current) => [...current, event]),
+            }),
+          ),
+          Layer.succeed(ClockPort, {
+            monotonicSecs: Effect.sync(() => state.nowSecs),
+            wallClockEpochMillis: Effect.succeed(EpochMillis(0)),
           }),
         ),
       ),

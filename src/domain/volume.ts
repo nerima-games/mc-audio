@@ -1,7 +1,7 @@
 /**
  * Volume categories and the gain arithmetic.
  *
- * PRE-AUDIT FIRST CUT (叩き台).
+ * Boundary and provenance notes.
  *
  * ---------------------------------------------------------------------------
  * The one rule: master is applied exactly once
@@ -20,6 +20,8 @@
  * assertion at `packages/game/test/sound-manager.test.ts:54-57`. Someone
  * evidently made the mistake once. `test/volume.test.ts` re-pins it here.
  */
+
+import type { Position } from '@nerima-games/mc-kernel'
 
 /** The three categories a player can set independently. */
 export const VOLUME_CATEGORIES = ['master', 'sfx', 'music'] as const
@@ -63,6 +65,14 @@ export const clamp01 = (value: number): number => {
   return Math.min(UNITY_GAIN, Math.max(SILENT_GAIN, value))
 }
 
+/** Keep an audio gain finite without discarding official variants louder than unity. */
+export const clampNonNegative = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return SILENT_GAIN
+  }
+  return Math.max(SILENT_GAIN, value)
+}
+
 export const clampPan = (value: number): number => {
   if (!Number.isFinite(value)) {
     return CENTER_PAN
@@ -76,17 +86,17 @@ export const clampPan = (value: number): number => {
  */
 export const SPATIAL_DISTANCE_SCALE = 12
 
-export type Vec3 = {
-  readonly x: number
-  readonly y: number
-  readonly z: number
-}
-
 export type Spatialisation = {
   /** Multiplicative attenuation in [0, 1]. */
   readonly gain: number
   /** Stereo position in [-1, 1]; negative is left. */
   readonly pan: number
+}
+
+export type SpatialisationOptions = {
+  readonly distanceOffset?: number | undefined
+  readonly listenerForward?: Position | undefined
+  readonly distanceScale?: number | undefined
 }
 
 /** Below this horizontal length, `listenerForward` is treated as unusable (looking straight up/down). */
@@ -95,10 +105,26 @@ const MIN_FORWARD_LENGTH = 0
 /** Fallback "right" unit vector (+x) used when the listener has no usable horizontal forward direction. */
 const DEFAULT_RIGHT_X = 1
 const DEFAULT_RIGHT_Z = 0
+const MIN_DISTANCE_SCALE = 0
+const DEFAULT_LISTENER_FORWARD: Position = { x: 0, y: 0, z: -1 }
+
+const resolveDistanceScale = (distanceScale: number): number => {
+  if (Number.isFinite(distanceScale) && distanceScale > MIN_DISTANCE_SCALE) {
+    return distanceScale
+  }
+  return SPATIAL_DISTANCE_SCALE
+}
+
+const resolveDistanceOffset = (distanceOffset: number): number => {
+  if (Number.isFinite(distanceOffset) && distanceOffset > MIN_DISTANCE_SCALE) {
+    return distanceOffset
+  }
+  return MIN_DISTANCE_SCALE
+}
 
 /** The horizontal "right" direction implied by `listenerForward`, or the +x fallback. */
 const listenerRight = (
-  listenerForward: Vec3,
+  listenerForward: Position,
   horizontalForwardLength: number,
 ): { readonly x: number; readonly z: number } => {
   const hasUsableForward =
@@ -120,22 +146,29 @@ const listenerRight = (
  * Reference: `packages/game/domain/sound-spatial.ts:11-27`.
  */
 export const spatialise = (
-  listener: Vec3,
-  source: Vec3,
-  listenerForward: Vec3 = { x: 0, y: 0, z: -1 },
+  listener: Position,
+  source: Position,
+  options: SpatialisationOptions = {},
 ): Spatialisation => {
+  const {
+    distanceOffset = MIN_DISTANCE_SCALE,
+    distanceScale = SPATIAL_DISTANCE_SCALE,
+    listenerForward = DEFAULT_LISTENER_FORWARD,
+  } = options
+  const resolvedDistanceScale = resolveDistanceScale(distanceScale)
+  const resolvedDistanceOffset = resolveDistanceOffset(distanceOffset)
   const dx = source.x - listener.x
   const dy = source.y - listener.y
   const dz = source.z - listener.z
-  const distance = Math.sqrt(dx * dx + dy * dy + dz * dz)
+  const distance = Math.sqrt(dx * dx + dy * dy + dz * dz) + resolvedDistanceOffset
   const horizontalForwardLength = Math.sqrt(
     listenerForward.x * listenerForward.x + listenerForward.z * listenerForward.z,
   )
   const right = listenerRight(listenerForward, horizontalForwardLength)
 
   return {
-    gain: UNITY_GAIN / (UNITY_GAIN + distance / SPATIAL_DISTANCE_SCALE),
-    pan: clampPan((dx * right.x + dz * right.z) / SPATIAL_DISTANCE_SCALE),
+    gain: UNITY_GAIN / (UNITY_GAIN + distance / resolvedDistanceScale),
+    pan: clampPan((dx * right.x + dz * right.z) / resolvedDistanceScale),
   }
 }
 
@@ -156,7 +189,7 @@ export const effectiveSfxGain = (input: {
   readonly spatialGain: number
   readonly gainScale?: number
 }): number =>
-  clamp01(
+  clampNonNegative(
     input.baseGain *
       input.sfxVolume *
       input.spatialGain *
@@ -171,7 +204,7 @@ export const effectiveSfxGain = (input: {
 export const effectiveMusicGain = (input: {
   readonly baseGain: number
   readonly musicVolume: number
-}): number => clamp01(input.baseGain * input.musicVolume)
+}): number => clampNonNegative(input.baseGain * input.musicVolume)
 
 /**
  * The gain the backend's master node should carry.

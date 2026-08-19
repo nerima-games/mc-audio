@@ -33,10 +33,11 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer, Ref } from 'effect'
+import { EpochMillis, FixedClockLayer, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import { AudioBackendPort, type ToneRequest } from '../src/domain/backend-port'
 import { type CaptionEvent, CaptionStream } from '../src/domain/caption'
 import { makeSoundCueService } from '../src/domain/engine'
-import { ATTACK_SECS, RELEASE_SECS } from '../src/domain/envelope'
+import { ATTACK_SECS, RELEASE_SECS, toneEnvelope } from '../src/domain/envelope'
 import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
 import {
   DEFAULT_TONE_WAVE,
@@ -44,6 +45,7 @@ import {
   makeWebAudioBackend,
   webAudioBackendLayer,
 } from '../src/domain/webaudio-adapter'
+import { buildToneGraph } from '../src/domain/webaudio-tone-graph'
 import { type FakeWebAudioOptions, makeFakeWebAudio } from './fake-webaudio'
 
 const CUE: ToneRequest = {
@@ -60,6 +62,15 @@ const withFake = (options: FakeWebAudioOptions = {}) => {
 }
 
 describe('decoded sample playback', () => {
+  it.effect('reports an empty preload when no sample manifest is configured', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({ global: fake.global })
+
+      expect(yield* audio.preloadSamples()).toEqual({ cached: 0, failed: 0, loaded: 0, requested: 0 })
+    }),
+  )
+
   it.effect('loads URL and ArrayBuffer samples once, then plays the cached buffer', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio({ decodedDurationSecs: 0.25 })
@@ -166,6 +177,297 @@ describe('decoded sample playback', () => {
     }),
   )
 
+  it.effect('preloads marked stream sources once when the runtime is initialized', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      let preloadCalls = 0
+      let resolvePreload: (() => void) | null = null
+      const preloadFinished = new Promise<void>((resolve) => {
+        resolvePreload = resolve
+      })
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        preloadStream: () =>
+          Effect.sync(() => {
+            preloadCalls += 1
+            resolvePreload?.()
+            return true
+          }),
+        sampleManifest: {
+          ambient: { kind: 'url', preload: true, stream: true, url: '/audio/ambient.ogg' },
+          lazy: { kind: 'url', preload: false, stream: true, url: '/audio/lazy.ogg' },
+        },
+      })
+
+      expect(yield* audio.availability).toBe('locked')
+      yield* Effect.promise(() => preloadFinished)
+      expect(preloadCalls).toBe(1)
+      expect(yield* audio.availability).toBe('locked')
+      expect(yield* audio.preloadSamples(['ambient'])).toEqual({
+        cached: 1,
+        failed: 0,
+        loaded: 0,
+        requested: 1,
+      })
+      expect(preloadCalls).toBe(1)
+    }),
+  )
+
+  it.effect('falls back to decoded samples when stream preload fails', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        preloadStream: () => Effect.fail(new Error('stream preload failed')),
+        sampleManifest: {
+          music: { data: new ArrayBuffer(8), kind: 'array-buffer', stream: true },
+        },
+      })
+
+      expect(yield* audio.preloadSamples(['music'])).toEqual({
+        cached: 0,
+        failed: 0,
+        loaded: 1,
+        requested: 1,
+      })
+      expect(fake.context()?.decodedData).toHaveLength(1)
+    }),
+  )
+
+  it.effect('refuses streamed cues without an id or host stream factory', () =>
+    Effect.gen(function* () {
+      const noIdFake = makeFakeWebAudio()
+      const noIdAudio = yield* makeWebAudioBackend({ global: noIdFake.global })
+      yield* noIdAudio.unlock
+      yield* noIdAudio.playTone({ ...CUE, stream: true })
+      expect((yield* noIdAudio.report).refusedTones).toBe(1)
+
+      const noFactoryFake = makeFakeWebAudio()
+      const noFactoryAudio = yield* makeWebAudioBackend({
+        global: noFactoryFake.global,
+        sampleManifest: { stream: { kind: 'url', stream: true, url: '/audio/stream.ogg' } },
+      })
+      yield* noFactoryAudio.unlock
+      yield* noFactoryAudio.playTone({ ...CUE, soundId: 'stream', stream: true })
+      expect((yield* noFactoryAudio.report).refusedTones).toBe(1)
+    }),
+  )
+
+  it.effect('refuses streamed cues without a source and decodes a manifest fallback', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      let sourceCalls = 0
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        createStreamSource: () => {
+          sourceCalls += 1
+          return fake.contexts()[0]?.createOscillator() ?? null
+        },
+        sampleManifest: {
+          decoded: { data: new ArrayBuffer(4), kind: 'array-buffer' },
+        },
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'unknown', stream: true })
+      yield* audio.playTone({ ...CUE, soundId: 'decoded', stream: true })
+
+      expect(sourceCalls).toBe(0)
+      expect((yield* audio.report).refusedTones).toBe(1)
+      expect(fake.context()?.bufferSources).toHaveLength(1)
+    }),
+  )
+
+  it.effect('swallows a host stream factory failure and refuses the cue', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        createStreamSource: () => {
+          throw new Error('stream factory failed')
+        },
+        sampleManifest: {
+          stream: { kind: 'url', stream: true, url: '/audio/stream.ogg' },
+        },
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'stream', stream: true })
+
+      expect((yield* audio.report).refusedTones).toBe(1)
+    }),
+  )
+
+  it.effect('plays music through the decoded sample path', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ decodedDurationSecs: 0.2 })
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        sampleManifest: {
+          music: { data: new ArrayBuffer(8), kind: 'array-buffer', stream: true },
+        },
+      })
+
+      yield* audio.unlock
+      const handle = yield* audio.playMusic({ gain: 0.7, playbackRate: 1, soundId: 'music', stream: true })
+
+      expect(fake.context()?.bufferSources).toHaveLength(1)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+      expect(fake.context()?.log.stopped).toHaveLength(0)
+      expect(yield* audio.isToneActive(handle)).toBe(true)
+    }),
+  )
+
+  it.effect('updates and queries active tone gain without failing for an unknown handle', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({ global: fake.global })
+
+      yield* audio.unlock
+      const handle = yield* audio.playTone(CUE)
+      expect(yield* audio.isToneActive(handle)).toBe(true)
+      yield* audio.setToneGain(handle, 0.25)
+      expect(yield* audio.isToneActive({ id: 999 })).toBe(false)
+      yield* audio.setToneGain({ id: 999 }, 0.5)
+    }),
+  )
+
+  it.effect('requires a stream source at the tone graph boundary', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({ global: fake.global })
+      yield* audio.unlock
+      const context = fake.contexts()[0]
+      if (context === undefined) {
+        throw new Error('fake audio context was not created')
+      }
+      const request: ToneRequest = { ...CUE, stream: true }
+      expect(() => buildToneGraph({
+        context,
+        envelope: toneEnvelope(request, context.currentTime),
+        master: context.createGain(),
+        playbackRate: 1,
+        request,
+        sampleBuffer: null,
+        stereo: false,
+        streamSource: null,
+      })).toThrow('A streaming source is required')
+    }),
+  )
+
+  it.effect('requires a sample source for sample-only tone requests', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({ global: fake.global })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, sampleOnly: true, soundId: 'missing' })
+
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+      expect((yield* audio.report).refusedTones).toBe(1)
+    }),
+  )
+
+  it.effect('rejects sample-only requests at the tone graph boundary', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({ global: fake.global })
+
+      yield* audio.unlock
+      const context = fake.contexts()[0]
+      if (context === undefined) {
+        throw new Error('fake audio context was not created')
+      }
+      const request: ToneRequest = { ...CUE, sampleOnly: true, soundId: 'missing' }
+      expect(() => buildToneGraph({
+        context,
+        envelope: toneEnvelope(request, context.currentTime),
+        master: context.createGain(),
+        playbackRate: 1,
+        request,
+        sampleBuffer: null,
+        stereo: false,
+        streamSource: null,
+      })).toThrow('No sample source is available for missing')
+
+      const requestWithoutId: ToneRequest = { ...CUE, sampleOnly: true }
+      expect(() => buildToneGraph({
+        context,
+        envelope: toneEnvelope(requestWithoutId, context.currentTime),
+        master: context.createGain(),
+        playbackRate: 1,
+        request: requestWithoutId,
+        sampleBuffer: null,
+        stereo: false,
+        streamSource: null,
+      })).toThrow('No sample source is available for the requested audio')
+    }),
+  )
+
+  it.effect('uses the host-owned source for a streamed cue without decoding it', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      let sourceCalls = 0
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        createStreamSource: ({ context }) => {
+          sourceCalls += 1
+          return context.createOscillator()
+        },
+        sampleManifest: {
+          stream: { kind: 'url', stream: true, url: '/audio/stream.ogg' },
+        },
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'stream', stream: true })
+
+      expect(sourceCalls).toBe(1)
+      expect(fake.context()?.oscillators).toHaveLength(1)
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect((yield* audio.report).activeTones).toBe(1)
+    }),
+  )
+
+  it.effect('reports a streamed preload failure when the host provides no stream loader', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        sampleManifest: {
+          stream: { kind: 'url', stream: true, url: '/audio/stream.ogg' },
+        },
+      })
+
+      expect(yield* audio.preloadSamples(['stream'])).toEqual({
+        cached: 0,
+        failed: 1,
+        loaded: 0,
+        requested: 1,
+      })
+    }),
+  )
+
+  it.effect('refuses a streamed cue when the host source factory returns null', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        createStreamSource: () => null,
+        sampleManifest: {
+          stream: { kind: 'url', stream: true, url: '/audio/stream.ogg' },
+        },
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'stream', stream: true })
+
+      expect(fake.context()?.oscillators).toHaveLength(0)
+      expect((yield* audio.report).refusedTones).toBe(1)
+    }),
+  )
+
   it.effect('uses an AudioBufferSource when the host resolves the cue sound id', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()
@@ -181,7 +483,58 @@ describe('decoded sample playback', () => {
       expect(context?.bufferSources).toHaveLength(1)
       expect(context?.oscillators).toHaveLength(0)
       expect(context?.bufferSources[0]?.buffer?.duration).toBe(0.12)
+      expect(context?.bufferSources[0]?.playbackRate.value).toBe(1)
       expect(context?.log.edges[1]?.from).toBe('buffer#2')
+    }),
+  )
+
+  it.effect('uses sample pitch for playback rate and sample duration', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        resolveAudioBuffer: () => ({ duration: 0.12 }),
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, durationSecs: 9, playbackRate: 2, soundId: 'block.break' })
+
+      const context = fake.contexts()[0]
+      expect(context?.bufferSources[0]?.playbackRate.value).toBe(2)
+      expect(context?.log.stopped).toEqual([{ atSecs: 0.06, node: 'buffer#2' }])
+    }),
+  )
+
+  it.effect('uses the requested duration when a sample duration is invalid', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        resolveAudioBuffer: () => ({ duration: Number.NaN }),
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, durationSecs: 0.2, soundId: 'block.break' })
+
+      expect(fake.context()?.log.stopped).toEqual([{ atSecs: 0.2, node: 'buffer#2' }])
+    }),
+  )
+
+  it.effect('falls back to an oscillator when the sample resolver throws', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        resolveAudioBuffer: () => {
+          throw new Error('sample resolver failed')
+        },
+      })
+
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, soundId: 'block.break' })
+
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(1)
     }),
   )
 
@@ -323,13 +676,18 @@ describe('DN-6 — the AudioContext is created under a guard', () => {
           listener: { x: 0, y: 64, z: 0 },
           settings: DEFAULT_VOLUME_SETTINGS,
         })),
-        nowSecs: Effect.succeed(1),
       }).pipe(
         Effect.provide(
           Layer.merge(
-            Layer.succeed(AudioBackendPort, audio),
-            Layer.succeed(CaptionStream, {
-              emit: (event) => Ref.update(log, (current) => [...current, event]),
+            Layer.merge(
+              Layer.succeed(AudioBackendPort, audio),
+              Layer.succeed(CaptionStream, {
+                emit: (event) => Ref.update(log, (current) => [...current, event]),
+              }),
+            ),
+            FixedClockLayer({
+              monotonicSecs: MonotonicTimeSecs(1),
+              wallClockEpochMillis: EpochMillis(0),
             }),
           ),
         ),
@@ -434,7 +792,7 @@ describe("the user-gesture unlock: 'locked' before, 'ready' after", () => {
       const audio = yield* backend
 
       yield* audio.unlock
-      yield* audio.close
+      yield* audio.dispose
 
       expect(yield* audio.availability).toBe('unavailable')
     }),
@@ -593,12 +951,17 @@ describe('the node graph the adapter builds', () => {
           listenerForward: { x: 1, y: 0, z: 0 },
           settings: DEFAULT_VOLUME_SETTINGS,
         }),
-        nowSecs: Effect.succeed(1),
       }).pipe(
         Effect.provide(
           Layer.merge(
-            Layer.succeed(AudioBackendPort, audio),
-            Layer.succeed(CaptionStream, { emit: () => Effect.void }),
+            Layer.merge(
+              Layer.succeed(AudioBackendPort, audio),
+              Layer.succeed(CaptionStream, { emit: () => Effect.void }),
+            ),
+            FixedClockLayer({
+              monotonicSecs: MonotonicTimeSecs(1),
+              wallClockEpochMillis: EpochMillis(0),
+            }),
           ),
         ),
       )
@@ -621,6 +984,21 @@ describe('the node graph the adapter builds', () => {
 
       expect(fake.context()?.log.created).toStrictEqual(['gain#1', 'osc#2', 'gain#3'])
       expect(fake.context()?.log.disconnected).toStrictEqual(['osc#2', 'gain#3'])
+      expect((yield* audio.report).activeTones).toBe(0)
+      expect((yield* audio.report).refusedTones).toBe(1)
+    }),
+  )
+
+  it.effect('disconnects the source when cue gain construction fails', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake({ cueGainThrows: true })
+      const audio = yield* backend
+      yield* audio.unlock
+
+      yield* audio.playTone(CUE)
+
+      expect(fake.context()?.log.created).toStrictEqual(['gain#1', 'osc#2'])
+      expect(fake.context()?.log.disconnected).toStrictEqual(['osc#2'])
       expect((yield* audio.report).activeTones).toBe(0)
       expect((yield* audio.report).refusedTones).toBe(1)
     }),
@@ -664,6 +1042,20 @@ describe('the node graph the adapter builds', () => {
         { atSecs: 0.07 - RELEASE_SECS, kind: 'set', node: 'gain#3', param: 'gain', value: 0.4 },
         { atSecs: 0.07, kind: 'ramp', node: 'gain#3', param: 'gain', value: 0 },
       ])
+    }),
+  )
+
+  it.effect('keeps an official per-tone gain above unity on the Web Audio graph', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake()
+      const audio = yield* backend
+      yield* audio.unlock
+      yield* audio.playTone({ ...CUE, gain: 4 })
+
+      const cuePeak = fake.context()?.log.params.find(
+        (call) => call.node === 'gain#3' && call.kind === 'ramp' && call.value > 0,
+      )
+      expect(cuePeak?.value).toBe(4)
     }),
   )
 
@@ -721,6 +1113,19 @@ describe('the node graph the adapter builds', () => {
       fake.context()?.advance(1)
 
       expect(fake.context()?.log.disconnected).toStrictEqual(['osc#2', 'gain#3', 'panner#4'])
+      expect((yield* audio.report).activeTones).toBe(0)
+    }),
+  )
+
+  it.effect('ignores cleanup failures after a tone ends', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake({ disconnectThrows: true })
+      const audio = yield* backend
+      yield* audio.unlock
+      yield* audio.playTone(CUE)
+
+      fake.context()?.advance(1)
+
       expect((yield* audio.report).activeTones).toBe(0)
     }),
   )
@@ -821,6 +1226,11 @@ describe('the master gain node', () => {
       yield* audio.setMuted(true)
       expect(fake.constructorCalls()).toBe(0)
       expect((yield* audio.report).muted).toBe(true)
+
+      yield* audio.unlock
+      expect(fake.context()?.log.params).toStrictEqual([
+        { atSecs: 0, kind: 'assign', node: 'gain#1', param: 'gain', value: 0 },
+      ])
     }),
   )
 })
@@ -873,7 +1283,7 @@ describe('resource limits and lifecycle', () => {
 
       yield* audio.dispose
       const disconnected = [...(fake.context()?.log.disconnected ?? [])]
-      yield* audio.close
+      yield* audio.dispose
 
       expect(fake.context()?.log.disconnected).toStrictEqual(disconnected)
       expect(yield* audio.availability).toBe('unavailable')

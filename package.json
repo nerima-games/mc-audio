@@ -2,7 +2,7 @@
   "name": "@nerima-games/mc-audio",
   "version": "0.2.6",
   "type": "module",
-  "description": "Audio toolkit for the nerima-games Minecraft-clone rebuild: sound cue registry, volume categories, BGM state machine, and the caption event stream that fires ahead of the browser autoplay gate.",
+  "description": "Audio toolkit for a Minecraft-compatible game: sound events and resource manifests, volume categories, BGM state, captions, and a testable WebAudio backend.",
   "homepage": "https://github.com/nerima-games/mc-audio#readme",
   "repository": {
     "type": "git",
@@ -22,18 +22,24 @@
     "registry": "https://npm.pkg.github.com",
     "access": "restricted"
   },
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
   },
   "files": [
-    "src",
+    "dist",
     "docs",
     "tsconfig.base.json",
+    "tsconfig.release.json",
     "LICENSE",
     "README.md"
   ],
+  "sideEffects": false,
   "keywords": [
     "minecraft",
     "effect-ts",
@@ -45,26 +51,30 @@
   ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.build.json --pretty false && tsc -p tsconfig.test.json --pretty false && tsc -p tsconfig.preview.json --pretty false",
-    "lint": "oxlint --deny-warnings src scripts test apps",
-    "lint:fix": "oxlint --fix src scripts test apps",
+    "build": "tsc -p tsconfig.release.json --pretty false",
+    "lint": "oxlint --deny-warnings src test apps scripts",
+    "lint:fix": "oxlint --fix src test apps scripts",
+    "check:deps": "tsx scripts/check-dependency-whitelist.ts",
+    "import:minecraft-sounds": "tsx scripts/import-minecraft-26-2-sounds.ts",
     "preview": "tsx apps/preview-soundboard/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "verify": "pnpm typecheck && pnpm lint && pnpm test"
+    "verify": "pnpm typecheck && pnpm lint && pnpm check:deps && pnpm test && pnpm test:coverage && pnpm build"
   },
   "dependencies": {
-    "effect": "^3.22.0"
+    "@nerima-games/mc-kernel": "^0.4.0",
+    "effect": "^3.22.1"
   },
   "devDependencies": {
-    "@changesets/changelog-github": "^0.7.0",
-    "@changesets/cli": "^2.31.1",
+    "@changesets/changelog-github": "^1.0.0",
+    "@changesets/cli": "^3.0.0",
     "@effect/vitest": "^0.30.0",
-    "@types/node": "^26.1.2",
-    "@typescript/native": "npm:typescript@7.0.2",
+    "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^3.2.7",
-    "tsx": "^4.23.1",
-    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "oxlint": "^1.78.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
     "vitest": "^3.2.7"
   }
 }

@@ -51,7 +51,7 @@ import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import ts from 'typescript'
+import { API, DiagnosticCategory } from 'typescript/unstable/sync'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -61,34 +61,36 @@ describe('the narrow Web Audio surface', () => {
     () =>
       Effect.sync(() => {
         const fixture = path.join(repositoryRoot, 'test', 'fixtures', 'webaudio-surface.ts')
-        const program = ts.createProgram({
-          rootNames: [fixture],
-          options: {
-            noEmit: true,
-            strict: true,
-            exactOptionalPropertyTypes: true,
-            noUncheckedIndexedAccess: true,
-            target: ts.ScriptTarget.ES2022,
-            module: ts.ModuleKind.ESNext,
-            moduleResolution: ts.ModuleResolutionKind.Bundler,
-            moduleDetection: ts.ModuleDetectionKind.Force,
-            skipLibCheck: true,
-            types: [],
-            // THE POINT OF THE TEST: the real thing, not a hand-written stub.
-            lib: ['lib.es2022.d.ts', 'lib.dom.d.ts'],
-          },
-        })
+        const config = path.join(
+          repositoryRoot,
+          'test',
+          'fixtures',
+          'tsconfig.webaudio-surface.json',
+        )
+        const api = new API({ cwd: repositoryRoot })
+        const snapshot = api.updateSnapshot({ openProjects: [config] })
 
-        const diagnostics = [
-          ...program.getSemanticDiagnostics(),
-          ...program.getSyntacticDiagnostics(),
-        ].filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error)
+        try {
+          const parsed = api.parseConfigFile(config)
+          expect(parsed.fileNames).toStrictEqual([fixture])
 
-        expect(
-          diagnostics.map((diagnostic) =>
-            ts.flattenDiagnosticMessageText(diagnostic.messageText, ' '),
-          ),
-        ).toStrictEqual([])
+          const project = snapshot.getProject(config)
+          expect(project).toBeDefined()
+
+          if (project === undefined) {
+            throw new Error(`TypeScript 7 did not open ${config}`)
+          }
+
+          const diagnostics = [
+            ...project.program.getSemanticDiagnostics(),
+            ...project.program.getSyntacticDiagnostics(),
+          ].filter((diagnostic) => diagnostic.category === DiagnosticCategory.Error)
+
+          expect(diagnostics).toStrictEqual([])
+        } finally {
+          snapshot.dispose()
+          api.close()
+        }
       }),
     30_000,
   )
@@ -96,14 +98,11 @@ describe('the narrow Web Audio surface', () => {
   it.effect('the shipped project still compiles with NO DOM at all', () =>
     Effect.sync(() => {
       // The other half of the proof, and the load-bearing one. See the header.
-      const config = ts.readConfigFile(
-        path.join(repositoryRoot, 'tsconfig.build.json'),
-        ts.sys.readFile,
-      )
-      const parsed = ts.parseJsonConfigFileContent(config.config as unknown, ts.sys, repositoryRoot)
+      const api = new API({ cwd: repositoryRoot })
+      const parsed = api.parseConfigFile(path.join(repositoryRoot, 'tsconfig.build.json'))
 
-      expect(parsed.options.lib).toStrictEqual(['lib.es2024.d.ts'])
-      expect(parsed.options.types).toStrictEqual([])
+      expect(parsed.options['lib']).toStrictEqual(['lib.es2024.d.ts'])
+      expect(parsed.options['types']).toStrictEqual([])
 
       // ...and the adapter really is inside that project, so the two claims are
       // about the same code. Without this, the `lib` assertion above could stay
@@ -122,6 +121,7 @@ describe('the narrow Web Audio surface', () => {
 
       // The fixture must NOT be in it: it names DOM types on purpose.
       expect(parsed.fileNames.some((name) => name.includes('/test/fixtures/'))).toBe(false)
+      api.close()
     }),
   )
 
@@ -133,16 +133,13 @@ describe('the narrow Web Audio surface', () => {
       // fail — and the tempting fix for THAT is to add "DOM" to the base
       // config, which is the one move this whole arrangement exists to prevent.
       for (const project of ['tsconfig.json', 'tsconfig.test.json', 'tsconfig.preview.json']) {
-        const config = ts.readConfigFile(path.join(repositoryRoot, project), ts.sys.readFile)
-        const parsed = ts.parseJsonConfigFileContent(
-          config.config as unknown,
-          ts.sys,
-          repositoryRoot,
-        )
+        const api = new API({ cwd: repositoryRoot })
+        const parsed = api.parseConfigFile(path.join(repositoryRoot, project))
         expect({
           project,
           hasFixture: parsed.fileNames.some((name) => name.includes('/test/fixtures/')),
         }).toStrictEqual({ project, hasFixture: false })
+        api.close()
       }
     }),
   )

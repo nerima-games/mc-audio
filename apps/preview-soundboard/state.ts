@@ -15,6 +15,7 @@
  * recomputed the answer it was previewing would be able to draw a graph the
  * adapter never built.
  */
+import { MonotonicTimeSecs, type Position } from '@nerima-games/mc-kernel'
 import { Option } from 'effect'
 import type { CaptionEvent } from '../../src/domain/caption'
 import { SOUND_CUE_IDS, type SoundCueId } from '../../src/domain/cue'
@@ -28,7 +29,6 @@ import {
 } from '../../src/domain/music'
 import {
   DEFAULT_VOLUME_SETTINGS,
-  type Vec3,
   type VolumeCategory,
   type VolumeSettings,
 } from '../../src/domain/volume'
@@ -47,8 +47,8 @@ export type PreviewState = {
   readonly settings: VolumeSettings
   /** The player's audio switch. Distinct from availability — see `domain/engine.ts`. */
   readonly enabled: boolean
-  readonly listener: Vec3
-  readonly source: Vec3
+  readonly listener: Position
+  readonly source: Position
   /**
    * The CAPTION clock, in seconds. Advanced only by a keystroke.
    *
@@ -56,7 +56,7 @@ export type PreviewState = {
    * `visibleCaptions` ages events against. It is NOT the audio clock; see
    * `terminal.ts` on why the preview keeps two.
    */
-  readonly nowSecs: number
+  readonly nowSecs: MonotonicTimeSecs
   readonly playerY: number
   readonly isNight: boolean
   readonly activeMusic: Option.Option<MusicEnvironment>
@@ -74,7 +74,7 @@ export const INITIAL_STATE: PreviewState = {
   enabled: true,
   listener: { x: 0, y: 64, z: 0 },
   source: { x: 4, y: 64, z: 0 },
-  nowSecs: 0,
+  nowSecs: MonotonicTimeSecs(0),
   playerY: 64,
   isNight: false,
   activeMusic: Option.none(),
@@ -149,7 +149,7 @@ export const moveSource = (state: PreviewState, deltaX: number): PreviewState =>
 
 export const advanceCaptionClock = (state: PreviewState, seconds: number): PreviewState => ({
   ...state,
-  nowSecs: Number((state.nowSecs + seconds).toFixed(3)),
+  nowSecs: MonotonicTimeSecs(Number((state.nowSecs + seconds).toFixed(3))),
 })
 
 export const withCaptions = (
@@ -169,7 +169,7 @@ export const toggleNight = (state: PreviewState): PreviewState => ({
 
 export const desiredMusic = (state: PreviewState): MusicEnvironment =>
   resolveMusicEnvironment({
-    playerY: state.playerY,
+    playerPosition: { x: 0, y: state.playerY, z: 0 },
     isNight: state.isNight,
     caveThresholdY: DEFAULT_CAVE_THRESHOLD_Y,
   })

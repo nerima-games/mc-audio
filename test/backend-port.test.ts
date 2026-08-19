@@ -35,6 +35,29 @@ describe('makeRecordingBackend', () => {
       expect(yield* recorded.played).toHaveLength(1)
     }),
   )
+
+  it.effect('records music, active handles, and per-track gain changes', () =>
+    Effect.gen(function* () {
+      const recorded = yield* makeRecordingBackend('ready')
+      const handle = yield* recorded.backend.playMusic({
+        gain: 0.75,
+        playbackRate: 1,
+        soundId: 'minecraft:music/free_game',
+        stream: false,
+      })
+
+      expect(yield* recorded.musicPlayed).toStrictEqual([
+        { gain: 0.75, playbackRate: 1, soundId: 'minecraft:music/free_game', stream: false },
+      ])
+      expect(yield* recorded.backend.isToneActive(handle)).toBe(true)
+
+      yield* recorded.backend.setToneGain(handle, 0.25)
+      expect(yield* recorded.toneGains).toStrictEqual([{ gain: 0.25, handle }])
+
+      yield* recorded.backend.stopTone(handle)
+      expect(yield* recorded.backend.isToneActive(handle)).toBe(false)
+    }),
+  )
 })
 
 describe('UnavailableBackendLayer', () => {
@@ -52,6 +75,14 @@ describe('UnavailableBackendLayer', () => {
       // handle" (per the module's own doc comment) can still call these
       // safely when there is no audio device at all.
       yield* backend.setMasterGain(0.5)
+      yield* backend.setToneGain(handle, 0.25)
+      expect(yield* backend.isToneActive(handle)).toBe(false)
+      expect(yield* backend.playMusic({
+        gain: 1,
+        playbackRate: 1,
+        soundId: 'minecraft:music/free_game',
+        stream: false,
+      })).toStrictEqual({ id: 0 })
       yield* backend.stopTone(handle)
     }).pipe(Effect.provide(UnavailableBackendLayer)),
   )
