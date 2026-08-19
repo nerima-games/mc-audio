@@ -3,7 +3,7 @@
 plan.md §3.6 の 設計注意 を、参照実装の実コード (file:line) で裏取りして展開したもの。
 plan.md §6 Step 2 の方針に従い、**各項目を「書くべき回帰テストの名前」として提示する**。
 
-`✅` = このスケルトンに実装済み / `⬜` = 未実装（実装時に必ず入れる）
+`✅` = このリポジトリの現行実装で検証済み / `⬜` = まだ実装していない項目
 
 ---
 
@@ -104,7 +104,7 @@ plan.md には無いが、参照実装が 2 ファイルで警告している項
 // masterVolume is applied ONCE by the engine's master gain node (see
 // setMasterGain in applySettings); multiplying here too would square it.
 const musicVolume = yield* Ref.get(musicVolumeRef)
-const gain = clamp01(track.baseGain * musicVolume)
+const gain = clampNonNegative(track.baseGain * musicVolume)
 ```
 
 同旨のコメントが `packages/game/application/sound-manager.ts:65-69` にもあり、

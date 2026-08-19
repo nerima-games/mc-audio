@@ -33,8 +33,8 @@ sound-manager.ts        95
 
 | LOC | パス | 役割 | mc-audio での行き先 |
 | ---: | --- | --- | --- |
-| 163 | `packages/game/infrastructure/audio-engine.ts` | WebAudio エンジン。**3 つのゲートのうち 2 つがここ** | `domain/backend-port.ts` の実装（未着手） |
-| 36 | `packages/game/infrastructure/audio-context-helpers.ts` | ガード付き `AudioContext` 生成 | 同上 |
+| 163 | `packages/game/infrastructure/audio-engine.ts` | WebAudio エンジン。**3 つのゲートのうち 2 つがここ** | `domain/webaudio-adapter.ts` / `webaudio-runtime.ts`（✅） |
+| 36 | `packages/game/infrastructure/audio-context-helpers.ts` | ガード付き `AudioContext` 生成 | `domain/webaudio-runtime.ts`（✅） |
 | 27 | `packages/game/domain/audio-types.ts` | `ToneRequest` / `ToneHandle` の Schema | `domain/backend-port.ts` |
 | 14 | `packages/game/domain/audio-engine-port.ts` | `AudioEnginePort` タグ | `domain/backend-port.ts` |
 | 2 | `packages/game/domain/audio-utils.ts` | `clamp01` / `clampPan` | `domain/volume.ts` |
@@ -145,8 +145,15 @@ mx-ui は描画だけを持つ。→ [design-notes.md](./design-notes.md#dn-3)
 3. **`sound-manager.ts:43-63` を読む** — 字幕→ゲートの順序。**これが本丸**（✅ 完了）
 4. **`sound-manager.types.ts` (38) + `sound-manager.config.ts` (42) を読む** —
    ロスターと `satisfies` の技法（✅ 部分完了、ロスターは暫定）
-5. **`audio-context-helpers.ts` (36) を読む** — WebAudio アダプタを書くとき（⬜）
-6. **`audio-engine.ts` (163) を読む** — 同上。**ただしテストが無いので鵜呑みにしない**（⬜）
+5. **`audio-context-helpers.ts` (36) を読む** — WebAudio アダプタを書くとき（✅ `webaudio-runtime.ts`）
+6. **`audio-engine.ts` (163) を読む** — 同上。**ただしテストが無いので鵜呑みにしない**（✅ `webaudio-adapter.ts` と契約テスト）
+
+### Minecraft の音声リソース
+
+`src/domain/minecraft-sounds-*.ts` は `sounds.json` の namespace、event alias、
+weight、volume、pitch、stream、attenuation distance、preload を純粋に扱う。
+`minecraftSoundManifest` は著作権付きバイナリをリポジトリへ複製せず、配布元 URL を
+`AudioSampleManifest` に変換する。`docs/minecraft-sounds.md` に公開 API と制約をまとめる。
 
 ### そのまま移植してはいけないもの
 

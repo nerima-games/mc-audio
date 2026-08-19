@@ -95,7 +95,8 @@ graph BT
 **安定ライブラリ階層（tier 1）のリーフ。しかも "シンク" である。**
 
 - **親（mc-audio が依存してよいもの）**: `mc-kernel` のみ。
-  ホワイトリスト上の直接依存は**空集合**である。
+  `@nerima-games/mc-kernel` は `Position` と `ClockPort` を再利用するための唯一の直接依存であり、
+  `scripts/check-dependency-whitelist.ts` でも明示的に許可されている。
 - **子（mc-audio に依存するもの）**: `mx-gameplay`、`mx-ui`。
   gameplay がキューを鳴らし、ui が字幕を購読する。
 
@@ -129,18 +130,18 @@ mc-audio は**押し込まれる側**であり、決して押し返さない。
 `tsconfig.base.json` の `lib` に `"DOM"` が**入っていない**。
 オーディオのリポジトリとしては奇妙に見えるが、これは意図的である。
 
-- 現在出荷している全て（キューレジストリ・音量算術・BGM 状態機械・字幕ストリーム）は純粋である
+- ドメインの計画（キューレジストリ・Minecraft sound registry・音量算術・BGM 状態機械・字幕ストリーム）は純粋である
 - `"DOM"` を締め出すことで、WebAudio 固有の部分が `AudioBackendPort` の裏に**強制的に**回る
 - 結果として jsdom も `AudioContext` も無しでテストできる
 
-WebAudio アダプタは**最後に書いた**（`domain/webaudio-adapter.ts`）。
+WebAudio アダプタは**プラットフォーム境界として分離している**（`domain/webaudio-adapter.ts`）。
 そして **`lib` は変えなかった**。
 `domain/webaudio-surface.ts` が使うメンバだけを構造的に記述し、
 `test/webaudio-surface.test.ts` が本物の `lib.dom.d.ts` に対して fixture を
 コンパイルして「実 `AudioContext` がキャスト無しで満たす」ことを証明している。
 mc-save / mc-render / mx-ui と同じ手法である。
 
-上の 3 点は、アダプタが入った**後も**全部成り立っている。それが要点だった。
+上の 3 点は、アダプタを追加した**後も**全部成り立っている。それが要点だった。
 
 ## 4. 構成ルール（plan.md §2.3）
 
@@ -169,8 +170,8 @@ kit を `dependencies` に入れると出荷ビルドから入力処理が消え
 `scripts/check-dependency-whitelist.ts` が
 `dev-only-package-in-dependencies` として**必ず失敗**させる。
 
-mc-audio は将来サウンドボードプレビュー（plan.md §3.6）を持つが、
-それは DOM だけで起動できるので kit を必要としない（mx-ui と同じ理由）。
+mc-audio のサウンドボードプレビュー（plan.md §3.6）は DOM だけで起動できるので、
+kit を必要としない（mx-ui と同じ理由）。実装は `apps/preview-soundboard/` に置く。
 
 ### 4-3. stage 実行順序表は mc-compose が唯一所有する
 
@@ -193,5 +194,5 @@ mc-audio 自身は frame stage を登録しない。
 検証しきれなかった。分割の目的は**体験単位ごとに正しさを単独で閉じる**ことである。
 
 mc-audio の完了条件には plan.md §3.6 が
-**サウンドボードプレビュー**（全キューを一覧から試聴）を挙げている。
+**サウンドボードプレビュー**（全キューを一覧から試聴）を挙げており、実装済みである。
 詳細は [testing.md](./testing.md)。
