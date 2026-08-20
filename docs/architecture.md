@@ -143,6 +143,20 @@ mc-save / mc-render / mx-ui と同じ手法である。
 
 上の 3 点は、アダプタを追加した**後も**全部成り立っている。それが要点だった。
 
+### 定義データとドメインロジックの境界
+
+キューと BGM の静的な roster は `src/data/` に置き、`src/domain/` は検証・計画・再生ポリシーを担当する。
+
+| 場所 | 所有するもの |
+| --- | --- |
+| `src/data/cue-definitions.ts` | 効果音 ID と cue definition の静的な一覧 |
+| `src/data/music-tracks.ts` | BGM 環境と track definition の静的な一覧 |
+| `src/domain/cue.ts` | `SoundCueId` の検証、definition lookup、再生オプション |
+| `src/domain/music.ts` | 環境判定、遷移 plan、gain 計算、および data の公開 re-export |
+
+`src/domain/cue.ts` と `src/domain/music.ts` が data を再 export するため、既存の公開 import は維持される。
+定義を追加する場合は data 側を編集し、ドメイン側の計算を複製しない。
+
 ## 4. 構成ルール（plan.md §2.3）
 
 ### 4-1. 基盤 = 名詞、体験 = 動詞

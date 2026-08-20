@@ -89,6 +89,12 @@ jsdom も `AudioContext` も要らない。
 参照実装の字幕テスト（`packages/presentation/test/sound-captions.test.ts`, 133 LOC）は
 DOM とタイマーを必要とし、テスト間でモジュールレベルのグローバル状態をリセットしていた。
 
+### 決定的な時計
+
+時刻依存のテストは `test/test-clock.ts` の `testClockLayer` を `ClockPort` に提供する。
+テスト時刻を固定できるため、`Date.now()`、`performance.now()`、fake timer に依存しない。
+出荷側の `engine` は注入された `ClockPort` を使い、テスト用の時計は公開 API に持ち込まない。
+
 ## 3. plan.md §3.6 が要求する検証
 
 > **検証**: キュー発火のユニットテスト（オーディオゲート・音量計算）+
