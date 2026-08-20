@@ -52,9 +52,9 @@ export type PreviewState = {
   /**
    * The CAPTION clock, in seconds. Advanced only by a keystroke.
    *
-   * This is the `nowSecs` that `makeSoundCueService` takes and that
-   * `visibleCaptions` ages events against. It is NOT the audio clock; see
-   * `terminal.ts` on why the preview keeps two.
+   * This is the value supplied to the `ClockPort` and that `visibleCaptions`
+   * ages events against. It is NOT the audio clock; see `terminal.ts` on why
+   * the preview keeps two.
    */
   readonly nowSecs: MonotonicTimeSecs
   readonly playerY: number

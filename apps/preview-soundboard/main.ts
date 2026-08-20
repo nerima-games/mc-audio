@@ -63,7 +63,7 @@
  *    pure parts; `pnpm preview` is not a gate.
  */
 import { Effect, Layer, Ref } from 'effect'
-import { ClockPort, EpochMillis } from '@nerima-games/mc-kernel'
+import { ClockPort, EpochMillis, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import { AudioBackendPort } from '../../src/domain/backend-port'
 import { CaptionStream, type CaptionEvent } from '../../src/domain/caption'
 import { isSoundCueId, SOUND_CUE_IDS } from '../../src/domain/cue'
@@ -159,12 +159,16 @@ const program = Effect.gen(function* () {
       }),
     ),
     Layer.succeed(ClockPort, {
-      monotonicSecs: Effect.sync(() => state.nowSecs),
+      monotonicSecs: Effect.sync(() =>
+        MonotonicTimeSecs(Number.isFinite(state.nowSecs) ? Math.max(0, state.nowSecs) : 0),
+      ),
       wallClockEpochMillis: Effect.succeed(EpochMillis(0)),
     }),
   )
 
   const service = yield* makeSoundCueService({
+    // The context and clock are read at the moment a cue fires, which is why
+    // both Effects close over `state` rather than values captured now.
     context: Effect.map(backend.availability, (availability) => cueContext(state, availability)),
   }).pipe(Effect.provide(layers))
 
