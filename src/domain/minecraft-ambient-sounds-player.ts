@@ -27,6 +27,7 @@ import {
   clamp01,
   clampNonNegative,
   minecraftSpatialise,
+  spatialise,
 } from './volume.js'
 
 const AMBIENT_DURATION_SECS = 1
@@ -52,6 +53,7 @@ const plannerInputForTick = (
   const input = {
     cameraPosition: options.camera?.position ?? options.listener,
     definition: definitionForTick(options),
+    moodPosition: options.moodPosition ?? null,
     randomSource,
     state,
     tick: options.tick,
@@ -69,6 +71,7 @@ export type MinecraftAmbientSoundsTickOptions = {
   readonly listener: Position
   readonly camera?: CameraPoseSnapshot
   readonly listenerForward?: Position
+  readonly moodPosition?: Position | null
   readonly moodResolver?: MinecraftAmbientMoodResolver
   readonly tick: number
 }
@@ -178,14 +181,19 @@ const spatialForMood = (input: {
   readonly offset: number
   readonly position: Position
   readonly sound: ResolvedMinecraftSound
+  readonly useMinecraftAttenuation: boolean
 }): Spatialisation => {
+  let spatialiseMood = spatialise
+  if (input.useMinecraftAttenuation) {
+    spatialiseMood = minecraftSpatialise
+  }
   if (isMissing(input.listenerForward)) {
-    return minecraftSpatialise(input.listener, input.position, {
+    return spatialiseMood(input.listener, input.position, {
       distanceOffset: input.offset,
       distanceScale: input.sound.attenuationDistance,
     })
   }
-  return minecraftSpatialise(input.listener, input.position, {
+  return spatialiseMood(input.listener, input.position, {
     distanceOffset: input.offset,
     distanceScale: input.sound.attenuationDistance,
     listenerForward: input.listenerForward,
@@ -209,6 +217,7 @@ const spatialForCommand = (
     offset: command.offset,
     position: command.position,
     sound,
+    useMinecraftAttenuation: !isMissing(options.moodResolver),
   })
 }
 

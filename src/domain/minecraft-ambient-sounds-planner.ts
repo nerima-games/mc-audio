@@ -57,6 +57,7 @@ export type MinecraftAmbientMoodResolver = (
 export type MinecraftAmbientSoundsPlannerInput = {
   readonly cameraPosition: Position
   readonly definition?: MinecraftAmbientSoundsDefinition | null
+  readonly moodPosition: Position | null
   readonly moodResolver?: MinecraftAmbientMoodResolver
   readonly randomSource: () => number
   readonly state: MinecraftAmbientSoundsState
@@ -97,6 +98,7 @@ const planLoopCommands = (
 type MoodPlanInput = {
   readonly cameraPosition: Position
   readonly mood: MinecraftAmbientMood | null
+  readonly moodPosition: Position | null
   readonly moodResolver: MinecraftAmbientMoodResolver | undefined
   readonly randomSource: () => number
   readonly nextMoodTick: number
@@ -126,8 +128,8 @@ const moodCommand = (
   ]
 }
 
-const moodDelay = (mood: MinecraftAmbientMood, resolution: MinecraftAmbientMoodResolution | null): number => {
-  const delayTicks = resolution?.delayTicks ?? mood.tick_delay
+const moodDelay = (resolution: MinecraftAmbientMoodResolution): number => {
+  const { delayTicks } = resolution
   if (!Number.isInteger(delayTicks) || delayTicks < MIN_MOOD_DELAY) {
     throw new RangeError('Minecraft ambient mood delayTicks must be a positive integer')
   }
@@ -137,6 +139,7 @@ const moodDelay = (mood: MinecraftAmbientMood, resolution: MinecraftAmbientMoodR
 const planMoodCommands = ({
   cameraPosition,
   mood,
+  moodPosition,
   moodResolver,
   randomSource,
   nextMoodTick,
@@ -149,10 +152,13 @@ const planMoodCommands = ({
     return { commands: [], nextMoodTick }
   }
 
-  const resolution = moodResolver?.({ cameraPosition, mood, randomSource, tick }) ?? null
+  const resolution = moodResolver?.({ cameraPosition, mood, randomSource, tick }) ?? {
+    delayTicks: mood.tick_delay,
+    position: moodPosition ?? null,
+  }
   return {
     commands: moodCommand(mood, resolution),
-    nextMoodTick: tick + moodDelay(mood, resolution),
+    nextMoodTick: tick + moodDelay(resolution),
   }
 }
 
@@ -185,6 +191,7 @@ const planAdditionCommands = (input: {
 export const planMinecraftAmbientSounds = ({
   cameraPosition,
   definition,
+  moodPosition,
   moodResolver,
   randomSource,
   state,
@@ -197,6 +204,7 @@ export const planMinecraftAmbientSounds = ({
   const moodPlan = planMoodCommands({
     cameraPosition,
     mood: normalized.mood,
+    moodPosition,
     moodResolver,
     nextMoodTick,
     randomSource,
