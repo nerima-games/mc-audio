@@ -25,7 +25,7 @@ plan.md §3.6 が要求する「**サウンドボードプレビュー（全キ�
 
 | 画面の数字 | 出どころ |
 | --- | --- |
-| 字幕 | `domain/engine.ts` が実際に発火したもの → `visibleCaptions` |
+| 字幕 | `src/domain/engine.ts` が実際に発火したもの → `visibleCaptions` |
 | ノードグラフ | アダプタが実際に `connect` した記録（fake のログ） |
 | gain | `planCue` と `masterNodeGain` |
 | エンベロープ | `gainAt` のサンプリング |
@@ -43,12 +43,12 @@ plan.md §3.6 が要求する「**サウンドボードプレビュー（全キ�
 
 ### 1-1. 全キューの一覧と「試聴」 — `board` パネル
 
-9 キュー全部が、gain・空間化の有無・字幕テキスト・`reason` と一緒に並ぶ。
+17 キュー全部が、gain・空間化の有無・字幕テキスト・`reason` と一緒に並ぶ。
 `enter` で選択中のキューを発火する。
 
 `caption` 列は **「字幕が無い」と「字幕が消された」を区別する**。
 `inventoryOpen` / `inventoryClose` は `caption: null` が**作者の意図**であり
-（`domain/cue.ts`）、ゲートで消えたのとは別物である。参照実装はここを混同していた。
+（`src/domain/cue.ts`）、ゲートで消えたのとは別物である。参照実装はここを混同していた。
 
 ### 1-2. ロック中に**字幕だけが出る** — DN-1 の目視版 ★最重要
 
@@ -103,7 +103,7 @@ gain for blockBreak
 ```
 
 パンのバーは**中央にマークがある**。「ど真ん中」と「わずかに左」が
-区別できないと、非空間キューの `pan` 省略（`domain/engine.ts` は
+区別できないと、非空間キューの `pan` 省略（`src/domain/engine.ts` は
 誤解を招く 0 を返さない）が確認できないためである。
 
 ### 1-5. BGM が同じ環境で再起動しないこと — `music` パネル
@@ -128,7 +128,7 @@ log
 
 | キー | 何が起きるか |
 | --- | --- |
-| `i` | **iOS の着信**。`ready` の context が、誰も頼んでいないのに `interrupted` = `locked` になる。`'interrupted'` は `lib.dom.d.ts` をコンパイルして初めて見つかった 4 つ目の状態である（`domain/webaudio-surface.ts`） |
+| `i` | **iOS の着信**。`ready` の context が、誰も頼んでいないのに `interrupted` = `locked` になる。`'interrupted'` は `lib.dom.d.ts` をコンパイルして初めて見つかった 4 つ目の状態である（`src/domain/webaudio-surface.ts`） |
 | `x` | context を閉じる。`unavailable` になり、**`u` を押しても戻らない**。`locked` と `unavailable` を分けている理由がここに出る |
 | `-` `+` | オーディオ時計を進める。トーンが `onended` を迎え、ノードが解放されるのが `graph` パネルの数字で見える |
 | `[` `]` | 字幕時計を進める / 戻す。2.5 秒で字幕が消えるのを、2.5 秒待たずに確認できる |
@@ -138,10 +138,9 @@ log
 | フラグ | どのブラウザ |
 | --- | --- |
 | `--absent` | Node / SSR / Web Audio の無いブラウザ |
-| `--no-stereo` | Safari 14.1 未満（`createStereoPanner` が無い → モノラルにフォールバック） |
 | `--refuse` | `resume()` を決して通さないブラウザ |
 
-**この 3 つは参照実装では一度も実行できなかった構成である。**
+**この 2 つは参照実装では一度も実行できなかった構成である。**
 検出が `typeof AudioContext === 'undefined'` というグローバル読みだったため、
 Node のテストからは偽にできなかった（`docs/porting.md` §6 —
 `audio-engine.ts` と `audio-context-helpers.ts` のテストは 0 本）。
@@ -159,7 +158,7 @@ Node のテストからは偽にできなかった（`docs/porting.md` §6 —
   それがブラウザで実際にクリックを消すかは**聴かないと分からない**
 - 12 ブロック先の足音が「無視できるほど小さく、気付ける程度に大きい」か
 - 174.61Hz と 130.81Hz が「2 つのビープ」ではなく「別の曲」に聞こえるか
-- 9 キューが互いに区別できるか。**現状すべて正弦波である**
+- 17 キューが互いに区別できるか。**現状すべて正弦波である**
   （キューごとの `ToneRequest.wave`。未指定時のみ `DEFAULT_TONE_WAVE`）
 - レイテンシ、デバイスの遅延、Bluetooth
 
@@ -192,8 +191,7 @@ fake の `currentTime` は呼ばれた分だけ進む。
 
 1. 実ブラウザでの `locked -> ready`（実際のクリックで）
 2. 実機 iOS での `interrupted` 遷移
-3. Safari 14.1 未満での `webkitAudioContext` フォールバック
-4. クリックが消えたことの試聴
+3. クリックが消えたことの試聴
 
 ブラウザ版サウンドボードは、このアプリの**代わり**ではなく**隣**に置く。
 ブラウザ版では `--stats` 相当のことができない（パイプもできないし grep もできない）し、

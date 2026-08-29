@@ -1,4 +1,4 @@
-import type { SoundCueId } from './cue'
+import type { SoundCueId } from './cue.js'
 
 /** Surface vocabulary supplied by the block registry and consumed by audio. */
 export const FOOTSTEP_SURFACES = ['default', 'grass', 'wood', 'stone'] as const

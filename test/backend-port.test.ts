@@ -29,10 +29,35 @@ describe('makeRecordingBackend', () => {
     Effect.gen(function* () {
       const recorded = yield* makeRecordingBackend('ready')
       const handle = yield* recorded.backend.playTone(CUE)
+      expect(handle.accepted).toBe(true)
       // Recording backends never make noise, so stopTone has nothing to
       // reconcile — the contract is only that it completes without error.
       yield* recorded.backend.stopTone(handle)
       expect(yield* recorded.played).toHaveLength(1)
+    }),
+  )
+
+  it.effect('records music, active handles, and per-track gain changes', () =>
+    Effect.gen(function* () {
+      const recorded = yield* makeRecordingBackend('ready')
+      const handle = yield* recorded.backend.playMusic({
+        gain: 0.75,
+        playbackRate: 1,
+        soundId: 'minecraft:music/free_game',
+        stream: false,
+      })
+
+      expect(yield* recorded.musicPlayed).toStrictEqual([
+        { gain: 0.75, playbackRate: 1, soundId: 'minecraft:music/free_game', stream: false },
+      ])
+      expect(handle.accepted).toBe(true)
+      expect(yield* recorded.backend.isToneActive(handle)).toBe(true)
+
+      yield* recorded.backend.setToneGain(handle, 0.25)
+      expect(yield* recorded.toneGains).toStrictEqual([{ gain: 0.25, handle }])
+
+      yield* recorded.backend.stopTone(handle)
+      expect(yield* recorded.backend.isToneActive(handle)).toBe(false)
     }),
   )
 })
@@ -45,13 +70,20 @@ describe('UnavailableBackendLayer', () => {
       expect(yield* backend.availability).toBe('unavailable')
 
       const handle = yield* backend.playTone(CUE)
-      expect(handle).toStrictEqual({ id: 0 })
+      expect(handle).toStrictEqual({ accepted: false, id: 0 })
 
-      // Neither call has an observable effect on this backend; the contract
-      // under test is that a caller who does not branch on "did I get a
-      // handle" (per the module's own doc comment) can still call these
-      // safely when there is no audio device at all.
+      // Neither call has an observable effect on this backend; the explicit
+      // admission flag makes the no-op observable without making stopTone
+      // unsafe for callers that still retain the diagnostic handle.
       yield* backend.setMasterGain(0.5)
+      yield* backend.setToneGain(handle, 0.25)
+      expect(yield* backend.isToneActive(handle)).toBe(false)
+      expect(yield* backend.playMusic({
+        gain: 1,
+        playbackRate: 1,
+        soundId: 'minecraft:music/free_game',
+        stream: false,
+      })).toStrictEqual({ accepted: false, id: 0 })
       yield* backend.stopTone(handle)
     }).pipe(Effect.provide(UnavailableBackendLayer)),
   )

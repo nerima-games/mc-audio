@@ -46,7 +46,6 @@ import type {
   OscillatorSurface,
   OscillatorWave,
   StereoPannerSurface,
-  WebAudioGlobalSurface,
 } from '../../src/domain/webaudio-surface'
 
 declare const browserContext: AudioContext
@@ -103,16 +102,6 @@ export const constructorIsAnAudioContextConstructorSurface: AudioContextConstruc
   AudioContext
 
 /**
- * `globalThis` itself.
- *
- * `webkitAudioContext` is NOT declared in `lib.dom.d.ts` — Safari's prefixed
- * constructor has never been standardised — so this line also proves that an
- * absent optional member is fine, which is what the Safari-before-14.1 fallback
- * rests on.
- */
-export const globalIsAWebAudioGlobalSurface: WebAudioGlobalSurface = globalThis
-
-/**
  * THE DIRECTION THAT ACTUALLY BITES, part one: handlers.
  *
  * Everything above checks that the real thing is assignable to our type. This
@@ -134,10 +123,10 @@ export const installsHandlersOnTheRealThing = (): void => {
  * against the NARROW types but executed on real objects.
  *
  * This is the shape `makeWebAudioBackend` drives, in the order it drives it. If
- * a future edit widens a parameter — `start` gaining a required `when`,
- * `createStereoPanner` becoming non-optional, `connect` gaining an output index
- * this repository relies on — this function is where the compiler will say so
- * against the real declarations rather than in a browser.
+ * a future edit widens a parameter — `start` gaining a required `when`, or
+ * `connect` gaining an output index this repository relies on — this function
+ * is where the compiler will say so against the real declarations rather than
+ * in a browser.
  */
 export const drivesTheRealApiThroughTheNarrowTypes = async (): Promise<void> => {
   const context: AudioContextSurface = new AudioContext()
@@ -163,20 +152,11 @@ export const drivesTheRealApiThroughTheNarrowTypes = async (): Promise<void> => 
 
     oscillator.connect(gain)
 
-    // The Safari-before-14.1 branch, taken through the OPTIONAL member. If
-    // `createStereoPanner` were ever spelled as required here, this `undefined`
-    // Check would become a compile error and the mono fallback would silently
-    // Stop being reachable.
-    const createPanner = context.createStereoPanner
-    if (createPanner === undefined) {
-      gain.connect(master)
-    } else {
-      const panner = createPanner.call(context)
-      panner.pan.value = -0.25
-      gain.connect(panner)
-      panner.connect(master)
-      panner.disconnect()
-    }
+    const panner = context.createStereoPanner()
+    panner.pan.value = -0.25
+    gain.connect(panner)
+    panner.connect(master)
+    panner.disconnect()
 
     oscillator.onended = () => {
       // The event is UNREADABLE here, on purpose — see the header of
@@ -191,19 +171,4 @@ export const drivesTheRealApiThroughTheNarrowTypes = async (): Promise<void> => 
 
   context.onstatechange = () => {}
   await context.close()
-}
-
-/**
- * The webkit fallback, as the adapter takes it.
- *
- * `globalThis.webkitAudioContext` does not exist in `lib.dom.d.ts`, so this can
- * only be written through the surface — which is the point. It proves the
- * fallback path typechecks against a real global that does not declare it,
- * rather than only against a test object that does.
- */
-export const picksAConstructorLikeTheAdapterDoes = (
-  host: WebAudioGlobalSurface,
-): AudioContextSurface | null => {
-  const chosen = host.AudioContext ?? host.webkitAudioContext
-  return chosen === undefined ? null : new chosen()
 }

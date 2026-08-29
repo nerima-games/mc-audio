@@ -6,7 +6,7 @@ import {
   type WeatherAudioSnapshot,
   type WeatherLoopKind,
   planWeatherAmbience,
-} from './weather-ambience'
+} from './weather-ambience.js'
 
 export type WeatherAudioHandle = { readonly id: number }
 

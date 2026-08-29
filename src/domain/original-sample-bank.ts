@@ -1,7 +1,7 @@
 /* oxlint-disable max-statements, no-bitwise, no-magic-numbers, no-nested-ternary, no-ternary, prefer-destructuring -- PCM/WAV synthesis is intentionally numeric and stateful. */
-import { CUE_DEFINITIONS, SOUND_CUE_IDS, type SoundCueId } from './cue'
-import { END_AUDIO_EVENT_KINDS, END_SOUND_DEFINITIONS, type EndAudioEventKind } from './end-audio'
-import type { AudioSampleManifest } from './webaudio-adapter'
+import { CUE_DEFINITIONS, SOUND_CUE_IDS, type SoundCueId } from './cue.js'
+import { END_AUDIO_EVENT_KINDS, END_SOUND_DEFINITIONS, type EndAudioEventKind } from './end-audio.js'
+import type { AudioSampleManifest } from './audio-sample.js'
 
 export const ORIGINAL_SAMPLE_RATE = 16_000
 

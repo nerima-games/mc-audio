@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer, Option, Ref } from 'effect'
+import { EpochMillis, FixedClockLayer, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import {
   type AudioAvailability,
   AudioBackendPort,
@@ -72,8 +73,17 @@ const runCue = (context: CueContext, availability: AudioAvailability): Effect.Ef
 
     const service = yield* makeSoundCueService({
       context: Effect.succeed(context),
-      nowSecs: Effect.succeed(10),
-    }).pipe(Effect.provide(layers))
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          layers,
+          FixedClockLayer({
+            monotonicSecs: MonotonicTimeSecs(10),
+            wallClockEpochMillis: EpochMillis(0),
+          }),
+        ),
+      ),
+    )
 
     yield* service.play('blockBreak', { position: { x: 3, y: 64, z: 0 } })
 
@@ -200,9 +210,9 @@ describe('planCue', () => {
 
 describe('firstCaptionFor', () => {
   const CAPTIONS: ReadonlyArray<CaptionEvent> = [
-    { atSecs: 1, cueId: 'blockBreak', reason: 'audible', text: 'Block breaks' },
-    { atSecs: 2, cueId: 'levelUp', reason: 'audible', text: 'Level up!' },
-    { atSecs: 3, cueId: 'blockBreak', reason: 'muted', text: 'Block breaks' },
+    { atSecs: MonotonicTimeSecs(1), cueId: 'blockBreak', reason: 'audible', text: 'Block breaks' },
+    { atSecs: MonotonicTimeSecs(2), cueId: 'levelUp', reason: 'audible', text: 'Level up!' },
+    { atSecs: MonotonicTimeSecs(3), cueId: 'blockBreak', reason: 'muted', text: 'Block breaks' },
   ]
 
   it.effect('finds the first event matching a cue id, not the most recent one', () =>

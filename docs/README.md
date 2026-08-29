@@ -18,6 +18,8 @@
 | [architecture.md](./architecture.md) | 4 階層アーキテクチャ、16 リポジトリ依存グラフ、mc-audio の位置 |
 | [responsibility.md](./responsibility.md) | 責務と**非スコープ**、親・子リポジトリ |
 | [public-api.md](./public-api.md) | 公開すべき API。参照実装の実コードで検証済み |
+| [minecraft-sounds.md](./minecraft-sounds.md) | `sounds.json`、BGM、ambient_sounds のデータ駆動音声 |
+| [free-music.md](./free-music.md) | フリー音源、Minecraft 互換の BGM 定義、差し替え方法 |
 | [design-notes.md](./design-notes.md) | 設計注意。参照実装の証拠 (file:line) 付き、回帰テスト名として提示 |
 | [porting.md](./porting.md) | 移植元パスと**実測 LOC** |
 | [testing.md](./testing.md) | 検証要件・完了条件・カバレッジゲートの扱い |
@@ -51,15 +53,15 @@ plan.md §3.6 は `CaptionEventStream` を要求しているが、
 
 ## 現在の状態
 
-叩き台 (pre-audit first cut)。`pnpm verify` は green（158 tests）。
+現行実装。`pnpm verify` は typecheck、lint、依存境界、全テスト、全指標 100% のカバレッジ、出荷ビルドを検証する。
+全テストとカバレッジは CI のゲートで検証し、カバレッジは全 4 指標 100% を要求する。
 
-WebAudio アダプタ（`domain/webaudio-adapter.ts`）とサウンドボードプレビュー
+WebAudio アダプタ（`src/domain/webaudio-adapter.ts`）とサウンドボードプレビュー
 （`apps/preview-soundboard/`）は**実装済み**。
 `tsconfig.base.json` の `lib` は `["ES2024"]` のままで、`"DOM"` は入れていない
-—— 理由と手法は `domain/webaudio-surface.ts` のヘッダに書いてある。
+—— 理由と手法は `src/domain/webaudio-surface.ts` のヘッダに書いてある。
 
-残っているのは**音声アセット同梱**と、
-**実ブラウザでの契約テスト**である（[testing.md](./testing.md) §4）。
-プレビューはターミナルアプリなので音を鳴らせない。
-何が確認できて何ができないかは
-[apps/preview-soundboard/README.md](../apps/preview-soundboard/README.md)。
+著作権付き音声バイナリは同梱せず、`sounds.json` から URL / `ArrayBuffer` の
+`AudioSampleManifest` を受け取る。実ブラウザでの契約確認は Node の fake backend
+とは別であり、何が確認できて何ができないかは
+[apps/preview-soundboard/README.md](../apps/preview-soundboard/README.md) に記載する。

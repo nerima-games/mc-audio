@@ -1,5 +1,6 @@
 /* oxlint-disable no-magic-numbers -- End sound timing, mix, priority, and fallback oscillator values are authored constants. */
-import { type Vec3, clamp01, spatialise } from './volume'
+import { clamp01, spatialise } from './volume.js'
+import type { Position } from '@nerima-games/mc-kernel'
 
 export const END_AUDIO_DIMENSIONS = ['overworld', 'nether', 'end'] as const
 export type EndAudioDimension = (typeof END_AUDIO_DIMENSIONS)[number]
@@ -26,15 +27,15 @@ export type EndAudioLoopKind = 'endAmbience'
 export type EndAudioEvent = {
   readonly id: string
   readonly kind: EndAudioEventKind
-  readonly position: Vec3
+  readonly position: Position
 }
 
 export type EndAudioSnapshot = {
   readonly dimension: EndAudioDimension
   readonly phase: DragonBattlePhase
   readonly nowSecs: number
-  readonly listener: Vec3
-  readonly listenerForward?: Vec3
+  readonly listener: Position
+  readonly listenerForward?: Position
   readonly events: ReadonlyArray<EndAudioEvent>
   readonly maxSimultaneousSounds?: number
 }
@@ -213,7 +214,9 @@ const isOutsideCooldown = (
 
 const eventPlan = (event: EndAudioEvent, snapshot: EndAudioSnapshot): EndAudioEventPlan => {
   const definition = END_SOUND_DEFINITIONS[event.kind]
-  const spatial = spatialise(snapshot.listener, event.position, snapshot.listenerForward)
+  const spatial = spatialise(snapshot.listener, event.position, {
+    listenerForward: snapshot.listenerForward,
+  })
   const gain = clamp01(definition.baseGain * spatial.gain)
   return {
     eventId: event.id,

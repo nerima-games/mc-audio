@@ -9,29 +9,43 @@
 | `pnpm check:deps` | 依存ホワイトリスト + 循環検査 + `Date.now()` 禁止 |
 | `pnpm test` | vitest（`@effect/vitest` の `it.effect` が主 API） |
 | `pnpm preview` | サウンドボードプレビュー。**ゲートではない**（`pnpm verify` は実行しない） |
-| `pnpm test:coverage` | カバレッジ計測。**閾値は未設定**（後述） |
-| `pnpm verify` | 上記 4 つ（coverage 以外）。CI と同一内容 |
+| `pnpm test:coverage` | カバレッジ計測。文・分岐・関数・行の閾値は 100% |
+| `pnpm build` | 出荷用 `dist/` と宣言ファイルを生成 |
+| `pnpm verify` | typecheck、lint、依存境界、全テスト、100% カバレッジ、出荷ビルド |
 
-`pnpm` は PATH に無い場合がある。`corepack pnpm <cmd>` で 9.15.0 が起動する。
+`pnpm` は PATH に無い場合がある。通常は `corepack pnpm <cmd>` で package.json の
+`pnpm@11.17.0` を起動し、corepack が使えない環境では `nix run nixpkgs#pnpm -- <cmd>` を使う。
 
 ## 2. 現状のテスト
 
 ```
-test/caption-gate.test.ts          8 tests   字幕→ゲートの順序（3 ゲート全部）
-test/volume.test.ts               16 tests   master 一回適用、gain 算術、空間化
-test/music-and-captions.test.ts   18 tests   BGM 遷移、字幕の可視リスト、キューロスター
-test/dependency-policy.test.ts    19 tests   16 リポジトリのグラフ、import ゲート、時計禁止
-test/api-lock.test.ts             26 tests   公開 API スナップショットの生成と判定
-test/webaudio-surface.test.ts      3 tests   構造的サブセットの証明（本物の lib.dom に対するコンパイル）
-test/envelope.test.ts             13 tests   エンベロープの算術（クリック除去）
-test/webaudio-adapter.test.ts     31 tests   ガード、アンロック、グラフ、master ノード
-test/soundboard-preview.test.ts   24 tests   プレビューの純粋部分（フレームの主張）
-                                  ─────
-                                 158 tests   全て green
+test/backend-port.test.ts          backend の可用性・再生契約
+test/caption-gate.test.ts          字幕→ゲートの順序（3 ゲート全部）
+test/cue-registry.test.ts          効果音キューレジストリ
+test/end-audio-controller.test.ts  End 音源の制御
+test/end-audio.test.ts             End 音源の計画
+test/envelope.test.ts               エンベロープの算術（クリック除去）
+test/free-music-bank.test.ts        再配布可能な生成音楽バンク
+test/game-audio.test.ts             ゲーム音響の統合
+test/minecraft-music-player.test.ts Minecraft 音楽 player と metadata
+test/minecraft-music.test.ts        Minecraft 音楽の状態機械
+test/minecraft-sound-player.test.ts 高レベル player と kernel 時計・位置
+test/minecraft-sounds.test.ts       sounds.json の parse/merge/resolve/manifest
+test/music-and-captions.test.ts     BGM 遷移、字幕の可視リスト、キューレジストリ
+test/original-sample-bank.test.ts   オリジナル PCM サンプルバンク
+test/public-api.test.ts             公開 API の export 契約
+test/soundboard-preview.test.ts     プレビューの純粋部分（フレームの主張）
+test/volume.test.ts                 master 一回適用、gain 算術、空間化
+test/weather-ambience.test.ts       天候環境音の計画
+test/weather-audio-controller.test.ts 天候音の制御
+test/webaudio-adapter.test.ts       ガード、アンロック、グラフ、サンプル cache
+test/webaudio-surface.test.ts       本物の lib.dom に対する界面コンパイル
+                                 ─────
+                                 全テスト green
 ```
 
-（このリストの以前の版は 61 と書いていたが、`test/api-lock.test.ts` の 26 を
-数え落としていた。WebAudio アダプタ着手前の実数は **87** である。）
+テスト一覧は実際のファイル構成を示す。実行結果は `pnpm test:coverage` で確認する。テストは
+WebAudio の Node 互換 surface と fake backend を使うため、実ブラウザでの動作確認とは別である。
 
 ### 「lib に DOM を入れずに WebAudio を出荷する」ことの検証
 
@@ -40,13 +54,13 @@ test/soundboard-preview.test.ts   24 tests   プレビューの純粋部分（�
 
 | 主張 | 何を防ぐか |
 | --- | --- |
-| `test/fixtures/webaudio-surface.ts` を**本物の `lib.dom.d.ts`** に対してコンパイルして診断 0 | `domain/webaudio-surface.ts` が実在しない API を記述しても誰も気付かない、を防ぐ |
+| `test/fixtures/webaudio-surface.ts` を**本物の `lib.dom.d.ts`** に対してコンパイルして診断 0 | `src/domain/webaudio-surface.ts` が実在しない API を記述しても誰も気付かない、を防ぐ |
 | `tsconfig.build.json` が今も `lib: ["ES2024"]` / `types: []` で、**アダプタがその中に居る** | 誰かが `"DOM"` を足して界面型を消す、を防ぐ |
 
 fixture は `tsconfig.json` / `tsconfig.test.json` / `tsconfig.preview.json` から
 **除外**されている（DOM 型を名指しするため）。除外されていることも上のテストが固定する。
 
-この仕組みは既に 2 回仕事をしている。詳細は `domain/webaudio-surface.ts` のヘッダ:
+この仕組みは既に 2 回仕事をしている。詳細は `src/domain/webaudio-surface.ts` のヘッダ:
 
 1. `AudioContextState` に 4 つ目の値 `'interrupted'` があった（iOS の着信）。
    仕様書にもチュートリアルにも出てこない。**コンパイラだけが知っていた。**
@@ -68,12 +82,18 @@ fixture は `tsconfig.json` / `tsconfig.test.json` / `tsconfig.preview.json` か
 
 ### DOM も fake timer も使っていない
 
-**WebAudio アダプタが入った後も**、158 テスト全てが Node で走る。
+**WebAudio アダプタが入った後も**、全テストが Node で走る。
 jsdom も `AudioContext` も要らない。
 `tsconfig.base.json` の `lib` に `"DOM"` を入れていないことの直接の効果である。
 
 参照実装の字幕テスト（`packages/presentation/test/sound-captions.test.ts`, 133 LOC）は
 DOM とタイマーを必要とし、テスト間でモジュールレベルのグローバル状態をリセットしていた。
+
+### 決定的な時計
+
+時刻依存のテストは `test/test-clock.ts` の `testClockLayer` を `ClockPort` に提供する。
+テスト時刻を固定できるため、`Date.now()`、`performance.now()`、fake timer に依存しない。
+出荷側の `engine` は注入された `ClockPort` を使い、テスト用の時計は公開 API に持ち込まない。
 
 ## 3. plan.md §3.6 が要求する検証
 
@@ -110,7 +130,7 @@ DN-2 の二乗は `0.5` が `0.25` に聞こえるだけでエラーにならな
 master スライダーを動かしたときに**左の列が動かない**ことを見る形にしてある。
 
 プレビューが**確認できないこと**（クリックが実際に消えたか、
-9 キューが互いに区別できるか、ブラウザが実際に何をするか）は
+17 キューが互いに区別できるか、ブラウザが実際に何をするか）は
 [apps/preview-soundboard/README.md](../apps/preview-soundboard/README.md) §2 に
 列挙してある。プレビューは検証したように見せてはならない。
 
@@ -119,45 +139,31 @@ master スライダーを動かしたときに**左の列が動かない**こと
 このリポジトリが「完成」と言えるのは以下が全て満たされたときである。
 
 1. `pnpm verify` が green
-2. **WebAudio アダプタが実装され、`AudioBackendPort` の契約テストが実ブラウザで green**
-   - アダプタは実装済み（`domain/webaudio-adapter.ts`）。DN-6 の 4 テストも
+2. **WebAudio アダプタが実装され、`AudioBackendPort` の契約テストと実ブラウザ smoke が green**
+   - アダプタは実装済み（`src/domain/webaudio-adapter.ts`）。DN-6 の 4 契約テストも
      `test/webaudio-adapter.test.ts` に入った
-   - **残っているのは「実ブラウザで」の部分**。`test/fake-webaudio.ts` は
-     拒否するかどうかを**教えられている**ので、
+   - `test/fake-webaudio.ts` は拒否するかどうかを**教えられている**ので、
      「拒否されたときどう振る舞うか」は固定できても
-     「このブラウザが拒否するか」は答えられない。ブラウザで確認すべきことは
+     「このブラウザが拒否するか」は答えられない。
+   - 実ブラウザでは、`AudioContext` の生成、ユーザジェスチャー後の
+     `unlock`、ステレオトーンの `playTone`、再生中ハンドルの観測までを
+     Playwright MCP の browser smoke で確認した。`pnpm verify` は引き続き
+     Node の fake backend 契約を実行するため、ブラウザ smoke は別の確認面である。
+     ブラウザで確認すべき聴感・デバイス依存の項目は
      [apps/preview-soundboard/README.md](../apps/preview-soundboard/README.md) §2-4
 3. **サウンドボードプレビューが操作可能**（上記 5 点を目視確認できる） ✅
-4. キューロスターが確定している
-   - 現在は代表 9 個の暫定。参照実装は 17 個
-   - **最終ロスターは mx-gameplay のルールと一緒に決まる**（キューを鳴らすのは gameplay）
-5. 音声アセットが同梱されている（plan.md §5.3: アセットは消費者に同梱）。
-   **これは実装ではなく調達で止まっている行である** — 参照実装にも本リポジトリにも
-   音声ファイルは 0 件、サンプル再生機構も 0 件。詳細と実測は
-   [responsibility.md](./responsibility.md) §5-1
-   - 参照実装は全てオシレータ合成で、音声ファイルが 1 つも無い。**新規作業**
-6. カバレッジ 99% ゲートが有効化されている（後述）
+4. キューレジストリが 17 個の定義を持つ ✅
+5. `sounds.json` の parse/merge/variant 選択とサンプル manifest が実装されている ✅
+6. カバレッジ 100% ゲートが有効化されている ✅
 
-## 5. カバレッジ閾値: 今はまだ設定しない
+## 5. カバレッジ閾値
 
-参照実装は branches / functions / lines / statements の 99% を強制している。
-mc-audio でも**最終的には同じ 99% を課す**が、今は課さない。
-
-理由: スケルトンに閾値を課しても意味が無い。
-型定義だけのモジュールをいくつか置けば簡単に満たせてしまい、
-実装の品質について何も語らない数字になる。
-
-現状:
-
-- 計測とレポートは**常に動いている**（`pnpm test:coverage`、CI でもアーティファクト化）
-- 閾値だけが未設定。`vitest.config.ts` の `coverage.thresholds` がコメントアウトされている
-- CI の `Coverage` ステップも同様
-
-**有効化のタイミング**: 上記「完了条件」の 1〜5 を満たした時点で、
-`vitest.config.ts` と `.github/workflows/ci.yaml` の**両方**を同時に更新する。
+`vitest.config.ts` は branches / functions / lines / statements の全てを 100% に設定している。
+型定義だけのファイルは実行対象から除外し、実行可能な `src/domain` ソースを対象にする。
+閾値を下げる変更は、未実行経路を隠すため許可しない。
 
 ```typescript
-thresholds: { branches: 99, functions: 99, lines: 99, statements: 99 },
+thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
 ```
 
 ## 6. テストの書き方の規約

@@ -31,8 +31,6 @@
  *    implementation could not test at all, because its detection read a global
  *    (`typeof AudioContext === 'undefined'`) that no Node test can falsify —
  *    `docs/porting.md` §6 records the resulting zero tests.
- *  - BOTH SPELLINGS. `prefixed: true` exposes only `webkitAudioContext`, which
- *    is Safari before 14.1.
  *  - CONSTRUCTION FAILING. Chrome caps hardware contexts at six per page and
  *    throws on the seventh.
  *  - THE FOUR-STATE MACHINE, including `'interrupted'` — the state
@@ -133,18 +131,20 @@ export type ResumePolicy =
 export type FakeWebAudioOptions = {
   /** `false` gives a global with neither constructor: Node, SSR. */
   readonly present?: boolean
-  /** `true` exposes only `webkitAudioContext`: Safari before 14.1. */
-  readonly prefixed?: boolean
-  /** `false` omits `createStereoPanner`, forcing the adapter's mono fallback. */
-  readonly stereo?: boolean
   /** The constructor throws. Chrome past its six-context cap. */
   readonly constructionThrows?: boolean
   /** Wiring the master gain throws, i.e. a context that is born broken. */
   readonly wiringThrows?: boolean
+  /** Creating a cue gain throws after the oscillator has been allocated. */
+  readonly cueGainThrows?: boolean
   /** Creating a cue's stereo panner throws after its oscillator and gain exist. */
   readonly pannerThrows?: boolean
   /** Creating a decoded-sample source throws, forcing synthesized fallback. */
   readonly bufferSourceThrows?: boolean
+  /** Starting a scheduled source throws after its graph has been built. */
+  readonly startThrows?: boolean
+  /** Stopping a scheduled source throws after it has been started. */
+  readonly stopThrows?: boolean
   readonly decodeThrows?: boolean
   readonly decodedDurationSecs?: number
   readonly resumePolicy?: ResumePolicy
@@ -163,7 +163,7 @@ export type FakeWebAudioOptions = {
 export type ParamCall = {
   /** The node id, e.g. `gain#2`. */
   readonly node: string
-  readonly param: 'gain' | 'frequency' | 'pan'
+  readonly param: 'gain' | 'frequency' | 'pan' | 'playbackRate'
   readonly kind: 'assign' | 'set' | 'ramp' | 'cancel'
   readonly value: number
   /** The scheduled time. Equal to the virtual `currentTime` for `assign`. */
@@ -307,7 +307,12 @@ class FakeAudioNode implements AudioNodeSurface {
 class FakeGainNode extends FakeAudioNode implements GainSurface {
   readonly gain: AudioParamSurface
 
-  constructor(log: FakeAudioLog, id: string, clock: () => number, disconnectThrows: boolean) {
+  constructor(
+    log: FakeAudioLog,
+    id: string,
+    clock: () => number,
+    disconnectThrows: boolean,
+  ) {
     super(log, id, disconnectThrows)
     this.gain = new FakeAudioParam(log, id, 'gain', clock)
   }
@@ -331,16 +336,29 @@ class FakeOscillatorNode extends FakeAudioNode implements OscillatorSurface {
   stopAtSecs: number | null = null
   ended = false
 
-  constructor(log: FakeAudioLog, id: string, clock: () => number, disconnectThrows: boolean) {
+  constructor(
+    log: FakeAudioLog,
+    id: string,
+    clock: () => number,
+    disconnectThrows: boolean,
+    private readonly startThrows: boolean,
+    private readonly stopThrows: boolean,
+  ) {
     super(log, id, disconnectThrows)
     this.frequency = new FakeAudioParam(log, id, 'frequency', clock)
   }
 
   start(when?: number): void {
+    if (this.startThrows) {
+      throw new Error('fake: source.start refused')
+    }
     this.log.started.push({ atSecs: when ?? 0, node: this.id })
   }
 
   stop(when?: number): void {
+    if (this.stopThrows) {
+      throw new Error('fake: source.stop refused')
+    }
     const at = when ?? 0
     this.stopAtSecs = at
     this.log.stopped.push({ atSecs: at, node: this.id })
@@ -348,17 +366,36 @@ class FakeOscillatorNode extends FakeAudioNode implements OscillatorSurface {
 }
 
 class FakeBufferSourceNode extends FakeAudioNode implements AudioBufferSourceSurface {
+  readonly playbackRate: AudioParamSurface
   buffer: AudioBufferSurface | null = null
   loop = false
   onended: ((event: never) => void) | null = null
   stopAtSecs: number | null = null
   ended = false
 
+  constructor(
+    log: FakeAudioLog,
+    id: string,
+    clock: () => number,
+    disconnectThrows: boolean,
+    private readonly startThrows: boolean,
+    private readonly stopThrows: boolean,
+  ) {
+    super(log, id, disconnectThrows)
+    this.playbackRate = new FakeAudioParam(log, id, 'playbackRate', clock)
+  }
+
   start(when?: number): void {
+    if (this.startThrows) {
+      throw new Error('fake: source.start refused')
+    }
     this.log.started.push({ atSecs: when ?? 0, node: this.id })
   }
 
   stop(when?: number): void {
+    if (this.stopThrows) {
+      throw new Error('fake: source.stop refused')
+    }
     const at = when ?? 0
     this.stopAtSecs = at
     this.log.stopped.push({ atSecs: at, node: this.id })
@@ -374,8 +411,7 @@ export class FakeAudioContext implements AudioContextSurface {
   readonly destination: AudioNodeSurface
   onstatechange: ((event: never) => void) | null = null
 
-  /** Present only when the fake was built with `stereo` (the default). */
-  readonly createStereoPanner?: () => StereoPannerSurface
+  readonly createStereoPanner: () => StereoPannerSurface
 
   readonly oscillators: Array<FakeOscillatorNode> = []
   readonly bufferSources: Array<FakeBufferSourceNode> = []
@@ -395,20 +431,18 @@ export class FakeAudioContext implements AudioContextSurface {
     this.#state = options.initialState ?? 'suspended'
     this.destination = new FakeAudioNode(this.log, 'destination', options.disconnectThrows === true)
 
-    if (options.stereo !== false) {
-      this.createStereoPanner = (): StereoPannerSurface => {
-        if (this.options.pannerThrows === true) {
-          throw new Error('fake: createStereoPanner refused')
-        }
-        const node = new FakeStereoPannerNode(
-          this.log,
-          this.#id('panner'),
-          () => this.#currentTime,
-          this.options.disconnectThrows === true,
-        )
-        this.log.created.push(node.id)
-        return node
+    this.createStereoPanner = (): StereoPannerSurface => {
+      if (this.options.pannerThrows === true) {
+        throw new Error('fake: createStereoPanner refused')
       }
+      const node = new FakeStereoPannerNode(
+        this.log,
+        this.#id('panner'),
+        () => this.#currentTime,
+        this.options.disconnectThrows === true,
+      )
+      this.log.created.push(node.id)
+      return node
     }
   }
 
@@ -426,7 +460,8 @@ export class FakeAudioContext implements AudioContextSurface {
   }
 
   createGain(): GainSurface {
-    if (this.options.wiringThrows === true && this.log.created.length === 0) {
+    const creatingMaster = this.log.created.length === 0
+    if ((this.options.wiringThrows === true && creatingMaster) || (this.options.cueGainThrows === true && !creatingMaster)) {
       throw new Error('fake: createGain refused')
     }
     const node = new FakeGainNode(
@@ -443,7 +478,14 @@ export class FakeAudioContext implements AudioContextSurface {
     if (this.options.bufferSourceThrows === true) {
       throw new Error('fake: createBufferSource refused')
     }
-    const node = new FakeBufferSourceNode(this.log, this.#id('buffer'), this.options.disconnectThrows === true)
+    const node = new FakeBufferSourceNode(
+      this.log,
+      this.#id('buffer'),
+      () => this.#currentTime,
+      this.options.disconnectThrows === true,
+      this.options.startThrows === true,
+      this.options.stopThrows === true,
+    )
     this.log.created.push(node.id)
     this.bufferSources.push(node)
     return node
@@ -455,6 +497,8 @@ export class FakeAudioContext implements AudioContextSurface {
       this.#id('osc'),
       () => this.#currentTime,
       this.options.disconnectThrows === true,
+      this.options.startThrows === true,
+      this.options.stopThrows === true,
     )
     this.log.created.push(node.id)
     this.oscillators.push(node)
@@ -550,7 +594,7 @@ export type FakeWebAudio = {
  * Build a fake host.
  *
  * The default is the happy path a modern browser presents BEFORE the player has
- * clicked: both constructors' worth of capability, stereo available, and a
+ * clicked: the standard constructor and stereo panning, and a
  * context that starts `suspended` and will run once `resume()` is called. That
  * default is deliberate — `suspended` is what every player's first page load
  * looks like, so a test that forgets to say otherwise is testing the case that
@@ -578,10 +622,8 @@ export const makeFakeWebAudio = (options: FakeWebAudioOptions = {}): FakeWebAudi
     options.present === false
       ? // Spelled out rather than `{}`, so a reader sees a host that was
         // CHECKED and found to have no Web Audio, which is Node and SSR.
-        { AudioContext: undefined, webkitAudioContext: undefined }
-      : options.prefixed === true
-        ? { webkitAudioContext: Constructed }
-        : { AudioContext: Constructed }
+        { AudioContext: undefined }
+      : { AudioContext: Constructed }
 
   return {
     constructorCalls: () => calls,
