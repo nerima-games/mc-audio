@@ -9,22 +9,22 @@
  *
  * The one behaviour to know before touching anything: **caption events are
  * emitted before the audio gate is consulted**, so captions appear even when
- * sound cannot play. See `domain/engine.ts` and `test/caption-gate.test.ts`.
+ * sound cannot play. See `src/domain/engine.ts` and `test/caption-gate.test.ts`.
  *
  * ---------------------------------------------------------------------------
  * The WebAudio adapter ships, and `lib` was NOT widened to include DOM
  * ---------------------------------------------------------------------------
  *
- * `domain/webaudio-adapter.ts` talks to a real `AudioContext`, and
+ * `src/domain/webaudio-adapter.ts` talks to a real `AudioContext`, and
  * `tsconfig.base.json` still says `lib: ["ES2024"]` and `types: []`. Both are
- * true because `domain/webaudio-surface.ts` describes, structurally, the
+ * true because `src/domain/webaudio-surface.ts` describes, structurally, the
  * handful of Web Audio members the adapter uses, and
  * `test/webaudio-surface.test.ts` compiles a fixture against the real
  * `lib.dom.d.ts` to prove a real `AudioContext` satisfies them with no cast.
  *
  * That is what keeps `pnpm typecheck` a PROOF that everything else here is
  * platform-free, and it is why the suite still runs in Node with no jsdom.
- * Read `domain/webaudio-surface.ts` before changing any of it — it also records
+ * Read `src/domain/webaudio-surface.ts` before changing any of it — it also records
  * the fourth `AudioContextState`, `'interrupted'`, which the compiler found and
  * nobody knew about.
  */
@@ -43,6 +43,8 @@ export * from './domain/music.js'
 export * from './domain/minecraft-audio.js'
 export * from './domain/minecraft-26-2-sound-data.js'
 export * from './domain/minecraft-26-2-sounds.js'
+export * from './domain/minecraft-26-3-snapshot-9-sound-data.js'
+export * from './domain/minecraft-26-3-snapshot-9-sounds.js'
 export * from './domain/minecraft-music.js'
 export * from './domain/minecraft-music-player.js'
 export * from './domain/minecraft-ambient-sounds.js'

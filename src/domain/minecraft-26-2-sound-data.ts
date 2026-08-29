@@ -24,3 +24,4 @@ type Minecraft26_2SoundData = {
 }
 
 export const MINECRAFT_26_2_SOUNDS_JSON = officialSounds as unknown as Minecraft26_2SoundData
+

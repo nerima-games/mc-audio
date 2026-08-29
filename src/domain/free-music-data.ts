@@ -611,3 +611,4 @@ const mapMusicEvents = <Table extends Readonly<Record<string, readonly OfficialM
 export const FREE_MINECRAFT_MUSIC_EVENT_VARIANTS = mapMusicEvents(ALL_MUSIC_EVENTS)
 
 export type FreeMusicEventId = keyof typeof FREE_MINECRAFT_MUSIC_EVENT_VARIANTS
+

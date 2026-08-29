@@ -164,3 +164,4 @@ export const createFreeMinecraftMusicPack = (
   manifest: createFreeMinecraftMusicManifest(options),
   registry: createFreeMinecraftMusicRegistry(),
 })
+

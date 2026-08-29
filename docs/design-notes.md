@@ -59,7 +59,7 @@ it.effect('announces captions even while audio is disabled (hearing accessibilit
 | 3 | 自動再生ポリシー（`resume()` 拒否） | `audio-engine.ts:46-49` | ❌ **無い** |
 
 `packages/game/infrastructure/audio-engine.ts` と `audio-context-helpers.ts` には
-**テストが 1 本も無い**。リポジトリ内のどのテストも `AudioContext` を構築しないし、
+**参照実装側のテストが 1 本も無い**。参照実装リポジトリ内のどのテストも `AudioContext` を構築しないし、
 コンテキスト不在パスも `resume()` パスも一度も実行されていない。
 
 つまり不変条件は `audioEnabled: false` については保証されており、
@@ -295,7 +295,7 @@ Node のテストからこの式を偽にする方法が無いので、
 ### 拒否されたキューは**捨てる**（保留キューは作らない）
 
 `docs/public-api.md` §7 が未決としていた点の決定。理由は
-`domain/webaudio-adapter.ts` のヘッダ:
+`src/domain/webaudio-adapter.ts` のヘッダ:
 アンロック時にまとめて鳴らすと、**もう存在しないブロックの破壊音**が鳴る。
 音は「今」についての主張なので、遅れた音は遅れた真実ではなく偽である。
 情報は既に字幕（`reason: 'gate-blocked'`）で出ているので失われない。
@@ -321,4 +321,4 @@ mc-audio もこの性質を保つ。`nowSecs` は注入する。
 | ✅ `flags Date.now(), new Date() and performance.now()` | ゲートが動く |
 | ✅ `exempts a line carrying the escape-hatch marker` | WebAudio アダプタ用の逃げ道 |
 
-実装は `test/dependency-policy.test.ts`。
+実装は `scripts/check-dependency-whitelist.ts` で、`pnpm check:deps` が実行する。

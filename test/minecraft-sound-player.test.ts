@@ -2,6 +2,7 @@ import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer, Ref } from 'effect'
 import { EpochMillis, FixedClockLayer, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import {
+  type AudioBackend,
   type AudioAvailability,
   AudioBackendPort,
   makeRecordingBackend,
@@ -72,7 +73,7 @@ describe('Minecraft sound player', () => {
   it('builds a backend request from the resolved event data', () => {
     const plan = planMinecraftSound(REGISTRY, 'minecraft:block.break', {
       random: 0,
-      position: { x: 24, y: 64, z: 0 },
+      position: { x: 12, y: 64, z: 0 },
       listener: LISTENER,
       sfxVolume: 0.8,
       gainScale: 0.5,
@@ -93,7 +94,7 @@ describe('Minecraft sound player', () => {
         soundId: 'minecraft:block/stone',
         playbackRate: 2,
         gain: 0.1,
-        pan: 1,
+        pan: 0.5,
         loop: false,
         frequency: 880,
         durationSecs: 0.25,
@@ -146,7 +147,7 @@ describe('Minecraft sound player', () => {
       const playback = yield* player.play('minecraft:block.break', {
         camera: CAMERA,
         random: 0,
-        position: { x: 24, y: 64, z: 0 },
+        position: { x: 12, y: 64, z: 0 },
       })
 
       expect(playback.played).toBe(true)
@@ -157,7 +158,7 @@ describe('Minecraft sound player', () => {
           text: 'subtitles.block.break',
           atSecs: MonotonicTimeSecs(5),
           reason: 'audible',
-          pan: 1,
+          pan: 0.5,
         },
       ])
       expect(yield* recorded.played).toStrictEqual([
@@ -165,7 +166,7 @@ describe('Minecraft sound player', () => {
           soundId: 'minecraft:block/stone',
           playbackRate: 2,
           gain: 0.25,
-          pan: 1,
+          pan: 0.5,
         }),
       ])
 
@@ -219,6 +220,41 @@ describe('Minecraft sound player', () => {
       expect(yield* recorded.played).toStrictEqual([
         expect.objectContaining({ soundId: 'minecraft:ui/click', pan: 0 }),
       ])
+    }),
+  )
+
+  it.effect('reports a backend refusal as a skipped sound', () =>
+    Effect.gen(function* () {
+      const recorded = yield* makeRecordingBackend('ready')
+      const refusingBackend: AudioBackend = {
+        ...recorded.backend,
+        playTone: () => Effect.succeed({ accepted: false, id: 1 }),
+      }
+      const captionLog = yield* Ref.make<ReadonlyArray<CaptionEvent>>([])
+      const dependencies = Layer.merge(
+        Layer.merge(
+          Layer.succeed(AudioBackendPort, refusingBackend),
+          recordingCaptionLayer((event) => Ref.update(captionLog, (current) => [...current, event])),
+        ),
+        FixedClockLayer({
+          monotonicSecs: MonotonicTimeSecs(5),
+          wallClockEpochMillis: EpochMillis(0),
+        }),
+      )
+      const player = yield* makeMinecraftSoundPlayer(REGISTRY, () => 0).pipe(
+        Effect.provide(dependencies),
+      )
+
+      const playback = yield* player.play('minecraft:block.break', {
+        camera: CAMERA,
+        random: 0,
+        position: { x: 12, y: 64, z: 0 },
+      })
+
+      expect(playback.played).toBe(false)
+      expect(playback.handle).toBeNull()
+      expect(yield* recorded.played).toHaveLength(0)
+      expect(yield* captionLog).toHaveLength(1)
     }),
   )
 

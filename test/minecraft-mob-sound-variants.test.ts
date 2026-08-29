@@ -324,3 +324,4 @@ describe('Minecraft mob sound variant data layer', () => {
     expect(() => parseMinecraftWolfSoundDefinition({ input: wolfDefinition('wolf'), namespace: 'BadNamespace' })).toThrow(TypeError)
   })
 })
+

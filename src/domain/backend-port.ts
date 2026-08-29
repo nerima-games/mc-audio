@@ -32,9 +32,8 @@
  *     whose rejection is swallowed by `Effect.catchAllCause(() => Effect.void)`
  *
  * Case 3 is the interesting one. There is no user-gesture unlock, no "unlocked"
- * flag, no pending-cue queue and no `webkitAudioContext` fallback anywhere in
- * that repository — a grep for `webkitAudioContext|autoplay|userGesture|unlock`
- * returns nothing. So when the browser refused, the code went on to build
+ * flag and no pending-cue queue anywhere in that repository — a grep for
+ * `autoplay|userGesture|unlock` returns nothing. So when the browser refused, the code went on to build
  * oscillator nodes that never audibly sounded, and nothing above could observe
  * that.
  *
@@ -91,10 +90,20 @@ export type ToneHandle = {
   readonly id: number
 }
 
+/**
+ * The backend handle plus the admission result for this playback request.
+ * A handle is allocated before all backends can know whether a request will be
+ * audible, so callers must inspect `accepted` rather than infer success from
+ * the presence of an id.
+ */
+export type TonePlayback = ToneHandle & {
+  readonly accepted: boolean
+}
+
 export type AudioBackend = {
   readonly availability: Effect.Effect<AudioAvailability>
-  readonly playTone: (request: ToneRequest) => Effect.Effect<ToneHandle>
-  readonly playMusic: (request: MusicRequest) => Effect.Effect<ToneHandle>
+  readonly playTone: (request: ToneRequest) => Effect.Effect<TonePlayback>
+  readonly playMusic: (request: MusicRequest) => Effect.Effect<TonePlayback>
   readonly stopTone: (handle: ToneHandle) => Effect.Effect<void>
   readonly setToneGain: (handle: ToneHandle, gain: number) => Effect.Effect<void>
   readonly isToneActive: (handle: ToneHandle) => Effect.Effect<boolean>
@@ -138,6 +147,7 @@ export const makeRecordingBackend = (
     const gains = yield* Ref.make<ReadonlyArray<number>>([])
     const nextId = yield* Ref.make(0)
     const activeIds = yield* Ref.make<ReadonlySet<number>>(new Set())
+    const accepted = availability === 'ready'
 
     const backend: AudioBackend = {
       availability: Effect.succeed(availability),
@@ -146,15 +156,19 @@ export const makeRecordingBackend = (
         Effect.gen(function* playMusic() {
           yield* Ref.update(musicRequests, (current) => [...current, request])
           const id = yield* Ref.updateAndGet(nextId, (value) => value + 1)
-          yield* Ref.update(activeIds, (current) => new Set(current).add(id))
-          return { id }
+          if (accepted) {
+            yield* Ref.update(activeIds, (current) => new Set(current).add(id))
+          }
+          return { accepted, id }
         }),
       playTone: (request) =>
         Effect.gen(function*  playTone() {
           yield* Ref.update(requests, (current) => [...current, request])
           const id = yield* Ref.updateAndGet(nextId, (value) => value + 1)
-          yield* Ref.update(activeIds, (current) => new Set(current).add(id))
-          return { id }
+          if (accepted) {
+            yield* Ref.update(activeIds, (current) => new Set(current).add(id))
+          }
+          return { accepted, id }
         }),
       setMasterGain: (gain) => Ref.update(gains, (current) => [...current, gain]),
       setToneGain: (handle, gain) =>
@@ -178,17 +192,15 @@ export const makeRecordingBackend = (
 /**
  * The backend used when there is none: Node, a test, a server render.
  *
- * Note that it still answers `playTone` with a handle. A caller must never
- * branch on "did I get a handle" to decide whether sound happened — that was
- * exactly the reference implementation's trap (`audio-engine.ts:40` assigns the
- * id before the context gate at `:42`, so ids stayed monotonic even with no
- * audio at all). Branch on `availability`.
+ * Note that it still answers `playTone` with a handle-shaped value so the port
+ * stays total. Its `accepted` flag is false, which prevents callers from
+ * reporting a refused request as audible playback.
  */
 export const UnavailableBackendLayer: Layer.Layer<AudioBackendPort> = Layer.succeed(AudioBackendPort, {
   availability: Effect.succeed<AudioAvailability>('unavailable'),
   isToneActive: () => Effect.succeed(false),
-  playMusic: () => Effect.succeed({ id: 0 }),
-  playTone: () => Effect.succeed({ id: 0 }),
+  playMusic: () => Effect.succeed({ accepted: false, id: 0 }),
+  playTone: () => Effect.succeed({ accepted: false, id: 0 }),
   setMasterGain: () => Effect.void,
   setToneGain: () => Effect.void,
   stopTone: () => Effect.void,

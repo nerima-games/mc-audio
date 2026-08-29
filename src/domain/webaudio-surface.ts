@@ -281,17 +281,7 @@ export type AudioContextSurface = {
   readonly createBufferSource?: () => AudioBufferSourceSurface
   readonly decodeAudioData: (audioData: ArrayBuffer) => Promise<AudioBufferSurface>
   readonly createGain: () => GainSurface
-  /**
-   * OPTIONAL, and honestly so: `createStereoPanner` is absent in Safari before
-   * 14.1, and the adapter therefore feature-detects it and falls back to
-   * connecting gain straight to master. The fallback is MONO, and the adapter
-   * says so in its report rather than silently centring the sound — a player
-   * wondering why footsteps have no direction deserves an answer.
-   *
-   * A real `BaseAudioContext` declares it as REQUIRED, and an optional member
-   * is satisfied by a required one; the fixture proves that direction.
-   */
-  readonly createStereoPanner?: () => StereoPannerSurface
+  readonly createStereoPanner: () => StereoPannerSurface
   /**
    * Fires when the browser changes `state` behind our back — most importantly
    * when iOS ends an interruption, and when a policy change unlocks a context
@@ -320,30 +310,15 @@ export type AudioContextConstructorSurface = new () => AudioContextSurface
 /**
  * The global object, as far as feature detection needs it.
  *
- * BOTH MEMBERS ARE OPTIONAL, and that is the whole point: this type is a
- * QUESTION, not a claim. In Node and in SSR neither exists; in a modern browser
- * `AudioContext` does; in Safari before 14.1 only `webkitAudioContext` does.
- * Passing `globalThis` to `webAudioBackendLayer` therefore answers "is there
- * any Web Audio here at all", and the adapter — not the host application —
- * owns the answer. That is a deliberate difference from the reference, which
- * did `typeof AudioContext === 'undefined'` inside the engine and consequently
- * could not be tested at all, because there is no way to make that expression
- * false in a Node test (`docs/porting.md` §6: `audio-context-helpers.ts` has
- * zero tests, and this is why).
+ * The member is optional because Node, SSR, and browsers without Web Audio do
+ * not provide it. It is also `| undefined`, so `{ AudioContext: undefined }`
+ * explicitly says that capability detection was performed and found no
+ * constructor. Under `exactOptionalPropertyTypes`, an optional-only member
+ * cannot be assigned `undefined` explicitly.
  *
- * `webkitAudioContext` does not exist in `lib.dom.d.ts`, so a real `globalThis`
- * simply lacks it — which is legal for an optional member, and is proved by the
- * fixture. The prefixed constructor is one of the four items
- * `docs/public-api.md` §7 lists as NEW work rather than porting, because a grep
- * for `webkitAudioContext` across the reference returns nothing.
- *
- * Both members are ALSO `| undefined`, on top of being optional, so that
- * `{ AudioContext: undefined, webkitAudioContext: undefined }` is a legal way to
- * say "I looked and there is none". Under `exactOptionalPropertyTypes` — which
- * `tsconfig.base.json` sets — an optional-only member CANNOT be assigned
- * `undefined` explicitly, and the absent case would have to be spelled `{}`.
- * `{}` is a shrug; the explicit spelling is a statement, and the difference
- * shows up in a diff.
+ * Passing `globalThis` to `webAudioBackendLayer` makes capability detection a
+ * value supplied by the host rather than an untestable global read inside the
+ * engine. The adapter owns the standard `AudioContext` feature check.
  *
  * A type whose members are ALL optional is a "weak type", which TypeScript
  * refuses to accept an unrelated source for. Measured: an unrelated options bag
@@ -355,5 +330,4 @@ export type AudioContextConstructorSurface = new () => AudioContextSurface
  */
 export type WebAudioGlobalSurface = {
   readonly AudioContext?: AudioContextConstructorSurface | undefined
-  readonly webkitAudioContext?: AudioContextConstructorSurface | undefined
 }

@@ -12,3 +12,4 @@ export const MUSIC_TRACKS: Readonly<Record<MusicEnvironment, MusicTrack>> = {
   day: { baseGain: 0.28, frequency: 174.61 },
   night: { baseGain: 0.24, frequency: 130.81 },
 }
+

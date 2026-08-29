@@ -187,3 +187,4 @@ export const minecraftSoundManifest = (
   }
   return manifest
 }
+

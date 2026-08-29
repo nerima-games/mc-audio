@@ -1,7 +1,8 @@
 # 公開 API
 
-plan.md §3.6 が要求する API を、**参照実装の実コードと現行実装に突き合わせて**確定させたもの。
-根拠パスは全て `ts-minecraft` リポジトリ内の実在するファイル・行である。
+plan.md §3.6 の要求を出発点に、現行 package の `src/index.ts` と `src/domain/*` の公開契約を
+**参照実装の移植根拠と突き合わせて**確定させたもの。`packages/game/*` などのパスは移植元の
+根拠であり、現行 package の実装パスではない。
 
 ## 0. plan.md が要求している API
 
@@ -26,7 +27,7 @@ export const CUE_DEFINITIONS: Record<SoundCueId, CueDefinition>
 export const cueDefinition: (cueId: SoundCueId) => CueDefinition
 ```
 
-`domain/cue.ts`。**リテラル型のユニオン**であって opaque な id ではない。
+`src/domain/cue.ts`。**リテラル型のユニオン**であって opaque な id ではない。
 キューを追加したら、全ての `switch` がコンパイルエラーになってほしいからである。
 
 参照実装も同じ判断をしており、ユニオンとテーブルの対応を 1 行で強制していた
@@ -68,6 +69,7 @@ export const clampNonNegative: (value: number) => number
 export const clampPan: (value: number) => number
 export const SPATIAL_DISTANCE_SCALE = 12
 export const spatialise: (listener: Position, source: Position, options?: SpatialisationOptions) => Spatialisation
+export const minecraftSpatialise: (listener: Position, source: Position, options?: SpatialisationOptions) => Spatialisation
 export const NO_SPATIALISATION: Spatialisation
 
 export const effectiveSfxGain: (input: {
@@ -85,7 +87,7 @@ export const effectiveMusicGain: (input: {
 export const masterNodeGain: (settings: VolumeSettings) => number
 ```
 
-`domain/volume.ts`。**`master` はどの per-cue 計算にも入っていない。**
+`src/domain/volume.ts`。**`master` はどの per-cue 計算にも入っていない。**
 理由は [design-notes.md](./design-notes.md#dn-2)。
 
 ### 参照実装の算術（そのまま移植）
@@ -112,10 +114,15 @@ pan         = clampPan(dx / 12)
 逆二乗ではなく `1/(1+d/s)` なのは、ゼロにならない（遠い音が切れずにフェードする）ことと
 d = 0 で有限であることの両方が要るためである。
 
+Minecraft の `sounds.json` variant は `attenuation_distance` を持つため、プレイヤーでは
+`minecraftSpatialise` を使う。こちらの gain は `clamp01(1 - distance / attenuation_distance)`
+という線形 cutoff であり、汎用 cue の「遠くてもゼロにならない」`spatialise` とは意図的に分離している。
+距離と pan の座標計算、`distance_offset`、listener の向きの扱いは共有する。
+
 最終的な振幅:
 
 ```
-SFX  = clampNonNegative(baseGain × sfxVolume × 1/(1+d/12) × max(0, gainScale)) × clamp01(masterVolume)
+汎用 SFX = clampNonNegative(baseGain × sfxVolume × 1/(1+d/12) × max(0, gainScale)) × clamp01(masterVolume)
 音楽 = clampNonNegative(trackBaseGain × musicVolume)                              × clamp01(masterVolume)
                                                                         └─ master ノードが 1 回だけ
 ```
@@ -142,20 +149,33 @@ export type AudioAvailability = (typeof AUDIO_AVAILABILITIES)[number]
 
 export type ToneRequest = {
   readonly soundId?: string
+  readonly playbackRate?: number
   readonly frequency: number
+  readonly wave?: 'sine' | 'square' | 'sawtooth' | 'triangle'
   readonly durationSecs: number
-  readonly gain: number     // master は含まない
+  readonly gain: number
   readonly pan: number
   readonly loop: boolean
-  readonly playbackRate?: number
-  readonly wave?: OscillatorType
+  readonly stream?: boolean
+  readonly naturalDuration?: boolean
+  readonly sampleOnly?: boolean
+}
+export type MusicRequest = {
+  readonly soundId: string
+  readonly gain: number
+  readonly playbackRate: number
+  readonly stream: boolean
 }
 export type ToneHandle = { readonly id: number }
+export type TonePlayback = ToneHandle & { readonly accepted: boolean }
 
 export type AudioBackend = {
   readonly availability: Effect.Effect<AudioAvailability>
-  readonly playTone: (request: ToneRequest) => Effect.Effect<ToneHandle>
+  readonly playTone: (request: ToneRequest) => Effect.Effect<TonePlayback>
+  readonly playMusic: (request: MusicRequest) => Effect.Effect<TonePlayback>
   readonly stopTone: (handle: ToneHandle) => Effect.Effect<void>
+  readonly setToneGain: (handle: ToneHandle, gain: number) => Effect.Effect<void>
+  readonly isToneActive: (handle: ToneHandle) => Effect.Effect<boolean>
   readonly setMasterGain: (gain: number) => Effect.Effect<void>
 }
 
@@ -165,7 +185,7 @@ export const makeRecordingBackend: (availability: AudioAvailability) => Effect.E
 export const UnavailableBackendLayer: Layer.Layer<AudioBackendPort>
 ```
 
-`domain/backend-port.ts`。低レベルの合成音契約に加えて、WebAudio 実装は
+`src/domain/backend-port.ts`。低レベルの合成音契約に加えて、WebAudio 実装は
 `AudioSampleManifest`（URL または `ArrayBuffer`）を decode/cache/preload できる。
 
 ### `availability` が値であることが要点
@@ -191,22 +211,24 @@ yield* Effect.tryPromise({
 `Effect.void` に飲み込み、そのままオシレータノードを組み立てる。
 音は永久に鳴らないが、上位からは観測できない。
 
-**ユーザジェスチャによるアンロック機構、`unlocked` フラグ、保留キュー、
-`webkitAudioContext` フォールバックはリポジトリ全体に存在しない**
-（`webkitAudioContext|autoplay|userGesture|unlock` の grep が 0 件）。
+**ユーザジェスチャによるアンロック機構、`unlocked` フラグ、保留キューは
+参照実装全体に存在しない**。mc-audio では `locked` を公開状態として扱う。
 
 `locked` という状態に名前を付けることで、字幕が `gate-blocked` と自己申告でき、
 UI が「クリックして音を有効化」と出せるようになる。
 
-### ハンドル id の罠
+### 再生受理とハンドルは別の値
 
 参照実装は `playTone` の id を**コンテキストゲートより前**に採番していた
 （`audio-engine.ts:40` で採番、`:42` でゲート）。
 つまりオーディオが無くても id は単調に増える。
 
 **「ハンドルが返ってきた＝音が鳴った」と判断してはならない。**
-判断材料は `availability` である。mc-audio の `UnavailableBackendLayer` も
-同じくハンドルを返すので、この罠は残っている（意図的に、参照実装と同じ形にしてある）。
+mc-audio は `TonePlayback.accepted` を再生要求の受理結果として公開する。
+`false` のときはノードや音源が再生可能な状態になっておらず、`id` は診断用の
+単調増加値にすぎない。上位プレイヤーも `accepted === true` のときだけ
+`played` や字幕の audible 判定に進む。`availability` は、再生を要求する前に
+`locked` や `unavailable` を設定ゲートとして区別するために引き続き使う。
 
 ---
 
@@ -233,7 +255,7 @@ export const visibleCaptions: (events: ReadonlyArray<CaptionEvent>, nowSecs: num
   => ReadonlyArray<CaptionEvent>
 ```
 
-`domain/caption.ts`。
+`src/domain/caption.ts`。
 
 ### 参照実装との差
 
@@ -300,7 +322,7 @@ export const makeSoundCueService: (input: {
 }) => Effect.Effect<SoundCueService, never, AudioBackendPort | CaptionStream>
 ```
 
-`domain/engine.ts`。
+`src/domain/engine.ts`。
 
 **決定を純関数 `planCue` に分離してある**ので、
 「caption は無条件に計算され、tone だけがゲートで潰される」ことが
@@ -367,7 +389,7 @@ export const MUSIC_TRACKS: Record<MusicEnvironment, MusicTrack>
 export const musicTrackGain: (environment: MusicEnvironment, musicVolume: number) => number
 ```
 
-`domain/music.ts`。参照実装の構造をそのまま移植した
+`src/domain/music.ts`。参照実装の構造をそのまま移植した
 （`music-manager-environment.ts:10-15`、`music-manager-state.ts:21-43`）。
 
 ### 環境判定
@@ -412,6 +434,24 @@ export type MinecraftAmbientSoundsDefinition = {
   readonly mood?: MinecraftAmbientMood
   readonly additions?: readonly MinecraftAmbientAddition[]
 }
+export type MinecraftAmbientMoodResolution = {
+  readonly delayTicks: number
+  readonly position: Position | null
+}
+export type MinecraftAmbientMoodResolver = (input: {
+  readonly cameraPosition: Position
+  readonly mood: MinecraftAmbientMood
+  readonly randomSource: () => number
+  readonly tick: number
+}) => MinecraftAmbientMoodResolution | null
+export type MinecraftAmbientSoundsPlannerInput = {
+  readonly cameraPosition: Position
+  readonly definition?: MinecraftAmbientSoundsDefinition | null
+  readonly moodResolver?: MinecraftAmbientMoodResolver
+  readonly randomSource: () => number
+  readonly state: MinecraftAmbientSoundsState
+  readonly tick: number
+}
 
 export const normalizeMinecraftAmbientSoundsDefinition: (
   definition?: MinecraftAmbientSoundsDefinition | null,
@@ -429,12 +469,14 @@ export const makeMinecraftAmbientSoundsPlayer: (
 
 `loop`、`mood.sound`、`mood.tick_delay`、`mood.block_search_extent`、`mood.offset`、
 `additions[].tick_chance` は公式の `minecraft:audio/ambient_sounds` フィールドである。
-planner は loop の切替、mood の次回 tick、addition の抽選だけを決定し、world/camera の
-検索や周囲の暗さの計算は行わない。呼び出し側が vanilla の暗所サンプリングを含めて
-解決した `moodPosition` を player に渡すため、音声ドメインは `Position` と registry だけに
-依存する。planner は `mood.offset` を command に保持し、player が追加距離として減衰に
-適用する。`mc-kernel` に world/light lookup port がないため、音声ライブラリはこの境界を
-推測で埋めず、`moodPosition: null` を mood 無音として扱う。
+planner は loop の切替、mood の次回 tick、addition の抽選だけを決定する。
+`moodResolver` は mood が camera 位置で due になったときだけ呼ばれ、正規化済みの
+`block_search_extent`、`tick_delay`、`offset` と注入された乱数源を受け取る。呼び出し側は
+world/block の光量サンプリングと暗さに応じた判定を行い、再生位置と次回判定までの
+`delayTicks` を返す。`position: null` または resolver 自体の省略はその mood 音を抑制するが、
+スケジューラの次回 tick は進む。`mc-kernel` に world/light lookup port がないため、
+音声ライブラリは vanilla の探索式を推測で埋めない。planner は `mood.offset` を command
+に保持し、player が追加距離として減衰に適用する。
 
 ---
 
@@ -444,7 +486,6 @@ planner は loop の切替、mood の次回 tick、addition の抽選だけを�
 ```typescript
 export type WebAudioGlobalSurface = {
   readonly AudioContext?: AudioContextConstructorSurface | undefined
-  readonly webkitAudioContext?: AudioContextConstructorSurface | undefined
 }
 export type WebAudioOptions = {
   readonly global: WebAudioGlobalSurface
@@ -467,12 +508,12 @@ export const availabilityForState: (state: AudioContextStateSurface) => AudioAva
 export const DEFAULT_TONE_WAVE: OscillatorWave
 ```
 
-`domain/webaudio-adapter.ts`。
+`src/domain/webaudio-adapter.ts`。
 
 ### `lib: ["DOM"]` は**必要にならなかった**
 
 この節の以前の版は「`lib: ["DOM"]` が必要になるため入れていない」と書いていた。
-実際には要らなかった。`domain/webaudio-surface.ts` が
+実際には要らなかった。`src/domain/webaudio-surface.ts` が
 アダプタが使うメンバだけを構造的に記述し、
 `test/webaudio-surface.test.ts` が fixture を**本物の `lib.dom.d.ts`** に対して
 コンパイルして「実 `AudioContext` がキャスト無しで満たす」ことを証明している。
@@ -485,14 +526,13 @@ export const DEFAULT_TONE_WAVE: OscillatorWave
 
 ```typescript
 makeWebAudioBackend({ global: globalThis })   // ブラウザ
-makeWebAudioBackend({ global: { AudioContext: undefined, webkitAudioContext: undefined } })  // Node
+makeWebAudioBackend({ global: { AudioContext: undefined } })  // Node
 ```
 
 参照実装は `typeof AudioContext === 'undefined'` を**エンジンの中**で読んでいた。
 そのせいで Node のテストからは偽にできず、
 `audio-engine.ts` と `audio-context-helpers.ts` のテストが 0 本になった。
-feature detection と `webkitAudioContext` フォールバックはアダプタの責務だが、
-**どこを見るか**は呼び出し側が渡す。
+feature detection はアダプタの責務だが、**どこを見るか**は呼び出し側が渡す。
 
 ### `webAudioBackendLayer` が捨てるもの
 
@@ -536,13 +576,12 @@ feature detection + `Effect.try` + `catchAllCause` で、**決して失敗しな
 | # | 項目 | 決定 |
 | --- | --- | --- |
 | 1 | ユーザジェスチャによるアンロック | `unlock`。`resume()` の**解決を信用せず** `state` を読み直す（Safari は suspended のまま解決する） |
-| 2 | `webkitAudioContext` フォールバック | `WebAudioGlobalSurface` の 2 つ目のメンバ。標準を優先する |
-| 3 | 保留キュー | **作らない。捨てる。** 理由は [design-notes.md](./design-notes.md#dn-6)。捨てた数は `WebAudioReport.refusedTones` |
-| 4 | サンプル再生 | `AudioSampleManifest` の URL / `ArrayBuffer` を decode/cache/preload し、`soundId` があればサンプルを優先する。未登録時は正弦波へフォールバック |
+| 2 | 保留キュー | **作らない。捨てる。** 理由は [design-notes.md](./design-notes.md#dn-6)。捨てた数は `WebAudioReport.refusedTones` |
+| 3 | サンプル再生 | `AudioSampleManifest` の URL / `ArrayBuffer` を decode/cache/preload し、`soundId` があればサンプルを優先する。未登録時は正弦波へフォールバック |
 
 ### エンベロープ（参照実装に無い、が入れた）
 
-`domain/envelope.ts`。参照実装は `gain.value` をフラットに置いて
+`src/domain/envelope.ts`。参照実装は `gain.value` をフラットに置いて
 `oscillator.stop(...)` で切っていた（`audio-engine.ts:59`, `:104`）ので、
 波形が任意の位相で切れて**全キューにクリックが乗る**。
 attack 5ms / release 20ms のランプで消してある。
@@ -571,7 +610,7 @@ WebAudio のスケジューリングは `AudioContext.currentTime` を使う
 ```typescript
 export const parseMinecraftSoundsJson: (
   value: unknown,
-  options?: MinecraftSoundRegistryOptions,
+  options: MinecraftSoundRegistryOptions,
 ) => MinecraftSoundRegistry
 export const mergeMinecraftSoundRegistries: (
   base: MinecraftSoundRegistry,
@@ -597,19 +636,25 @@ export const planMinecraftSound: (
 ) => MinecraftSoundPlaybackPlan
 ```
 
-`domain/minecraft-sounds-*` は公式 `sounds.json` の `sounds` 配列と、文字列／オブジェクト
+`src/domain/minecraft-sounds-*` は公式 `sounds.json` の `sounds` 配列と、文字列／オブジェクト
 variant、`type`、`volume`、`pitch`、`weight`、`stream`、`preload`、
 `attenuation_distance`、`subtitle`、`replace` を扱う。event variant の参照と循環検出、
 重み付き選択、URL／`ArrayBuffer` のサンプル境界は parser・resolver・WebAudio adapter に
 分離してある。実際の OGG はライブラリに埋め込まず、ホストが合法なリソースパックを
 `AudioSampleManifest` として渡す。
 
-26.2 の公式イベントカタログは `MINECRAFT_26_2_SOUND_EVENT_GROUPS`、
+26.2 の 1,968 件の公式イベントカタログは `MINECRAFT_26_2_SOUND_EVENT_GROUPS`、
 `MINECRAFT_26_2_SOUND_EVENT_IDS`、`missingMinecraft26_2SoundEvents` で検査できる。
 `MINECRAFT_26_2_SOUNDS_JSON` は公式 `sounds.json` 全イベントの定義本体を保持し、
 `createMinecraft26_2SoundRegistry()` はそれを通常の `MinecraftSoundRegistry` に変換する。
 ブロック、Sulfur Cube 系エンティティ、Sulfur Cube 用バケツなどのイベント定義を含み、
 公式の空イベントも識別子とともに保持するが、音声バイナリの再配布ではない。
+
+26.3 Snapshot 9 の 1,991 件の検証版カタログは、`MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_GROUPS`、
+`MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_IDS`、`missingMinecraft26_3Snapshot9SoundEvents`、
+`MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON`、`createMinecraft26_3Snapshot9SoundRegistry()` で
+利用できる。これは 26.2 から独立した pre-release API であり、stable API の互換 alias ではない。
+Snapshot 用 resource pack と組み合わせる場合にだけ選択する。
 
 `FREE_MINECRAFT_MUSIC_TRACKS` と `FREE_MINECRAFT_MUSIC_EVENT_VARIANTS` は、
 `createFreeMinecraftMusicPack()` が生成する、26.2 の全公式音楽イベント配置へ追加可能なフリーの
@@ -624,3 +669,20 @@ mob の標準 variant は `parseMinecraftMobSoundVariantJson`、
 `resolveMinecraftMobSoundVariant`、`resolveMinecraftWolfSound`、ambient と firefly は
 `normalizeMinecraftAmbientSoundsDefinition`、`planMinecraftAmbientSounds`、
 `canPlayMinecraftFireflyBushIdleSounds` が担当する。
+
+## 9. その他の root exports
+
+`src/index.ts` は、上記の主要契約に加えて次の実装単位も root export している。
+
+| モジュール | 主な公開面 | 責務 |
+| --- | --- | --- |
+| `src/domain/end-audio.ts` / `end-audio-controller.ts` | `planEndAudio`、`makeEndAudioController` | End のイベント、ループ、Dragon Battle の音声状態 |
+| `src/domain/footstep.ts` | `footstepCueFor` | ブロック表面から足音キューを選ぶ純関数 |
+| `src/domain/game-audio.ts` | `makeGameAudioHost` | ゲームイベントを音声・字幕 Port へ接続する host |
+| `src/domain/weather-ambience.ts` / `weather-audio-controller.ts` | `planWeatherAmbience`、`makeWeatherAudioController` | 雨・雪・雷のループと遷移 |
+| `src/domain/minecraft-audio.ts` | `parseMinecraftAudioComponent`、`normalizeMinecraftAudioComponent` | `minecraft:audio/*` component の解析・正規化 |
+| `src/domain/audio-sample.ts` | `AudioSampleManifest`、`mergeAudioSampleManifests` | リソースパック音源の manifest 境界 |
+| `src/domain/original-sample-bank.ts` / `free-music-bank.ts` | `createOriginalSampleManifest`、`createFreeMinecraftMusicPack` | 権利を持つ音源を注入するための生成 helper |
+
+root export の完全な機械的な一覧は `src/index.ts` を正とする。この表は各モジュールの利用目的を示し、
+音声バイナリやブラウザ固有の型を公開契約に混ぜないという境界を補足する。

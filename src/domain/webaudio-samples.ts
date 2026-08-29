@@ -50,7 +50,13 @@ const startStreamLoad = (
   if (!options.preloadStream) {
     return Effect.succeed(false)
   }
-  return options.preloadStream(soundId, source).pipe(
+  return Effect.gen(function* startStreamLoadEffect() {
+    const preload = yield* Effect.try({
+      catch: (cause) => cause,
+      try: () => options.preloadStream!(soundId, source),
+    })
+    return yield* preload
+  }).pipe(
     Effect.catchAll(() => Effect.succeed(false)),
     Effect.tap((loaded) => Effect.sync(() => {
       if (loaded) {

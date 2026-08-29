@@ -17,3 +17,4 @@ export {
   resolveMinecraftSound,
   selectMinecraftSoundVariant,
 } from './minecraft-sounds-resolver.js'
+

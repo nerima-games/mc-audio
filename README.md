@@ -78,13 +78,18 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11（`corepack` 推奨）
 ### 構成
 
 ```
-index.ts                          公開バレル
-domain/
+src/index.ts                       公開バレル
+src/domain/
   backend-port.ts   AudioBackendPort、AudioAvailability（3 状態のゲート）
   caption.ts        CaptionEvent、CaptionStream、visibleCaptions（純関数）
   cue.ts            キューロスターと定義テーブル
   engine.ts         planCue（純関数）と SoundCuePort。★字幕→ゲートの順序
-  music.ts          BGM 状態機械（純関数）
+  minecraft-music-data.ts     Minecraft BGM 定義・正規化・選択
+  minecraft-music-planner.ts  Minecraft BGM 状態機械（純関数）
+  minecraft-music.ts          上記の公開 re-export
+  minecraft-ambient-sounds-data.ts     Minecraft ambient 定義・正規化
+  minecraft-ambient-sounds-planner.ts  Minecraft ambient 状態機械（純関数）
+  minecraft-ambient-sounds.ts          上記の公開 re-export
   minecraft-sounds* sounds.json の解析・マージ・バリアント解決・再生計画
   minecraft-sound-player.ts  mc-kernel の Position / ClockPort を使う高水準再生
   audio-sample.ts  ホスト非依存の sample manifest 型

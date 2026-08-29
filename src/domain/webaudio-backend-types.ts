@@ -13,8 +13,7 @@ import type { WebAudioConstructorName } from './webaudio-runtime.js'
 export type WebAudioOptions = {
   /**
    * Where to look for a constructor. In a browser this is `globalThis`; in a
-   * test it is an object; in Node it is
-   * `{ AudioContext: undefined, webkitAudioContext: undefined }` — the spelling
+   * test it is an object; in Node it is `{ AudioContext: undefined }` — the spelling
    * `WebAudioGlobalSurface` exists to make possible, because "I checked and
    * there is none" should look different from "I forgot".
    */
@@ -56,8 +55,6 @@ export type WebAudioReport = {
   readonly contextState: AudioContextStateSurface | null
   /** `null` when the host had neither constructor. */
   readonly constructorName: WebAudioConstructorName | null
-  /** `false` when `createStereoPanner` was absent, i.e. sound is MONO. */
-  readonly stereo: boolean
   /** `true` once construction has been attempted, successfully or not. */
   readonly contextAttempted: boolean
   /** How many times `unlock` was run. */

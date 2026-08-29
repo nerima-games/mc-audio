@@ -16,15 +16,16 @@ export const DEFAULT_TONE_WAVE: OscillatorWave = 'sine'
 export type ActiveTone = {
   readonly source: AudioScheduledSourceSurface
   readonly gain: GainSurface
-  readonly panner: StereoPannerSurface | null
+  readonly panner: StereoPannerSurface
   /** The curve used to schedule this tone, so stop can ramp from its current gain. */
   readonly envelope: ToneEnvelope
+  /** A releasing tone remains in the graph until its scheduled source ends. */
+  releasing: boolean
 }
 
 export type ToneGraphOptions = {
   readonly context: AudioContextSurface
   readonly master: GainSurface
-  readonly stereo: boolean
   readonly request: ToneRequest
   readonly envelope: ToneEnvelope
   readonly sampleBuffer: AudioBufferSurface | null
@@ -111,13 +112,13 @@ const scheduleEnvelope = (gain: GainSurface, envelope: ToneEnvelope): void => {
   }
 }
 
-type ToneConnectionOptions = Pick<ToneGraphOptions, 'context' | 'master' | 'request' | 'stereo'> & {
+type ToneConnectionOptions = Pick<ToneGraphOptions, 'context' | 'master' | 'request'> & {
   readonly gain: GainSurface
   readonly source: AudioScheduledSourceSurface
 }
 
 type OutputConnectionOptions = Pick<ToneConnectionOptions, 'gain' | 'master' | 'request'> & {
-  readonly panner: StereoPannerSurface | null
+  readonly panner: StereoPannerSurface
 }
 
 const disconnectNodes = (nodes: ReadonlyArray<AudioScheduledSourceSurface | GainSurface | StereoPannerSurface | null>): void => {
@@ -131,13 +132,9 @@ const disconnectNodes = (nodes: ReadonlyArray<AudioScheduledSourceSurface | Gain
 }
 
 const connectOutput = ({ gain, master, panner, request }: OutputConnectionOptions): void => {
-  if (panner === null) {
-    gain.connect(master)
-  } else {
-    panner.pan.value = clampPan(request.pan)
-    gain.connect(panner)
-    panner.connect(master)
-  }
+  panner.pan.value = clampPan(request.pan)
+  gain.connect(panner)
+  panner.connect(master)
 }
 
 const connectToneNodes = ({
@@ -146,15 +143,11 @@ const connectToneNodes = ({
   master,
   request,
   source,
-  stereo,
-}: ToneConnectionOptions): StereoPannerSurface | null => {
+}: ToneConnectionOptions): StereoPannerSurface => {
   let panner: StereoPannerSurface | null = null
   try {
     source.connect(gain)
-    const createPanner = context.createStereoPanner
-    if (stereo && typeof createPanner === 'function') {
-      panner = createPanner.call(context)
-    }
+    panner = context.createStereoPanner()
     connectOutput({ gain, master, panner, request })
     return panner
   } catch (cause) {
@@ -177,5 +170,5 @@ export const buildToneGraph = (options: ToneGraphOptions): ActiveTone => {
   }
 
   const panner = connectToneNodes({ ...options, gain, source })
-  return { envelope: options.envelope, gain, panner, source }
+  return { envelope: options.envelope, gain, panner, releasing: false, source }
 }

@@ -2,13 +2,12 @@ import type { AudioContextStateSurface, AudioContextSurface, GainSurface, WebAud
 import type { AudioAvailability } from './backend-port.js'
 import { Option } from 'effect'
 
-export type WebAudioConstructorName = 'AudioContext' | 'webkitAudioContext'
+export type WebAudioConstructorName = 'AudioContext'
 
 export type ContextRuntime = {
   readonly context: AudioContextSurface
   readonly master: GainSurface
   readonly constructorName: WebAudioConstructorName
-  readonly stereo: boolean
 }
 
 export const availabilityForState = (state: AudioContextStateSurface): AudioAvailability => {
@@ -28,10 +27,6 @@ export const findWebAudioConstructor = (global: WebAudioGlobalSurface): Option.O
   const audioContextConstructor = global.AudioContext
   if (typeof audioContextConstructor === 'function') {
     return Option.some({ construct: audioContextConstructor, name: 'AudioContext' })
-  }
-  const webkitAudioContextConstructor = global.webkitAudioContext
-  if (typeof webkitAudioContextConstructor === 'function') {
-    return Option.some({ construct: webkitAudioContextConstructor, name: 'webkitAudioContext' })
   }
   return Option.none()
 }

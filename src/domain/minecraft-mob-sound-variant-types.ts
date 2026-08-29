@@ -117,3 +117,4 @@ export type MinecraftWolfSoundDefinition = {
   readonly adultSounds: MinecraftWolfSoundSet
   readonly babySounds: MinecraftWolfSoundSet
 }
+

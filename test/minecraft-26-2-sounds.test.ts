@@ -73,3 +73,4 @@ describe('Minecraft 26.2 sound event catalog', () => {
     ])
   })
 })
+

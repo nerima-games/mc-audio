@@ -78,12 +78,11 @@ export const renderHeader = (
   const context =
     report.contextState === null ? 'no context yet (lazy)' : `context ${report.contextState}`
   const source = report.constructorName ?? 'no constructor'
-  const channels = report.contextState === null ? '' : report.stereo ? ' stereo' : ' MONO'
 
   return [
     style.bold(padEnd('mc-audio soundboard', width - 24)) +
       style.ink(availabilityInk(snapshot.availability), padStart(snapshot.availability, 24)),
-    style.dim(`${source} | ${context}${channels}`),
+    style.dim(`${source} | ${context}`),
     style.dim(
       `caption clock ${state.nowSecs.toFixed(2)}s | audio clock ${snapshot.audioClockSecs.toFixed(3)}s` +
         ` | audio ${state.enabled ? 'on' : 'MUTED'}` +
@@ -248,16 +247,10 @@ const renderRefusal = (
   plan: CuePlan,
   style: Style,
 ): ReadonlyArray<string> => {
-  // With no context there is nothing to have detected, so the channel count is
-  // UNKNOWN rather than mono. Printing "mono: no createStereoPanner" here would
-  // Be the preview inventing a fact about a browser it never reached — the
-  // Exact class of confident-and-wrong reporting this repository is about.
   const chain =
     snapshot.report.contextState === null
-      ? 'oscillator -> gain -> [panner?] -> master -> destination   (stereo unknown: no context was created)'
-      : snapshot.report.stereo
-        ? 'oscillator -> gain -> panner -> master -> destination'
-        : 'oscillator -> gain -> master -> destination   (mono: no createStereoPanner)'
+      ? 'no audio nodes: context was not created'
+      : 'oscillator -> gain -> panner -> master -> destination'
 
   if (plan.tone === null) {
     const gate = !snapshot.state.enabled

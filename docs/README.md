@@ -56,10 +56,10 @@ plan.md §3.6 は `CaptionEventStream` を要求しているが、
 現行実装。`pnpm verify` は typecheck、lint、依存境界、全テスト、全指標 100% のカバレッジ、出荷ビルドを検証する。
 全テストとカバレッジは CI のゲートで検証し、カバレッジは全 4 指標 100% を要求する。
 
-WebAudio アダプタ（`domain/webaudio-adapter.ts`）とサウンドボードプレビュー
+WebAudio アダプタ（`src/domain/webaudio-adapter.ts`）とサウンドボードプレビュー
 （`apps/preview-soundboard/`）は**実装済み**。
 `tsconfig.base.json` の `lib` は `["ES2024"]` のままで、`"DOM"` は入れていない
-—— 理由と手法は `domain/webaudio-surface.ts` のヘッダに書いてある。
+—— 理由と手法は `src/domain/webaudio-surface.ts` のヘッダに書いてある。
 
 著作権付き音声バイナリは同梱せず、`sounds.json` から URL / `ArrayBuffer` の
 `AudioSampleManifest` を受け取る。実ブラウザでの契約確認は Node の fake backend

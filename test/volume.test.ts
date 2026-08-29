@@ -9,6 +9,7 @@ import {
   effectiveMusicGain,
   effectiveSfxGain,
   masterNodeGain,
+  minecraftSpatialise,
   NO_SPATIALISATION,
   spatialise,
   SPATIAL_DISTANCE_SCALE,
@@ -182,6 +183,38 @@ describe('spatialise', () => {
         0.5,
         10,
       )
+    }),
+  )
+})
+
+describe('minecraftSpatialise', () => {
+  it.effect('uses a linear cutoff at the variant attenuation distance', () =>
+    Effect.sync(() => {
+      expect(minecraftSpatialise(LISTENER, LISTENER)).toStrictEqual({ gain: 1, pan: 0 })
+      expect(
+        minecraftSpatialise(LISTENER, { x: 6, y: 64, z: 0 }, { distanceScale: 12 }),
+      ).toStrictEqual({ gain: 0.5, pan: 0.5 })
+      expect(
+        minecraftSpatialise(LISTENER, { x: 12, y: 64, z: 0 }, { distanceScale: 12 }),
+      ).toStrictEqual({ gain: 0, pan: 1 })
+      expect(
+        minecraftSpatialise(LISTENER, { x: 100_000, y: 64, z: 0 }, { distanceScale: 12 }),
+      ).toStrictEqual({ gain: 0, pan: 1 })
+    }),
+  )
+
+  it.effect('shares generic distance offset, panning, and safe scale handling', () =>
+    Effect.sync(() => {
+      expect(
+        minecraftSpatialise(LISTENER, { x: 6, y: 64, z: 0 }, { distanceOffset: 6, distanceScale: 24 }),
+      ).toStrictEqual({ gain: 0.5, pan: 0.25 })
+      expect(minecraftSpatialise(LISTENER, { x: 6, y: 64, z: 0 }, { distanceScale: 0 })).toStrictEqual({
+        gain: 0.5,
+        pan: 0.5,
+      })
+      expect(
+        minecraftSpatialise(LISTENER, { x: 6, y: 64, z: 0 }, { distanceScale: Number.NaN }),
+      ).toStrictEqual({ gain: 0.5, pan: 0.5 })
     }),
   )
 })

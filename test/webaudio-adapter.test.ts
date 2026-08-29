@@ -32,7 +32,7 @@
  * availability when it did not.
  */
 import { describe, expect, it } from '@effect/vitest'
-import { Effect, Layer, Ref } from 'effect'
+import { Effect, Fiber, Layer, Ref } from 'effect'
 import { EpochMillis, FixedClockLayer, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import { AudioBackendPort, type ToneRequest } from '../src/domain/backend-port'
 import { type CaptionEvent, CaptionStream } from '../src/domain/caption'
@@ -118,6 +118,43 @@ describe('decoded sample playback', () => {
       })
       expect(urlLoads).toBe(1)
       expect(fake.context()?.decodedData).toHaveLength(1)
+    }),
+  )
+
+  it.effect('refuses a sample when disposal wins during its asynchronous preload', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      let resolveLoad = (_data: ArrayBuffer): void => {
+        throw new Error('sample loader did not start')
+      }
+      let resolveLoadStarted = (): void => {
+        throw new Error('sample loader did not start')
+      }
+      const loadStarted = new Promise<void>((resolve) => {
+        resolveLoadStarted = resolve
+      })
+      const loadResult = new Promise<ArrayBuffer>((resolve) => {
+        resolveLoad = resolve
+      })
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        loadSampleData: async () => {
+          resolveLoadStarted?.()
+          return loadResult
+        },
+        sampleManifest: { step: { kind: 'url', url: '/audio/step.ogg' } },
+      })
+
+      yield* audio.unlock
+      const playback = yield* Effect.fork(audio.playTone({ ...CUE, soundId: 'step' }))
+      yield* Effect.promise(() => loadStarted)
+      yield* audio.dispose
+      resolveLoad(new ArrayBuffer(4))
+
+      expect(yield* Fiber.join(playback)).toEqual({ accepted: false, id: 1 })
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+      expect(yield* audio.report).toMatchObject({ activeTones: 0, disposed: true, refusedTones: 1 })
     }),
   )
 
@@ -219,6 +256,29 @@ describe('decoded sample playback', () => {
       const audio = yield* makeWebAudioBackend({
         global: fake.global,
         preloadStream: () => Effect.fail(new Error('stream preload failed')),
+        sampleManifest: {
+          music: { data: new ArrayBuffer(8), kind: 'array-buffer', stream: true },
+        },
+      })
+
+      expect(yield* audio.preloadSamples(['music'])).toEqual({
+        cached: 0,
+        failed: 0,
+        loaded: 1,
+        requested: 1,
+      })
+      expect(fake.context()?.decodedData).toHaveLength(1)
+    }),
+  )
+
+  it.effect('reports a synchronous stream preload throw as a preload failure', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        preloadStream: () => {
+          throw new Error('synchronous stream preload failed')
+        },
         sampleManifest: {
           music: { data: new ArrayBuffer(8), kind: 'array-buffer', stream: true },
         },
@@ -349,7 +409,6 @@ describe('decoded sample playback', () => {
         playbackRate: 1,
         request,
         sampleBuffer: null,
-        stereo: false,
         streamSource: null,
       })).toThrow('A streaming source is required')
     }),
@@ -387,7 +446,6 @@ describe('decoded sample playback', () => {
         playbackRate: 1,
         request,
         sampleBuffer: null,
-        stereo: false,
         streamSource: null,
       })).toThrow('No sample source is available for missing')
 
@@ -399,7 +457,6 @@ describe('decoded sample playback', () => {
         playbackRate: 1,
         request: requestWithoutId,
         sampleBuffer: null,
-        stereo: false,
         streamSource: null,
       })).toThrow('No sample source is available for the requested audio')
     }),
@@ -712,14 +769,14 @@ describe("the user-gesture unlock: 'locked' before, 'ready' after", () => {
     Effect.gen(function* () {
       // `docs/testing.md` §4-2 makes this a completion criterion, and
       // `docs/public-api.md` §7 lists it as new design rather than porting: a
-      // Grep of the reference for `webkitAudioContext|autoplay|userGesture|
-      // Unlock` returns nothing.
+      // Grep of the reference for `autoplay|userGesture|unlock` returns nothing.
       const { backend } = withFake({ resumePolicy: 'allow' })
       const audio = yield* backend
 
       expect(yield* audio.availability).toBe('locked')
       expect(yield* audio.unlock).toBe('ready')
       expect(yield* audio.availability).toBe('ready')
+      expect((yield* audio.report).constructorName).toBe('AudioContext')
     }),
   )
 
@@ -857,18 +914,15 @@ describe('a refused cue builds no nodes and is discarded, never queued', () => {
     }),
   )
 
-  it.effect('still allocates a handle when refused, which is a documented trap', () =>
+  it.effect('returns an explicit refusal when autoplay blocks playback', () =>
     Effect.gen(function* () {
-      // `docs/public-api.md` §3 keeps this shape on purpose so that every
-      // Backend behaves the same: "I got a handle" never means "it played"
-      // Anywhere in this repository. Branch on `availability`.
+      // Ids remain diagnostic and monotonic, but `accepted` is the playback
+      // admission result. A returned id alone is never evidence of sound.
       const { backend } = withFake({ resumePolicy: 'reject' })
       const audio = yield* backend
 
-      expect((yield* audio.playTone(CUE)).id).toBe(1)
-      expect((yield* audio.playTone(CUE)).id).toBe(2)
-      // What is different here: the refusal is COUNTED, so the trap is at
-      // Least observable from outside.
+      expect(yield* audio.playTone(CUE)).toStrictEqual({ accepted: false, id: 1 })
+      expect(yield* audio.playTone(CUE)).toStrictEqual({ accepted: false, id: 2 })
       expect((yield* audio.report).refusedTones).toBe(2)
     }),
   )
@@ -894,29 +948,6 @@ describe('the node graph the adapter builds', () => {
         { from: 'gain#3', to: 'panner#4' },
         { from: 'panner#4', to: 'gain#1' },
       ])
-    }),
-  )
-
-  it.effect('falls back to a MONO graph when createStereoPanner is absent', () =>
-    Effect.gen(function* () {
-      // Safari before 14.1. Connecting to master and leaving `pan` unapplied
-      // Would make every spatialised cue sound centred, which reads as
-      // "spatialisation is broken" rather than "this browser cannot pan".
-      const { fake, backend } = withFake({ stereo: false })
-      const audio = yield* backend
-      yield* audio.unlock
-      yield* audio.playTone(CUE)
-
-      const context = fake.context()
-      expect(context?.log.created.some((id) => id.startsWith('panner'))).toBe(false)
-      expect(context?.log.edges).toStrictEqual([
-        { from: 'gain#1', to: 'destination' },
-        { from: 'osc#2', to: 'gain#3' },
-        { from: 'gain#3', to: 'gain#1' },
-      ])
-      // ...and the report SAYS so, which is the part that makes it a fallback
-      // Rather than a silent degradation.
-      expect((yield* audio.report).stereo).toBe(false)
     }),
   )
 
@@ -1236,6 +1267,21 @@ describe('the master gain node', () => {
 })
 
 describe('resource limits and lifecycle', () => {
+  it.effect('uses the default polyphony limit for a non-finite limit', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({ global: fake.global, maxConcurrentTones: Number.NaN })
+      yield* audio.unlock
+
+      for (let index = 0; index < 33; index += 1) {
+        yield* audio.playTone({ ...CUE, loop: true })
+      }
+
+      expect(fake.context()?.oscillators).toHaveLength(32)
+      expect(yield* audio.report).toMatchObject({ capacityRefusals: 1, refusedTones: 1 })
+    }),
+  )
+
   it.effect('does not allocate nodes or consume polyphony for a silent loop', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()
@@ -1271,6 +1317,25 @@ describe('resource limits and lifecycle', () => {
         capacityRefusals: 1,
         refusedTones: 1,
       })
+    }),
+  )
+
+  it.effect('reuses capacity after a tone starts its release', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({ global: fake.global, maxConcurrentTones: 1 })
+      yield* audio.unlock
+
+      const first = yield* audio.playTone({ ...CUE, loop: true })
+      expect(first.accepted).toBe(true)
+      yield* audio.stopTone(first)
+      yield* audio.stopTone(first)
+      yield* audio.setToneGain(first, 0.1)
+      expect(yield* audio.report).toMatchObject({ activeTones: 1, capacityRefusals: 0 })
+
+      const second = yield* audio.playTone({ ...CUE, loop: true })
+      expect(second.accepted).toBe(true)
+      expect(yield* audio.report).toMatchObject({ activeTones: 2, capacityRefusals: 0 })
     }),
   )
 
@@ -1421,41 +1486,44 @@ describe('stopping a tone', () => {
   )
 })
 
-describe('Safari before 14.1', () => {
-  it.effect('finds the prefixed constructor when the standard one is absent', () =>
-    Effect.gen(function* () {
-      // `docs/public-api.md` §7 lists this as NEW work: a grep of the entire
-      // Reference implementation for `webkitAudioContext` returns nothing, so
-      // That browser had no audio at all and nobody noticed.
-      const { fake, backend } = withFake({ prefixed: true })
-      const audio = yield* backend
-
-      expect(yield* audio.unlock).toBe('ready')
-      expect((yield* audio.report).constructorName).toBe('webkitAudioContext')
-      expect(fake.contexts()).toHaveLength(1)
-    }),
-  )
-
-  it.effect('prefers the standard constructor when a browser has both', () =>
-    Effect.gen(function* () {
-      const { backend } = withFake()
-      const audio = yield* backend
-      yield* audio.unlock
-      expect((yield* audio.report).constructorName).toBe('AudioContext')
-    }),
-  )
-})
-
 describe('a context that is born broken', () => {
   it.effect("reports 'unavailable' when wiring the master gain throws", () =>
     Effect.gen(function* () {
       // Construction succeeding and the first node failing is a distinct
       // Outcome from construction throwing, and both have to end as a value.
-      const { backend } = withFake({ wiringThrows: true })
+      const { backend, fake } = withFake({ wiringThrows: true })
       const audio = yield* backend
 
       expect(yield* audio.availability).toBe('unavailable')
       expect((yield* audio.report).contextAttempted).toBe(true)
+      expect(fake.context()?.state).toBe('closed')
+    }),
+  )
+
+  it.effect('releases a graph when starting its source throws', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ startThrows: true })
+      const audio = yield* makeWebAudioBackend({ global: fake.global })
+      yield* audio.unlock
+
+      yield* audio.playTone({ ...CUE, loop: true })
+
+      expect(yield* audio.report).toMatchObject({ activeTones: 0, refusedTones: 1 })
+      expect(fake.context()?.log.disconnected).toStrictEqual(['osc#2', 'gain#3', 'panner#4'])
+    }),
+  )
+
+  it.effect('releases a graph when stopping its source throws', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ stopThrows: true })
+      const audio = yield* makeWebAudioBackend({ global: fake.global })
+      yield* audio.unlock
+
+      const handle = yield* audio.playTone({ ...CUE, loop: true })
+      yield* audio.stopTone(handle)
+
+      expect(yield* audio.report).toMatchObject({ activeTones: 0 })
+      expect(fake.context()?.log.disconnected).toStrictEqual(['osc#2', 'gain#3', 'panner#4'])
     }),
   )
 

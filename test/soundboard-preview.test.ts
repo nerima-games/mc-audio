@@ -178,8 +178,8 @@ describe('the frame the preview exists to show', () => {
    * written to not be, so the claim has to be pinned where a literal list would
    * be WRONG.
    *
-   * Three configurations produce three different edge sets, and no fixed list
-   * can be right for more than one of them.
+   * Two configurations produce two different edge sets, and no fixed list can
+   * be right for more than one of them.
    */
   it.effect('...and the edges CHANGE with the configuration, so they cannot be hard-coded', () =>
     Effect.gen(function* () {
@@ -192,14 +192,7 @@ describe('the frame the preview exists to show', () => {
       expect(locked).not.toContain('osc#2        -> gain#3')
       expect(locked).not.toContain('panner#4')
 
-      // 2. Mono: no panner node exists, so the gain goes straight to master.
-      const mono = joined(
-        yield* frameFor({ fakeOptions: { stereo: false }, state: graphPanel, unlock: true }),
-      )
-      expect(mono).toContain('gain#3       -> gain#1')
-      expect(mono).not.toContain('panner')
-
-      // 3. No backend at all: not even a master node.
+      // 2. No backend at all: not even a master node.
       const absent = joined(
         yield* frameFor({ fakeOptions: { present: false }, state: graphPanel }),
       )
@@ -227,10 +220,8 @@ describe('the frame the preview exists to show', () => {
     }),
   )
 
-  it.effect('claims stereo is UNKNOWN when no context was ever created', () =>
+  it.effect('explains that no audio nodes exist when no context was created', () =>
     Effect.gen(function* () {
-      // Printing "mono: no createStereoPanner" with no context would be the
-      // Preview inventing a fact about a browser it never reached.
       const text = joined(
         yield* frameFor({
           fakeOptions: { present: false },
@@ -238,26 +229,10 @@ describe('the frame the preview exists to show', () => {
         }),
       )
 
-      expect(text).toContain('stereo unknown: no context was created')
-      expect(text).not.toContain('mono: no createStereoPanner')
+      expect(text).toContain('no audio nodes: context was not created')
       // ...and it does not offer a gesture that cannot help.
       expect(text).toContain('no user gesture can fix this')
       expect(text).not.toContain('press u — that is the user gesture')
-    }),
-  )
-
-  it.effect('says MONO when the context really lacks createStereoPanner', () =>
-    Effect.gen(function* () {
-      const text = joined(
-        yield* frameFor({
-          fakeOptions: { stereo: false },
-          state: (s) => ({ ...s, panel: 'graph' }),
-          unlock: true,
-        }),
-      )
-
-      expect(text).toContain('mono: no createStereoPanner')
-      expect(text).toContain('MONO')
     }),
   )
 
@@ -418,7 +393,6 @@ describe('option parsing', () => {
         '--panel',
         'graph',
         '--unlocked',
-        '--no-stereo',
         '--once',
         '--ascii',
         '--play',
@@ -432,7 +406,6 @@ describe('option parsing', () => {
         once: true,
         panel: 'graph',
         play: 'levelUp',
-        stereo: false,
         unlocked: true,
         width: 80,
       })

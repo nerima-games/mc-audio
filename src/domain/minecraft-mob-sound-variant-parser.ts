@@ -240,3 +240,4 @@ export const parseMinecraftWolfSoundDefinition = (
     babySounds: parseWolfSoundSet(input['baby_sounds'], parsedNamespace, '$.baby_sounds'),
   }
 }
+

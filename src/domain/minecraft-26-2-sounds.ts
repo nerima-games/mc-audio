@@ -40,3 +40,4 @@ export const missingMinecraft26_2SoundEvents = (
   registry: MinecraftSoundRegistry,
 ): readonly Minecraft26_2SoundEventId[] =>
   MINECRAFT_26_2_SOUND_EVENT_IDS.filter((eventId) => !Object.hasOwn(registry.events, eventId))
+

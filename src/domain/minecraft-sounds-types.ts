@@ -35,3 +35,4 @@ export type ResolvedMinecraftSound = {
   readonly attenuationDistance: number
   readonly preload: boolean
 }
+

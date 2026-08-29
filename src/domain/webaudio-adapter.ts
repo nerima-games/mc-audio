@@ -81,6 +81,7 @@ import {
   AudioBackendPort,
   type MusicRequest,
   type ToneHandle,
+  type TonePlayback,
   type ToneRequest,
 } from './backend-port.js'
 import type { AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
@@ -132,6 +133,26 @@ export type {
  */
 const ignoringFailure = (run: () => void): Effect.Effect<void> =>
   Effect.try({ catch: (cause) => cause, try: run }).pipe(Effect.catchAll(() => Effect.void))
+
+const attempt = (run: () => void): Effect.Effect<boolean> =>
+  Effect.try({
+    catch: (cause) => cause,
+    try: () => {
+      run()
+      return true
+    },
+  }).pipe(Effect.catchAll(() => Effect.succeed(false)))
+
+const closeContext = (context: AudioContextSurface): Effect.Effect<void> =>
+  Effect.tryPromise({
+    catch: (cause) => cause,
+    try: () => context.close(),
+  }).pipe(Effect.catchAll(() => Effect.void))
+
+const resolveMaxConcurrentTones = (value: number | undefined): number =>
+  value === undefined || !Number.isFinite(value)
+    ? DEFAULT_MAX_CONCURRENT_TONES
+    : Math.max(1, Math.floor(value))
 
 const resolvePlaybackRate = (playbackRate: number | undefined): number =>
   playbackRate !== undefined && Number.isFinite(playbackRate) && playbackRate > 0 ? playbackRate : 1
@@ -221,10 +242,7 @@ export const makeWebAudioBackend = (
     const masterGainValueRef = yield* Ref.make(clamp01(options.initialMasterGain ?? 0.8))
     const mutedRef = yield* Ref.make(false)
     const disposedRef = yield* Ref.make(false)
-    const maxConcurrentTones = Math.max(
-      1,
-      Math.floor(options.maxConcurrentTones ?? DEFAULT_MAX_CONCURRENT_TONES),
-    )
+    const maxConcurrentTones = resolveMaxConcurrentTones(options.maxConcurrentTones)
     const activeRef = yield* Ref.make<ReadonlyMap<number, ActiveTone>>(new Map())
     const nextIdRef = yield* Ref.make(0)
     const unlockAttemptsRef = yield* Ref.make(0)
@@ -240,15 +258,7 @@ export const makeWebAudioBackend = (
     const autoPreloadEffectRef = yield* Ref.make<Effect.Effect<void>>(Effect.void)
     const hasConfiguredPreloads = Object.values(sampleManifest).some((source) => source.preload === true)
 
-    /**
-     * Feature detection, as a value rather than as a global read.
-     *
-     * `webkitAudioContext` is checked second, so a browser with both prefers
-     * the standard one. Safari before 14.1 has only the prefixed spelling, and
-     * `docs/public-api.md` §7 lists it as new work: a grep for
-     * `webkitAudioContext` across the whole reference implementation returns
-     * nothing, so that browser had no audio at all and nobody noticed.
-     */
+    /** Feature detection, as a value rather than as a global read. */
     const ensureRuntime: Effect.Effect<Option.Option<ContextRuntime>> = Effect.gen(function*  ensureRuntime() {
       if (yield* Ref.get(disposedRef)) {
         return Option.none<ContextRuntime>()
@@ -293,12 +303,12 @@ export const makeWebAudioBackend = (
             constructorName: found.value.name,
             context: built,
             master,
-            stereo: built.createStereoPanner !== undefined,
           }
         },
       }).pipe(Effect.catchAll(() => Effect.succeed(null)))
 
       if (wired === null) {
+        yield* closeContext(built)
         return Option.none<ContextRuntime>()
       }
 
@@ -376,33 +386,36 @@ export const makeWebAudioBackend = (
       Effect.gen(function* releaseActiveTone() {
         yield* ignoringFailure(() => tone.source.disconnect())
         yield* ignoringFailure(() => tone.gain.disconnect())
-        const {panner} = tone
-        if (panner !== null) {
-          // Bound to a local first: the narrowing above does not survive into
-          // The closure, because `tone.panner` is a property read the compiler
-          // Cannot prove is stable across the call.
-          yield* ignoringFailure(() => panner.disconnect())
-        }
+        yield* ignoringFailure(() => tone.panner.disconnect())
       })
 
-    const playTone = (request: ToneRequest): Effect.Effect<ToneHandle> =>
+    const removeActiveTone = (id: number): Effect.Effect<void> =>
+      Ref.update(activeRef, (current) => {
+        const next = new Map(current)
+        next.delete(id)
+        return next
+      })
+
+    const discardTone = (id: number, tone: ActiveTone): Effect.Effect<void> =>
+      Effect.gen(function* discardFailedTone() {
+        yield* removeActiveTone(id)
+        yield* ignoringFailure(() => tone.source.stop())
+        yield* releaseTone(tone)
+      })
+
+    const playTone = (request: ToneRequest): Effect.Effect<TonePlayback> =>
       Effect.gen(function* scheduleTone() {
-        // The id is allocated BEFORE the gate, matching `UnavailableBackendLayer`
-        // And the reference (`audio-engine.ts:40` numbers, `:42` gates). That
-        // Is a trap `docs/public-api.md` §3 names and keeps on purpose, so the
-        // Shape is uniform across every backend: "I got a handle" never means
-        // "it played" anywhere in this repository. What is different here is
-        // That the refusal is COUNTED, so the trap is at least observable.
+        // Handles stay uniform across the admission gate; accepted is authoritative.
         const id = yield* Ref.updateAndGet(nextIdRef, (value) => value + 1)
-        const handle: ToneHandle = { id }
+        const refusedPlayback = (): TonePlayback => ({ accepted: false, id })
 
         const runtime = yield* ensureRuntime
         if (Option.isNone(runtime)) {
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          return handle
+          return refusedPlayback()
         }
 
-        const { context, master, stereo } = runtime.value
+        const { context, master } = runtime.value
         if (context.state !== 'running') {
           // NO RESUME HERE. This is the exact line the reference got wrong:
           // Calling `resume()` outside a user gesture is refused anyway, and
@@ -410,11 +423,16 @@ export const makeWebAudioBackend = (
           // Sound nobody could hear. Refusing early costs one counter and
           // Keeps the graph honest.
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          return handle
+          return refusedPlayback()
         }
 
         if (request.soundId !== undefined && sampleManifest[request.soundId] !== undefined) {
           yield* preloadSamples([request.soundId]).pipe(Effect.asVoid)
+        }
+
+        if ((yield* Ref.get(disposedRef)) || context.state !== 'running') {
+          yield* Ref.update(refusedTonesRef, (count) => count + 1)
+          return refusedPlayback()
         }
 
         const playbackRate = resolvePlaybackRate(request.playbackRate)
@@ -429,13 +447,15 @@ export const makeWebAudioBackend = (
             : request
         const envelope = toneEnvelope(scheduledRequest, context.currentTime)
         if (envelope.peakGain === 0) {
-          return handle
+          return refusedPlayback()
         }
 
-        if ((yield* Ref.get(activeRef)).size >= maxConcurrentTones) {
+        const activeTones = (yield* Ref.get(activeRef)).values()
+        const activeCount = [...activeTones].filter((tone) => !tone.releasing).length
+        if (activeCount >= maxConcurrentTones) {
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
           yield* Ref.update(capacityRefusalsRef, (count) => count + 1)
-          return handle
+          return refusedPlayback()
         }
 
         const streamSource = yield* streamSourceForRequest({
@@ -455,14 +475,13 @@ export const makeWebAudioBackend = (
               playbackRate,
               request,
               sampleBuffer: canUseSample ? sampleBuffer : null,
-              stereo,
               streamSource,
             }),
         }).pipe(Effect.catchAll(() => Effect.succeed(null)))
 
         if (built === null) {
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          return handle
+          return refusedPlayback()
         }
 
         yield* Ref.update(activeRef, (current) => new Map(current).set(id, built))
@@ -472,30 +491,34 @@ export const makeWebAudioBackend = (
             Effect.runSync(
               Effect.gen(function*  onended() {
                 yield* releaseTone(built)
-                yield* Ref.update(activeRef, (current) => {
-                  const next = new Map(current)
-                  next.delete(id)
-                  return next
-                })
+                yield* removeActiveTone(id)
               }),
             )
           }
         })
 
-        yield* ignoringFailure(() => {
+        const scheduled = yield* attempt(() => {
           built.source.start(envelope.startSecs)
           if (envelope.stopAtSecs !== null) {
             built.source.stop(envelope.stopAtSecs)
           }
         })
 
-        return handle
+        if (!scheduled) {
+          yield* discardTone(id, built)
+          yield* Ref.update(refusedTonesRef, (count) => count + 1)
+        }
+
+        return { accepted: scheduled, id }
       })
 
     const stopTone = (handle: ToneHandle): Effect.Effect<void> =>
       Effect.gen(function* stopActiveTone() {
         const tone = (yield* Ref.get(activeRef)).get(handle.id)
         if (tone === undefined) {
+          return
+        }
+        if (tone.releasing) {
           return
         }
 
@@ -518,7 +541,7 @@ export const makeWebAudioBackend = (
         // Full amplitude is the loudest click this adapter could produce — a
         // Sustained tone is at full gain by definition, unlike a short cue
         // Which is usually already in its release when it ends.
-        yield* ignoringFailure(() => {
+        const stopped = yield* attempt(() => {
           // `cancelScheduledValues` first, or the tone's own release — already
           // On the automation timeline from `playTone` — competes with this
           // One and the parameter jumps between the two curves.
@@ -527,6 +550,11 @@ export const makeWebAudioBackend = (
           tone.gain.gain.linearRampToValueAtTime(0, now + RELEASE_SECS)
           tone.source.stop(now + RELEASE_SECS)
         })
+        if (!stopped) {
+          yield* discardTone(handle.id, tone)
+        } else {
+          tone.releasing = true
+        }
       })
 
     const setToneGain = (handle: ToneHandle, gain: number): Effect.Effect<void> =>
@@ -535,8 +563,11 @@ export const makeWebAudioBackend = (
         if (tone === undefined) {
           return
         }
+        if (tone.releasing) {
+          return
+        }
         yield* ignoringFailure(() => {
-        tone.gain.gain.value = clampNonNegative(gain)
+          tone.gain.gain.value = clampNonNegative(gain)
         })
       })
 
@@ -602,7 +633,7 @@ export const makeWebAudioBackend = (
       return availability
     })
 
-    const playMusic = (request: MusicRequest): Effect.Effect<ToneHandle> =>
+    const playMusic = (request: MusicRequest): Effect.Effect<TonePlayback> =>
       Effect.gen(function* scheduleMusic() {
         yield* preloadSamples([request.soundId]).pipe(Effect.asVoid)
         return yield* playTone({
@@ -654,10 +685,6 @@ export const makeWebAudioBackend = (
         muted: yield* Ref.get(mutedRef),
         refusedTones: yield* Ref.get(refusedTonesRef),
         spontaneousStateChanges: yield* Ref.get(stateChangesRef),
-        stereo: Option.match(runtime, {
-          onNone: () => false,
-          onSome: (value) => value.stereo,
-        }),
         unlockAttempts: yield* Ref.get(unlockAttemptsRef),
         unlockRefusals: yield* Ref.get(unlockRefusalsRef),
       }
@@ -682,10 +709,7 @@ export const makeWebAudioBackend = (
       sampleCache.clear()
       preloadedStreams.clear()
       sampleLoads.clear()
-      yield* Effect.tryPromise({
-        catch: (cause) => cause,
-        try: () => runtime.value.context.close(),
-      }).pipe(Effect.catchAll(() => Effect.void))
+      yield* closeContext(runtime.value.context)
     })
 
     return {

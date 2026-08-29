@@ -100,14 +100,14 @@ const playback = yield* player.play('minecraft:block.stone.break', {
 })
 ```
 
-`position` と `listener` が両方ある場合は attenuation distance と listener の forward
-vector から gain/pan を計算する。backend が `locked`、`unavailable`、または呼び出し側が
+`position` と `listener` が両方ある場合は、variant の `attenuation_distance` に対する
+線形 cutoff と listener の forward vector から gain/pan を計算する。backend が `locked`、`unavailable`、または呼び出し側が
 `enabled: false` の場合でも、caption は対応する reason とともに発行される。
 
 ## 26.2 sound-event catalog
 
-`MINECRAFT_26_2_SOUND_EVENT_IDS` と `MINECRAFT_26_2_SOUNDS_JSON` は、26.2 の公式
-`sounds.json` 全体を固定データとして提供する。従来イベントに加えて、Cinnabar、Sulfur、
+`MINECRAFT_26_2_SOUND_EVENT_IDS` と `MINECRAFT_26_2_SOUNDS_JSON` は、Minecraft Java Edition
+26.2 のリリースで定義された 1,968 件の sound-event カタログを固定データとして提供する。従来イベントに加えて、Cinnabar、Sulfur、
 Sulfur Spike、Potent Sulfur、Sulfur Cube、Small Sulfur Cube、geyser、bucket のイベントも
 含む。resource pack を読み込んだ後、`missingMinecraft26_2SoundEvents` で解析済み
 `sounds.json` が公式カタログ全体を持つか検査できる。
@@ -126,16 +126,17 @@ const missing = missingMinecraft26_2SoundEvents(registry)
 
 このカタログは識別子と検証だけを提供し、Mojang の OGG ファイルは再配布しない。音源は
 権利を持つ resource pack から通常の `sounds.json` / asset-loading 境界を通して渡す。
-イベント一覧は [Java Edition 26.2 のリリースノート](https://www.minecraft.net/en-us/article/minecraft-java-edition-26-2)
-と [26.2 の sounds.json](https://mcasset.cloud/26.2/assets/minecraft/sounds.json) に基づく。
+イベント一覧とメタデータは、[Java Edition 26.2 のリリースノート](https://www.minecraft.net/en-us/article/minecraft-java-edition-26-2)
+で確認できる音声追加内容と、Mojang の [公式 version manifest](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json) が指す asset index の
+`minecraft/sounds.json` に基づく。
 
 定義本体も `MINECRAFT_26_2_SOUNDS_JSON` と `createMinecraft26_2SoundRegistry()` で利用できる。
-これは公式 `sounds.json` 全イベントについて、候補音、subtitle、weight、volume、pitch、
+これは snapshot の `sounds.json` に収録された全イベントについて、候補音、subtitle、weight、volume、pitch、
 `stream` などのメタデータを保持した固定データである。空の variant 配列を持つ公式イベントも
 識別子を維持したまま収録し、実際に解決・再生する段階で空イベントとして扱う。
 
-同梱 JSON は `pnpm import:minecraft-sounds` で公式 URL から再生成できる。生成後のデータは
-parser の境界検証と公式カタログの回帰テストを通過させる。
+同梱 JSON は `pnpm import:minecraft-sounds` で、Mojang の version manifest と asset index を解決して
+公式 resource service から再生成できる。生成後のデータは parser の境界検証と公式カタログの回帰テストを通過させる。
 
 ```ts
 import {
@@ -149,6 +150,41 @@ const officialDefinition = MINECRAFT_26_2_SOUNDS_JSON['block.cinnabar.break']
 
 この定義にも音声バイナリは含まれない。`minecraftSoundManifest(registry, baseUrl)` または
 ホストが用意した `AudioSampleManifest` と組み合わせて再生する。
+
+## 26.3 Snapshot 9 sound-event catalog
+
+`MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_IDS` と `MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON` は、
+Minecraft Java Edition 26.3 Snapshot 9 の 1,991 件の sound-event カタログを、26.2 とは別の
+検証版 API として提供する。Snapshot 1 の shelf mushroom / poplar leaves、Snapshot 3 の
+straw bed / red shrub / poplar leaves / cushion の音声イベントと、Snapshot 9 時点の定義変更を
+含む。安定版 26.2 の API をこの検証版へ向ける alias は提供しない。
+
+追加内容と仕様は、公式の [26.3 Snapshot 1](https://feedback.minecraft.net/hc/en-us/articles/46861657001101-Minecraft-Java-Edition-26-3-Snapshot-1)、
+[26.3 Snapshot 3](https://feedback.minecraft.net/hc/en-us/articles/47197422514061-Minecraft-Java-Edition-26-3-Snapshot-3)、
+[26.3 Snapshot 9](https://feedback.minecraft.net/hc/en-us/articles/48195693403661-Minecraft-Java-Edition-26-3-Snapshot-9) と、Mojang の
+[公式 version manifest](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json) が指す Snapshot 9 の asset index にある
+`minecraft/sounds.json` に基づく。
+Snapshot は安定版ではないため、実際の resource pack と同じ Minecraft バージョンの API を選択する。
+
+```ts
+import {
+  createMinecraft26_3Snapshot9SoundRegistry,
+  missingMinecraft26_3Snapshot9SoundEvents,
+} from '@nerima-games/mc-audio'
+
+const registry = createMinecraft26_3Snapshot9SoundRegistry()
+const missing = missingMinecraft26_3Snapshot9SoundEvents(registry)
+```
+
+同梱 JSON は対象を明示して再生成する。
+
+```sh
+pnpm import:minecraft-sounds -- 26.2
+pnpm import:minecraft-sounds -- 26.3-snapshot-9
+```
+
+この検証版にも音声バイナリは含まれない。合法な resource pack の `sounds.json` と
+`AudioSampleManifest` を同じバージョンのレジストリへ渡す。
 
 ## `ambient_sounds`
 
@@ -177,23 +213,23 @@ const definition = {
 
 const plan = planMinecraftAmbientSounds({
   definition,
-  moodPosition: resolvedMoodPosition,
+  cameraPosition,
+  moodResolver: resolveMoodFromWorld,
   randomSource: gameRandom,
   state: initialMinecraftAmbientSoundsState(),
   tick,
 })
 ```
 
-`moodPosition` は camera/world 側が `block_search_extent`、`offset`、周囲の暗さを使って
-解決して渡す。音声ライブラリは world/block の検索や光量計算を行わないため、
-`mc-kernel` の `Position` をそのまま受け取り、純粋な計画関数と
-`makeMinecraftAmbientSoundsPlayer` の再生経路を保つ。`moodPosition` が `null` の tick
-では mood 音を再生しないが、現実装の次回判定は定義の `tick_delay` に従う。vanilla と
-同じ暗所サンプリングを行うには、ホスト側の world resolver をこの入力へ接続する必要が
-ある。現在の `mc-kernel` に world/light lookup port はないため、音声ライブラリ単体で
-そこを推測しない。planner は mood command に `offset` を保持し、player はそれを音源との
-距離へ加算して減衰だけに適用する。`randomSource` は additions の抽選に必須で、暗黙の
-`Math.random` は使わない。
+`moodResolver` は mood が camera 位置で due になったときだけ呼ばれ、正規化済みの
+`block_search_extent`、`tick_delay`、`offset` と `randomSource` を受け取る。ホスト側の
+world resolver は光量サンプリングと暗さに応じた判定を行い、`{ position, delayTicks }`
+を返す。`position: null` はその tick の mood 音を抑制し、resolver を省略した場合も
+mood は再生されないが、次回判定は通常どおり進む。音声ライブラリは world/block の検索や
+光量計算を行わず、`mc-kernel` の `Position` を受け取って純粋な計画関数と
+`makeMinecraftAmbientSoundsPlayer` の再生経路を保つ。planner は mood command に `offset`
+を保持し、player はそれを音源との距離へ加算して減衰だけに適用する。`randomSource` は
+additions とホスト側 mood resolver に注入して使い、暗黙の `Math.random` は使わない。
 
 音声イベントは既存の `MinecraftSoundRegistry` で解決されるため、resource pack の
 `sounds.json` と `AudioSampleManifest` をそのまま共有できる。公式の定義とフィールドは

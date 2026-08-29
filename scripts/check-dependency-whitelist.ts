@@ -75,7 +75,7 @@ const getLineNumber = (source: string, position: number): number => (
   source.slice(0, position).split('\n').length
 )
 
-const sourceFiles = ['src/index.ts', ...await readFileList(resolve(repositoryRoot, 'src/domain'))].sort()
+const sourceFiles = [...await readFileList(resolve(repositoryRoot, 'src'))].sort()
 if (sourceFiles.length === 0) {
   process.stderr.write('dependency check found no source files\n')
   process.exitCode = 1

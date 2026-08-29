@@ -33,17 +33,17 @@ sound-manager.ts        95
 
 | LOC | パス | 役割 | mc-audio での行き先 |
 | ---: | --- | --- | --- |
-| 163 | `packages/game/infrastructure/audio-engine.ts` | WebAudio エンジン。**3 つのゲートのうち 2 つがここ** | `domain/webaudio-adapter.ts` / `webaudio-runtime.ts`（✅） |
-| 36 | `packages/game/infrastructure/audio-context-helpers.ts` | ガード付き `AudioContext` 生成 | `domain/webaudio-runtime.ts`（✅） |
-| 27 | `packages/game/domain/audio-types.ts` | `ToneRequest` / `ToneHandle` の Schema | `domain/backend-port.ts` |
-| 14 | `packages/game/domain/audio-engine-port.ts` | `AudioEnginePort` タグ | `domain/backend-port.ts` |
-| 2 | `packages/game/domain/audio-utils.ts` | `clamp01` / `clampPan` | `domain/volume.ts` |
-| 29 | `packages/game/domain/sound-spatial.ts` | 距離減衰とパン | `domain/volume.ts` |
-| 95 | `packages/game/application/sound-manager.ts` | **字幕→ゲートの順序がここ (`:43-63`)** | `domain/engine.ts` |
-| 38 | `packages/game/application/sound-manager.types.ts` | 17 キューのユニオン、`satisfies` による対応強制 | `domain/cue.ts` |
-| 42 | `packages/game/application/sound-manager.config.ts` | `SOUND_LIBRARY` 合成テーブル | `domain/cue.ts` |
-| 42 | `packages/game/application/sound-manager-playback.ts` | 純粋なプランナ、gain 算術 | `domain/engine.ts` + `domain/volume.ts` |
-| 15 | `packages/game/application/sound-caption-port.ts` | 字幕 Port（単一メソッド） | `domain/caption.ts`（**拡張して移植**） |
+| 163 | `packages/game/infrastructure/audio-engine.ts` | WebAudio エンジン。**3 つのゲートのうち 2 つがここ** | `src/domain/webaudio-adapter.ts` / `webaudio-runtime.ts`（✅） |
+| 36 | `packages/game/infrastructure/audio-context-helpers.ts` | ガード付き `AudioContext` 生成 | `src/domain/webaudio-runtime.ts`（✅） |
+| 27 | `packages/game/domain/audio-types.ts` | `ToneRequest` / `ToneHandle` の Schema | `src/domain/backend-port.ts` |
+| 14 | `packages/game/domain/audio-engine-port.ts` | `AudioEnginePort` タグ | `src/domain/backend-port.ts` |
+| 2 | `packages/game/domain/audio-utils.ts` | `clamp01` / `clampPan` | `src/domain/volume.ts` |
+| 29 | `packages/game/domain/sound-spatial.ts` | 距離減衰とパン | `src/domain/volume.ts` |
+| 95 | `packages/game/application/sound-manager.ts` | **字幕→ゲートの順序がここ (`:43-63`)** | `src/domain/engine.ts` |
+| 38 | `packages/game/application/sound-manager.types.ts` | 17 キューのユニオン、`satisfies` による対応強制 | `src/domain/cue.ts` |
+| 42 | `packages/game/application/sound-manager.config.ts` | `SOUND_LIBRARY` 合成テーブル | `src/domain/cue.ts` |
+| 42 | `packages/game/application/sound-manager-playback.ts` | 純粋なプランナ、gain 算術 | `src/domain/engine.ts` + `src/domain/volume.ts` |
+| 15 | `packages/game/application/sound-caption-port.ts` | 字幕 Port（単一メソッド） | `src/domain/caption.ts`（**拡張して移植**） |
 | **503** | **小計（SFX + 字幕 Port）** | | |
 
 ## 2. 音楽（BGM）
@@ -59,7 +59,7 @@ sound-manager.ts        95
 | **245** | **小計** | |
 
 `music-manager-state.ts` と `music-manager-environment.ts` は
-**そのまま持ってこられる**（`domain/music.ts` に移植済み）。
+**そのまま持ってこられる**（`src/domain/music.ts` に移植済み）。
 純関数で 58 LOC、テストは 86 LOC。投資効率が最も良い部分である。
 
 ## 3. 字幕の DOM 側（mc-audio には来ない → mx-ui へ）
@@ -118,13 +118,13 @@ mx-ui は描画だけを持つ。→ [design-notes.md](./design-notes.md#dn-3)
 | 79 | `.../weather-sound.test.ts` | → mx-gameplay |
 | 14 / 11 | `.../footstep-sound-{data,logic}.test.ts` | → mx-gameplay |
 
-### テストが存在しない領域（＝ mc-audio が埋めるべき穴）
+### 参照実装でテストが存在しない領域（＝ mc-audio が埋めるべき穴）
 
 - `packages/game/infrastructure/audio-engine.ts` — **テスト 0 本**
 - `packages/game/infrastructure/audio-context-helpers.ts` — **テスト 0 本**
 
 つまり `AudioContext` を構築するテストも、`resume()` を検証するテストも
-リポジトリ全体に存在しない。字幕→ゲートの不変条件は
+参照実装のリポジトリ全体に存在しない。字幕→ゲートの不変条件は
 **設定ゲートのレベルでしか固定されていない**。
 → [design-notes.md](./design-notes.md#dn-1)
 
@@ -146,7 +146,7 @@ mx-ui は描画だけを持つ。→ [design-notes.md](./design-notes.md#dn-3)
 4. **`sound-manager.types.ts` (38) + `sound-manager.config.ts` (42) を読む** —
    ロスターと `satisfies` の技法（✅ 部分完了、ロスターは暫定）
 5. **`audio-context-helpers.ts` (36) を読む** — WebAudio アダプタを書くとき（✅ `webaudio-runtime.ts`）
-6. **`audio-engine.ts` (163) を読む** — 同上。**ただしテストが無いので鵜呑みにしない**（✅ `webaudio-adapter.ts` と契約テスト）
+6. **`audio-engine.ts` (163) を読む** — 同上。**ただし参照実装にはテストが無いので鵜呑みにしない**（✅ `webaudio-adapter.ts` と契約テスト）
 
 ### Minecraft の音声リソース
 

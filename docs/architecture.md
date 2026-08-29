@@ -123,7 +123,7 @@ mc-audio は**押し込まれる側**であり、決して押し返さない。
 この一方通行の規律があるから、mc-audio は DOM 無しの Node で全部テストできる。
 
 `scripts/check-dependency-whitelist.ts` は `mc-sim` の import を
-`not-whitelisted` として落とす（`test/dependency-policy.test.ts` に固定済み）。
+`not-whitelisted` として落とす。検証は `pnpm check:deps` で行う。
 
 ### DOM を持たないという設計判断
 
@@ -134,9 +134,9 @@ mc-audio は**押し込まれる側**であり、決して押し返さない。
 - `"DOM"` を締め出すことで、WebAudio 固有の部分が `AudioBackendPort` の裏に**強制的に**回る
 - 結果として jsdom も `AudioContext` も無しでテストできる
 
-WebAudio アダプタは**プラットフォーム境界として分離している**（`domain/webaudio-adapter.ts`）。
+WebAudio アダプタは**プラットフォーム境界として分離している**（`src/domain/webaudio-adapter.ts`）。
 そして **`lib` は変えなかった**。
-`domain/webaudio-surface.ts` が使うメンバだけを構造的に記述し、
+`src/domain/webaudio-surface.ts` が使うメンバだけを構造的に記述し、
 `test/webaudio-surface.test.ts` が本物の `lib.dom.d.ts` に対して fixture を
 コンパイルして「実 `AudioContext` がキャスト無しで満たす」ことを証明している。
 mc-save / mc-render / mx-ui と同じ手法である。

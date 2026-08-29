@@ -212,13 +212,15 @@ describe('minecraft music planning', () => {
     expect(plan({ enabled: false })).toEqual({ commands: [], state: initialMinecraftMusicState() })
   })
 
-  it('resets after the current track ends', () => {
+  it('schedules the next track using the selected definition after the current track ends', () => {
     expect(
       plan({
         currentActive: false,
+        desired: definition({ max_delay: 4, min_delay: 2 }),
+        randomIntInclusive: () => 3,
         state: state({ currentGain: 0.5, currentSound: 'minecraft:music.game', nextSongDelayTicks: 4 }),
       }),
-    ).toEqual({ commands: [], state: initialMinecraftMusicState() })
+    ).toEqual({ commands: [], state: state({ nextSongDelayTicks: 3 }) })
   })
 
   it('moves the current gain in bounded steps', () => {

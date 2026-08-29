@@ -29,3 +29,4 @@ export {
   resolveMinecraftWolfSound,
   resolveMinecraftWolfSoundEventId,
 } from './minecraft-mob-sound-variant-resolver.js'
+

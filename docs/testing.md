@@ -54,13 +54,13 @@ WebAudio の Node 互換 surface と fake backend を使うため、実ブラウ
 
 | 主張 | 何を防ぐか |
 | --- | --- |
-| `test/fixtures/webaudio-surface.ts` を**本物の `lib.dom.d.ts`** に対してコンパイルして診断 0 | `domain/webaudio-surface.ts` が実在しない API を記述しても誰も気付かない、を防ぐ |
+| `test/fixtures/webaudio-surface.ts` を**本物の `lib.dom.d.ts`** に対してコンパイルして診断 0 | `src/domain/webaudio-surface.ts` が実在しない API を記述しても誰も気付かない、を防ぐ |
 | `tsconfig.build.json` が今も `lib: ["ES2024"]` / `types: []` で、**アダプタがその中に居る** | 誰かが `"DOM"` を足して界面型を消す、を防ぐ |
 
 fixture は `tsconfig.json` / `tsconfig.test.json` / `tsconfig.preview.json` から
 **除外**されている（DOM 型を名指しするため）。除外されていることも上のテストが固定する。
 
-この仕組みは既に 2 回仕事をしている。詳細は `domain/webaudio-surface.ts` のヘッダ:
+この仕組みは既に 2 回仕事をしている。詳細は `src/domain/webaudio-surface.ts` のヘッダ:
 
 1. `AudioContextState` に 4 つ目の値 `'interrupted'` があった（iOS の着信）。
    仕様書にもチュートリアルにも出てこない。**コンパイラだけが知っていた。**
@@ -130,7 +130,7 @@ DN-2 の二乗は `0.5` が `0.25` に聞こえるだけでエラーにならな
 master スライダーを動かしたときに**左の列が動かない**ことを見る形にしてある。
 
 プレビューが**確認できないこと**（クリックが実際に消えたか、
-9 キューが互いに区別できるか、ブラウザが実際に何をするか）は
+17 キューが互いに区別できるか、ブラウザが実際に何をするか）は
 [apps/preview-soundboard/README.md](../apps/preview-soundboard/README.md) §2 に
 列挙してある。プレビューは検証したように見せてはならない。
 
@@ -139,13 +139,17 @@ master スライダーを動かしたときに**左の列が動かない**こと
 このリポジトリが「完成」と言えるのは以下が全て満たされたときである。
 
 1. `pnpm verify` が green
-2. **WebAudio アダプタが実装され、`AudioBackendPort` の契約テストが実ブラウザで green**
-   - アダプタは実装済み（`domain/webaudio-adapter.ts`）。DN-6 の 4 テストも
+2. **WebAudio アダプタが実装され、`AudioBackendPort` の契約テストと実ブラウザ smoke が green**
+   - アダプタは実装済み（`src/domain/webaudio-adapter.ts`）。DN-6 の 4 契約テストも
      `test/webaudio-adapter.test.ts` に入った
-   - **残っているのは「実ブラウザで」の部分**。`test/fake-webaudio.ts` は
-     拒否するかどうかを**教えられている**ので、
+   - `test/fake-webaudio.ts` は拒否するかどうかを**教えられている**ので、
      「拒否されたときどう振る舞うか」は固定できても
-     「このブラウザが拒否するか」は答えられない。ブラウザで確認すべきことは
+     「このブラウザが拒否するか」は答えられない。
+   - 実ブラウザでは、`AudioContext` の生成、ユーザジェスチャー後の
+     `unlock`、ステレオトーンの `playTone`、再生中ハンドルの観測までを
+     Playwright MCP の browser smoke で確認した。`pnpm verify` は引き続き
+     Node の fake backend 契約を実行するため、ブラウザ smoke は別の確認面である。
+     ブラウザで確認すべき聴感・デバイス依存の項目は
      [apps/preview-soundboard/README.md](../apps/preview-soundboard/README.md) §2-4
 3. **サウンドボードプレビューが操作可能**（上記 5 点を目視確認できる） ✅
 4. キューレジストリが 17 個の定義を持つ ✅
@@ -155,7 +159,7 @@ master スライダーを動かしたときに**左の列が動かない**こと
 ## 5. カバレッジ閾値
 
 `vitest.config.ts` は branches / functions / lines / statements の全てを 100% に設定している。
-型定義だけのファイルは実行対象から除外し、実行可能な domain/index ソースを対象にする。
+型定義だけのファイルは実行対象から除外し、実行可能な `src/domain` ソースを対象にする。
 閾値を下げる変更は、未実行経路を隠すため許可しない。
 
 ```typescript

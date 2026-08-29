@@ -175,3 +175,4 @@ export const canPlayMinecraftFireflyBushIdleSounds = ({
   belowOpaqueBlock,
 }: MinecraftFireflyBushSoundContext): boolean =>
   fireflyBushSounds === true && !isOpaqueBlockBelow(belowBlockId, belowOpaqueBlock)
+

@@ -134,3 +134,4 @@ export const resolveMinecraftWolfSound = (
     resolutionOptions.random ?? DEFAULT_RANDOM,
   )
 }
+

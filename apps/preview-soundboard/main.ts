@@ -134,7 +134,6 @@ const style = makeStyle(!options.ascii)
 
 const fake = makeFakeWebAudio({
   present: !options.absent,
-  stereo: options.stereo,
   resumePolicy: options.refuse ? 'reject' : 'allow',
 })
 

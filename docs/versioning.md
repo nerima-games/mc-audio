@@ -70,7 +70,7 @@ mc-audio の場合、具体的には:
 3. 上記の消費・動作確認を踏まえ、maintainer が昇格を裁量判断する。日数計測などの
    自動ゲートは設けない([RELEASE_STANDARD.md §4.2](https://github.com/nerima-games/.github/blob/main/RELEASE_STANDARD.md#42-新しい昇格ポリシー人間による裁量判断))
 4. WebAudio アダプタが実装済みで、`locked` → `ready` のアンロックが実ブラウザで動く
-5. **キューロスターが確定している** — 現在の `cue.ts` は 17 個を定義している。
+5. **キューロスターが確定している** — 現在の `src/domain/cue.ts` は 17 個を定義している。
    ロスターは公開 API の一部であり、キューの追加は semver-minor だが、
    キューの**削除・改名**は破壊的変更になる
 

@@ -250,3 +250,4 @@ describe('Minecraft sounds.json data layer', () => {
     ).toThrow('duplicate normalized sound event id minecraft:foo')
   })
 })
+

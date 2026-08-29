@@ -1,7 +1,8 @@
 /* oxlint-disable max-statements, no-magic-numbers */
 import { describe, expect, it } from '@effect/vitest'
-import { Effect, Layer } from 'effect'
+import { Either, Effect, Layer } from 'effect'
 import {
+  type AudioBackend,
   type AudioAvailability,
   AudioBackendPort,
   makeRecordingBackend,
@@ -282,6 +283,33 @@ describe('Minecraft music player', () => {
     }),
   )
 
+  it.effect('keeps the current track when replacement resolution fails', () =>
+    Effect.gen(function* () {
+      const { player, recorded } = yield* makeHarness()
+      yield* tickToStart(player)
+
+      const result = yield* Effect.either(player.tick({
+        ...START_INPUT,
+        definition: {
+          max_delay: 0,
+          min_delay: 0,
+          replace_current_music: true,
+          sound: 'minecraft:music.missing',
+        },
+      }))
+
+      expect(Either.isLeft(result)).toBe(true)
+      if (Either.isLeft(result)) {
+        expect(result.left).toMatchObject({
+          _tag: 'MinecraftMusicPlaybackError',
+          soundId: 'minecraft:music.missing',
+        })
+      }
+      expect(yield* recorded.musicPlayed).toHaveLength(1)
+      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(true)
+    }),
+  )
+
   it.effect('stops when disabled or when the current sample has ended', () =>
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness()
@@ -309,6 +337,52 @@ describe('Minecraft music player', () => {
         expect(yield* recorded.musicPlayed).toHaveLength(0)
         yield* player.stop
       }
+    }),
+  )
+
+  it.effect('reports a backend refusal without applying the music start', () =>
+    Effect.gen(function* () {
+      const recorded = yield* makeRecordingBackend('ready')
+      const refusingBackend: AudioBackend = {
+        ...recorded.backend,
+        playMusic: () => Effect.succeed({ accepted: false, id: 1 }),
+      }
+      const player = yield* makeMinecraftMusicPlayer(REGISTRY, () => 0).pipe(
+        Effect.provide(Layer.succeed(AudioBackendPort, refusingBackend)),
+      )
+
+      const result = yield* tickToStart(player)
+
+      expect(result.played).toBe(false)
+      expect(result.soundId).toBeNull()
+      expect(result.plan.state.currentSound).toBeNull()
+      yield* player.stop
+    }),
+  )
+
+  it.effect('turns a synchronous music backend throw into a typed playback error', () =>
+    Effect.gen(function* () {
+      const recorded = yield* makeRecordingBackend('ready')
+      const throwingBackend: AudioBackend = {
+        ...recorded.backend,
+        playMusic: () => {
+          throw new Error('synchronous music backend failure')
+        },
+      }
+      const player = yield* makeMinecraftMusicPlayer(REGISTRY, () => 0).pipe(
+        Effect.provide(Layer.succeed(AudioBackendPort, throwingBackend)),
+      )
+
+      const result = yield* Effect.either(tickToStart(player))
+
+      expect(Either.isLeft(result)).toBe(true)
+      if (Either.isLeft(result)) {
+        expect(result.left).toMatchObject({
+          _tag: 'MinecraftMusicPlaybackError',
+          soundId: 'minecraft:music/free_game',
+        })
+      }
+      yield* player.stop
     }),
   )
 

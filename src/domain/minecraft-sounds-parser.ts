@@ -328,3 +328,4 @@ export const mergeMinecraftSoundRegistries = (
   }
   return { events }
 }
+

@@ -2,6 +2,7 @@ import {
   type AudioAvailability,
   AudioBackendPort,
   type ToneHandle,
+  type TonePlayback,
   type ToneRequest,
 } from './backend-port.js'
 import { type CameraPoseSnapshot, ClockPort, type Position } from '@nerima-games/mc-kernel'
@@ -11,7 +12,12 @@ import {
   type ResolvedMinecraftSound,
   resolveMinecraftSound,
 } from './minecraft-sounds.js'
-import { NO_SPATIALISATION, type Spatialisation, effectiveSfxGain, spatialise } from './volume.js'
+import {
+  NO_SPATIALISATION,
+  type Spatialisation,
+  effectiveSfxGain,
+  minecraftSpatialise,
+} from './volume.js'
 import { Effect } from 'effect'
 
 const DEFAULT_FREQUENCY = 440
@@ -91,7 +97,7 @@ const soundSpatialisation = (
   if (isMissing(position) || isMissing(listener)) {
     return NO_SPATIALISATION
   }
-  return spatialise(listener, position, {
+  return minecraftSpatialise(listener, position, {
     distanceScale: sound.attenuationDistance,
     listenerForward,
   })
@@ -127,6 +133,14 @@ type CaptionForOptions = {
   readonly pan: number
   readonly reason: CaptionReason
   readonly text: string
+}
+
+type EmitCaptionInput = {
+  readonly availability: AudioAvailability
+  readonly enabled: boolean
+  readonly eventId: string
+  readonly options: MinecraftSoundPlayOptions | undefined
+  readonly plan: MinecraftSoundPlaybackPlan
 }
 
 const captionFor = ({ atSecs, eventId, options, pan, reason, text }: CaptionForOptions): CaptionEvent => {
@@ -172,6 +186,13 @@ const playbackError = (eventId: string, cause: unknown): MinecraftSoundPlaybackE
   eventId,
 })
 
+const playbackHandle = (playback: TonePlayback): ToneHandle | null => {
+  if (!playback.accepted) {
+    return null
+  }
+  return { id: playback.id }
+}
+
 export const makeMinecraftSoundPlayer = (
   registry: MinecraftSoundRegistry,
   randomSource: () => number,
@@ -180,6 +201,28 @@ export const makeMinecraftSoundPlayer = (
     const backend = yield* AudioBackendPort
     const captions = yield* CaptionStream
     const clock = yield* ClockPort
+
+    const emitCaption = ({
+      availability,
+      enabled,
+      eventId,
+      options,
+      plan,
+    }: EmitCaptionInput): Effect.Effect<void> =>
+      Effect.gen(function* emitMinecraftSoundCaption() {
+        if (plan.subtitle === null) {
+          return
+        }
+        const atSecs = yield* clock.monotonicSecs
+        yield* captions.emit(captionFor({
+          atSecs,
+          eventId,
+          options: options ?? {},
+          pan: plan.request.pan,
+          reason: captionReason(enabled, availability),
+          text: plan.subtitle,
+        }))
+      })
 
     return {
       play: (eventId: string, options?: MinecraftSoundPlayOptions) =>
@@ -194,25 +237,14 @@ export const makeMinecraftSoundPlayer = (
           })
           const availability = yield* backend.availability
           const enabled = options?.enabled ?? true
-
-          if (plan.subtitle !== null) {
-            const atSecs = yield* clock.monotonicSecs
-            yield* captions.emit(captionFor({
-              atSecs,
-              eventId,
-              options: options ?? {},
-              pan: plan.request.pan,
-              reason: captionReason(enabled, availability),
-              text: plan.subtitle,
-            }))
-          }
+          yield* emitCaption({ availability, enabled, eventId, options, plan })
 
           if (!enabled || availability !== 'ready') {
             return { ...plan, handle: null, played: false }
           }
 
-          const handle = yield* backend.playTone(plan.request)
-          return { ...plan, handle, played: true }
+          const playback: TonePlayback = yield* backend.playTone(plan.request)
+          return { ...plan, handle: playbackHandle(playback), played: playback.accepted }
         }),
       stop: (playback: MinecraftSoundPlayback) => {
         if (playback.handle === null) {

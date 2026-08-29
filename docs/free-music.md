@@ -123,5 +123,5 @@ const manifest: AudioSampleManifest = {
 
 - [Minecraft Java Edition Snapshot 25w42a: data-driven audio](https://feedback.minecraft.net/hc/en-us/articles/40320457571725-Minecraft-Java-Edition-Snapshot-25w42a)
 - [Minecraft Java Edition 26.2](https://feedback.minecraft.net/hc/en-us/articles/46690753273997-Minecraft-Java-Edition-26-2)
-- [Minecraft 26.2 `sounds.json`](https://mcasset.cloud/26.2/assets/minecraft/sounds.json)
+- [Mojang version manifest](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json)（26.2 の asset index から公式 `minecraft/sounds.json` を解決）
 - [NeoForged: Sounds](https://docs.neoforged.net/docs/1.21.8/resources/client/sounds/)

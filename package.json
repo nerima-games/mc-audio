@@ -55,7 +55,8 @@
     "lint": "oxlint --deny-warnings src test apps scripts",
     "lint:fix": "oxlint --fix src test apps scripts",
     "check:deps": "tsx scripts/check-dependency-whitelist.ts",
-    "import:minecraft-sounds": "tsx scripts/import-minecraft-26-2-sounds.ts",
+    "import:minecraft-sounds": "tsx scripts/import-minecraft-sounds.ts",
+    "import:minecraft-26-3-snapshot-9": "pnpm import:minecraft-sounds -- 26.3-snapshot-9",
     "preview": "tsx apps/preview-soundboard/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -68,11 +69,11 @@
   },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.0",
-    "@changesets/cli": "^3.0.0",
+    "@changesets/cli": "^3.0.1",
     "@effect/vitest": "^0.30.0",
     "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^3.2.7",
-    "oxlint": "^1.78.0",
+    "oxlint": "^1.79.0",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vitest": "^3.2.7"

@@ -138,18 +138,17 @@ const listenerRight = (
   }
 }
 
-/**
- * Attenuation and panning for a sound at `source` heard from `listener`.
- *
- * `1 / (1 + d / scale)` rather than inverse-square: it never reaches zero, so a
- * distant sound fades out instead of cutting off, and it is finite at d = 0.
- * Reference: `packages/game/domain/sound-spatial.ts:11-27`.
- */
-export const spatialise = (
+type SpatialCoordinates = {
+  readonly distance: number
+  readonly distanceScale: number
+  readonly pan: number
+}
+
+const resolveSpatialCoordinates = (
   listener: Position,
   source: Position,
-  options: SpatialisationOptions = {},
-): Spatialisation => {
+  options: SpatialisationOptions,
+): SpatialCoordinates => {
   const {
     distanceOffset = MIN_DISTANCE_SCALE,
     distanceScale = SPATIAL_DISTANCE_SCALE,
@@ -167,8 +166,48 @@ export const spatialise = (
   const right = listenerRight(listenerForward, horizontalForwardLength)
 
   return {
-    gain: UNITY_GAIN / (UNITY_GAIN + distance / resolvedDistanceScale),
+    distance,
+    distanceScale: resolvedDistanceScale,
     pan: clampPan((dx * right.x + dz * right.z) / resolvedDistanceScale),
+  }
+}
+
+/**
+ * Attenuation and panning for a sound at `source` heard from `listener`.
+ *
+ * `1 / (1 + d / scale)` rather than inverse-square: it never reaches zero, so a
+ * distant sound fades out instead of cutting off, and it is finite at d = 0.
+ * Reference: `packages/game/domain/sound-spatial.ts:11-27`.
+ */
+export const spatialise = (
+  listener: Position,
+  source: Position,
+  options: SpatialisationOptions = {},
+): Spatialisation => {
+  const { distance, distanceScale, pan } = resolveSpatialCoordinates(listener, source, options)
+
+  return {
+    gain: UNITY_GAIN / (UNITY_GAIN + distance / distanceScale),
+    pan,
+  }
+}
+
+/**
+ * Minecraft sound-variant attenuation.
+ *
+ * The variant's finite attenuation distance is a linear cutoff, so it stays
+ * separate from the package's generic never-zero `spatialise` contract.
+ */
+export const minecraftSpatialise = (
+  listener: Position,
+  source: Position,
+  options: SpatialisationOptions = {},
+): Spatialisation => {
+  const { distance, distanceScale, pan } = resolveSpatialCoordinates(listener, source, options)
+
+  return {
+    gain: clamp01(UNITY_GAIN - distance / distanceScale),
+    pan,
   }
 }
 
