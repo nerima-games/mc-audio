@@ -1,6 +1,6 @@
 {
   "name": "@nerima-games/mc-audio",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "type": "module",
   "description": "Audio toolkit for a Minecraft-compatible game: sound events and resource manifests, volume categories, BGM state, captions, and a testable WebAudio backend.",
   "homepage": "https://github.com/nerima-games/mc-audio#readme",
