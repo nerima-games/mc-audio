@@ -1,3 +1,4 @@
+import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Option } from 'effect'
 import {
@@ -17,15 +18,15 @@ import {
 describe('resolveMusicEnvironment', () => {
   it.effect('cave wins over day and night', () =>
     Effect.sync(() => {
-      expect(resolveMusicEnvironment({ playerY: 10, isNight: false })).toBe('cave')
-      expect(resolveMusicEnvironment({ playerY: 10, isNight: true })).toBe('cave')
+      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: 10, z: 0 }, isNight: false })).toBe('cave')
+      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: 10, z: 0 }, isNight: true })).toBe('cave')
     }),
   )
 
   it.effect('picks day or night above the threshold', () =>
     Effect.sync(() => {
-      expect(resolveMusicEnvironment({ playerY: 70, isNight: false })).toBe('day')
-      expect(resolveMusicEnvironment({ playerY: 70, isNight: true })).toBe('night')
+      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: 70, z: 0 }, isNight: false })).toBe('day')
+      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: 70, z: 0 }, isNight: true })).toBe('night')
     }),
   )
 
@@ -40,14 +41,14 @@ describe('resolveMusicEnvironment', () => {
    */
   it.effect('treats exactly-at-threshold as surface, not cave', () =>
     Effect.sync(() => {
-      expect(resolveMusicEnvironment({ playerY: DEFAULT_CAVE_THRESHOLD_Y, isNight: false })).toBe('day')
-      expect(resolveMusicEnvironment({ playerY: DEFAULT_CAVE_THRESHOLD_Y - 1, isNight: false })).toBe('cave')
+      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: DEFAULT_CAVE_THRESHOLD_Y, z: 0 }, isNight: false })).toBe('day')
+      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: DEFAULT_CAVE_THRESHOLD_Y - 1, z: 0 }, isNight: false })).toBe('cave')
     }),
   )
 
   it.effect('honours a caller-supplied threshold', () =>
     Effect.sync(() => {
-      expect(resolveMusicEnvironment({ playerY: 50, isNight: false, caveThresholdY: 60 })).toBe('cave')
+      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: 50, z: 0 }, isNight: false, caveThresholdY: 60 })).toBe('cave')
     }),
   )
 })
@@ -105,7 +106,7 @@ describe('resolveMusicPlan', () => {
 const caption = (text: string, atSecs: number): CaptionEvent => ({
   cueId: 'blockBreak',
   text,
-  atSecs,
+  atSecs: MonotonicTimeSecs(atSecs),
   reason: 'audible',
 })
 
@@ -113,7 +114,7 @@ describe('visibleCaptions', () => {
   it.effect('drops captions older than the display window', () =>
     Effect.sync(() => {
       const events = [caption('old', 0), caption('fresh', 9)]
-      const visible = visibleCaptions(events, 10)
+      const visible = visibleCaptions(events, MonotonicTimeSecs(10))
 
       expect(visible.map((event) => event.text)).toStrictEqual(['fresh'])
     }),
@@ -121,14 +122,14 @@ describe('visibleCaptions', () => {
 
   it.effect('keeps a caption right up to, but not including, the expiry instant', () =>
     Effect.sync(() => {
-      expect(visibleCaptions([caption('a', 0)], CAPTION_DISPLAY_SECS - 0.001)).toHaveLength(1)
-      expect(visibleCaptions([caption('a', 0)], CAPTION_DISPLAY_SECS)).toHaveLength(0)
+      expect(visibleCaptions([caption('a', 0)], MonotonicTimeSecs(CAPTION_DISPLAY_SECS - 0.001))).toHaveLength(1)
+      expect(visibleCaptions([caption('a', 0)], MonotonicTimeSecs(CAPTION_DISPLAY_SECS))).toHaveLength(0)
     }),
   )
 
   it.effect('refreshes a repeated caption instead of stacking a duplicate row', () =>
     Effect.sync(() => {
-      const visible = visibleCaptions([caption('Footsteps', 1), caption('Footsteps', 2)], 2.5)
+      const visible = visibleCaptions([caption('Footsteps', 1), caption('Footsteps', 2)], MonotonicTimeSecs(2.5))
 
       expect(visible).toHaveLength(1)
       expect(visible[0]?.atSecs).toBe(2)
@@ -137,10 +138,10 @@ describe('visibleCaptions', () => {
 
   it.effect('deduplicates by text, so two footstep cues share one row', () =>
     Effect.sync(() => {
-      const grass: CaptionEvent = { cueId: 'footstepGrass', text: 'Footsteps', atSecs: 1, reason: 'audible' }
-      const stone: CaptionEvent = { cueId: 'footstepStone', text: 'Footsteps', atSecs: 1.2, reason: 'audible' }
+      const grass: CaptionEvent = { cueId: 'footstepGrass', text: 'Footsteps', atSecs: MonotonicTimeSecs(1), reason: 'audible' }
+      const stone: CaptionEvent = { cueId: 'footstepStone', text: 'Footsteps', atSecs: MonotonicTimeSecs(1.2), reason: 'audible' }
 
-      expect(visibleCaptions([grass, stone], 2)).toHaveLength(1)
+      expect(visibleCaptions([grass, stone], MonotonicTimeSecs(2))).toHaveLength(1)
     }),
   )
 
@@ -149,7 +150,7 @@ describe('visibleCaptions', () => {
       const events = Array.from({ length: MAX_VISIBLE_CAPTIONS + 3 }, (_unused, index) =>
         caption(`row-${String(index)}`, index * 0.1),
       )
-      const visible = visibleCaptions(events, 0.9)
+      const visible = visibleCaptions(events, MonotonicTimeSecs(0.9))
 
       expect(visible).toHaveLength(MAX_VISIBLE_CAPTIONS)
       expect(visible[visible.length - 1]?.text).toBe(`row-${String(MAX_VISIBLE_CAPTIONS + 2)}`)
@@ -158,7 +159,7 @@ describe('visibleCaptions', () => {
 
   it.effect('ignores an event stamped in the future rather than showing it early', () =>
     Effect.sync(() => {
-      expect(visibleCaptions([caption('later', 5)], 1)).toStrictEqual([])
+      expect(visibleCaptions([caption('later', 5)], MonotonicTimeSecs(1))).toStrictEqual([])
     }),
   )
 })

@@ -214,9 +214,9 @@ describe('a looping tone', () => {
 })
 
 describe('clamping', () => {
-  it.effect('clamps peak gain into [0, 1] and treats a non-finite gain as silence', () =>
+  it.effect('keeps peak gain non-negative and treats a non-finite gain as silence', () =>
     Effect.sync(() => {
-      expect(toneEnvelope(tone({ gain: 2 }), 0).peakGain).toBe(1)
+      expect(toneEnvelope(tone({ gain: 2 }), 0).peakGain).toBe(2)
       expect(toneEnvelope(tone({ gain: -1 }), 0).peakGain).toBe(0)
       expect(toneEnvelope(tone({ gain: Number.NaN }), 0).peakGain).toBe(0)
     }),

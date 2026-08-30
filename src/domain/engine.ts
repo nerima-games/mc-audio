@@ -2,7 +2,7 @@
 /**
  * `SoundCuePort` — and the ordering that this whole repository exists to protect.
  *
- * PRE-AUDIT FIRST CUT (叩き台).
+ * Boundary and provenance notes.
  *
  * ---------------------------------------------------------------------------
  * THE INVARIANT: captions are emitted BEFORE the audio gate is consulted
@@ -44,26 +44,26 @@
  * `test/caption-gate.test.ts` covers all three. That is the single most
  * important test in this repository.
  */
+import { ClockPort, type Position } from '@nerima-games/mc-kernel'
 import { Context, Effect, Layer, Option } from 'effect'
-import { type AudioAvailability, AudioBackendPort, type ToneRequest } from './backend-port'
-import { type CaptionEvent, type CaptionReason, CaptionStream } from './caption'
-import { type CuePlayOptions, type SoundCueId, cueDefinition } from './cue'
+import { type AudioAvailability, AudioBackendPort, type ToneRequest } from './backend-port.js'
+import { type CaptionEvent, type CaptionReason, CaptionStream } from './caption.js'
+import { type CuePlayOptions, type SoundCueId, cueDefinition } from './cue.js'
 import {
   NO_SPATIALISATION,
-  type Vec3,
   type VolumeSettings,
   effectiveSfxGain,
   spatialise,
-} from './volume'
+} from './volume.js'
 
 export type CueContext = {
   readonly settings: VolumeSettings
   /** The player's audio on/off switch. Distinct from availability. */
   readonly enabled: boolean
   readonly availability: AudioAvailability
-  readonly listener: Vec3
+  readonly listener: Position
   /** Horizontal look direction. Omit to retain world +X as stereo right. */
-  readonly listenerForward?: Vec3
+  readonly listenerForward?: Position
 }
 
 /**
@@ -105,7 +105,9 @@ export const planCue = (
 
   const spatialisation =
     definition.spatial && options?.position !== undefined
-      ? spatialise(context.listener, options.position, context.listenerForward)
+      ? spatialise(context.listener, options.position, {
+          listenerForward: context.listenerForward,
+        })
       : NO_SPATIALISATION
 
   const caption =
@@ -153,24 +155,21 @@ export class SoundCuePort extends Context.Tag('@nerima-games/mc-audio/SoundCuePo
 /**
  * Build the cue service.
  *
- * `nowSecs` is a parameter rather than a `ClockPort` dependency because mc-audio
- * cannot yet import `@nerima-games/mc-kernel` — nothing is published (plan.md §6
- * Step 0 defers publishing until the interfaces settle). When kernel is
- * consumable this becomes `ClockPort.monotonicSecs` and this parameter goes
- * away. It is a monotonic reading in seconds, never a wall clock and never
- * `performance.now()`: a caption log has to be reproducible in a replay.
+ * Caption timestamps come from mc-kernel's monotonic clock. The service captures
+ * the clock port when it is built, keeping each returned `play` effect
+ * environment-free and deterministic under a fixed clock.
  */
 export const makeSoundCueService = (input: {
   readonly context: Effect.Effect<CueContext>
-  readonly nowSecs: Effect.Effect<number>
-}): Effect.Effect<SoundCueService, never, AudioBackendPort | CaptionStream> =>
+}): Effect.Effect<SoundCueService, never, AudioBackendPort | CaptionStream | ClockPort> =>
   Effect.gen(function* buildSoundCueService() {
     const backend = yield* AudioBackendPort
     const captions = yield* CaptionStream
+    const clock = yield* ClockPort
 
     return {
       play: (cueId, options) =>
-        Effect.gen(function*  play() {
+        Effect.gen(function* play() {
           const context = yield* input.context
           const plan = planCue(cueId, context, options)
 
@@ -180,7 +179,7 @@ export const makeSoundCueService = (input: {
           // See the module header and test/caption-gate.test.ts.
           // ────────────────────────────────────────────────────────────────
           if (plan.caption !== null) {
-            const atSecs = yield* input.nowSecs
+            const atSecs = yield* clock.monotonicSecs
             yield* captions.emit({ ...plan.caption, atSecs })
           }
 

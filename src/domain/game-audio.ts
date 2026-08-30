@@ -1,6 +1,6 @@
-import type { CuePlayOptions, SoundCueId } from './cue'
+import type { CuePlayOptions, SoundCueId } from './cue.js'
 import type { Effect } from 'effect'
-import type { SoundCueService } from './engine'
+import type { SoundCueService } from './engine.js'
 
 /** Stable host ingress: game systems emit semantic cues, never WebAudio nodes. */
 export type GameAudioEvent = CuePlayOptions & {

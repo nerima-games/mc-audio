@@ -2,13 +2,13 @@
 /**
  * The caption event stream.
  *
- * PRE-AUDIT FIRST CUT (叩き台).
+ * Boundary and provenance notes.
  *
  * ---------------------------------------------------------------------------
  * This is a real stream, and the reference's was not
  * ---------------------------------------------------------------------------
  *
- * plan.md §3.6 calls for a `CaptionEventStream` that the UI subscribes to. The
+ * The public API contract calls for a `CaptionEventStream` that the UI subscribes to. The
  * reference implementation had no such thing. `SoundCaptionPort`
  * (`packages/game/application/sound-caption-port.ts:8-15`) was a single method,
  * `announce(effect: SoundEffect) => Effect<void, never>`, carrying the bare cue
@@ -28,7 +28,7 @@
  * layer goes back to being a renderer.
  */
 import { Context, Effect } from 'effect'
-import type { SoundCueId } from './cue'
+import type { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 
 /**
  * Why a caption was emitted, which is what makes the accessibility contract
@@ -46,13 +46,13 @@ export const CAPTION_REASONS = ['audible', 'muted', 'gate-blocked', 'unavailable
 export type CaptionReason = (typeof CAPTION_REASONS)[number]
 
 export type CaptionEvent = {
-  readonly cueId: SoundCueId
+  readonly cueId: string
   readonly text: string
   /**
    * Monotonic seconds, from the clock Port. Never a wall clock, and never
    * `performance.now()` — a caption list must be reproducible in a replay.
    */
-  readonly atSecs: number
+  readonly atSecs: MonotonicTimeSecs
   readonly reason: CaptionReason
   /** Present only for spatialised cues, so a UI can show a direction indicator. */
   readonly pan?: number
@@ -89,7 +89,7 @@ export const MAX_VISIBLE_CAPTIONS = 5
  */
 export const visibleCaptions = (
   events: ReadonlyArray<CaptionEvent>,
-  nowSecs: number,
+  nowSecs: MonotonicTimeSecs,
 ): ReadonlyArray<CaptionEvent> => {
   // Latest occurrence of each distinct text wins, so a repeated cue refreshes
   // Its row rather than stacking a second one.

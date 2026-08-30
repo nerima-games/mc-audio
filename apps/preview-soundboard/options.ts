@@ -8,11 +8,11 @@
  * terminal UI.
  *
  * The flags that matter are the ones that put the preview into a state a real
- * browser would be in and a developer's machine usually is not: `--no-stereo`
- * is Safari before 14.1, `--absent` is Node or SSR, `--refuse` is a browser
- * that will not honour the gesture. Those are the three configurations the
- * reference implementation could not run at all, and the ones its `audio-engine
- * .ts` had zero tests for (`docs/porting.md` §6).
+ * browser would be in and a developer's machine usually is not: `--absent` is
+ * Node or SSR, and `--refuse` is a browser that will not honour the gesture.
+ * Those are the two configurations the reference implementation could not run
+ * at all, and the ones its `audio-engine.ts` had zero tests for
+ * (`docs/porting.md` §6).
  *
  * Adapted from mx-ui's `apps/preview-screens/options.ts`, including its two
  * hard-won behaviours: a literal `--` is accepted and ignored (pnpm 9 forwards
@@ -29,8 +29,6 @@ export type PreviewOptions = {
   readonly refuse: boolean
   /** No Web Audio at all: Node, SSR, a browser without it. */
   readonly absent: boolean
-  /** No `createStereoPanner`: Safari before 14.1. Forces the mono fallback. */
-  readonly stereo: boolean
   /** Fire this cue before drawing, so `--once` can show a populated frame. */
   readonly play: string | undefined
   readonly once: boolean
@@ -45,7 +43,6 @@ const DEFAULTS = {
   unlocked: false,
   refuse: false,
   absent: false,
-  stereo: true,
   play: undefined,
   once: false,
   ascii: false,
@@ -66,7 +63,6 @@ export const USAGE = [
   '  --unlocked      start with the AudioContext already running',
   '  --refuse        resume() never succeeds: the autoplay policy that never yields',
   '  --absent        no Web Audio at all: Node, SSR, a browser without it',
-  '  --no-stereo     no createStereoPanner: Safari before 14.1, mono fallback',
   '  --once          draw one frame and exit (pipeable)',
   '  --ascii         no colour, no block glyphs (pipeable, diffable)',
   '  --width N       frame width',
@@ -132,9 +128,6 @@ export const parseArguments = (argv: ReadonlyArray<string>): PreviewOptions => {
         break
       case '--absent':
         accumulator.absent = true
-        break
-      case '--no-stereo':
-        accumulator.stereo = false
         break
       case '--once':
         accumulator.once = true

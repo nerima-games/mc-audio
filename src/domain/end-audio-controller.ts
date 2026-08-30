@@ -8,7 +8,7 @@ import {
   type EndAudioState,
   INITIAL_END_AUDIO_STATE,
   planEndAudio,
-} from './end-audio'
+} from './end-audio.js'
 
 export type EndAudioHandle = { readonly id: number }
 
