@@ -15,7 +15,7 @@
  * `pnpm check:deps` refuses (`docs/architecture.md` §2).
  */
 
-export const ESC = String.fromCharCode(27)
+export const ESC: string = String.fromCharCode(27)
 
 const SGR = (code: string) => `${ESC}[${code}m`
 

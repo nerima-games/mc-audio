@@ -9,6 +9,7 @@ import {
 } from '../src/domain/backend-port'
 import type { CaptionEvent } from '../src/domain/caption'
 import {
+  currentAvailability,
   type CueContext,
   firstCaptionFor,
   makeSoundCueService,
@@ -227,6 +228,18 @@ describe('firstCaptionFor', () => {
     Effect.sync(() => {
       expect(firstCaptionFor(CAPTIONS, 'thunderClap')).toStrictEqual(Option.none())
       expect(firstCaptionFor([], 'blockBreak')).toStrictEqual(Option.none())
+    }),
+  )
+})
+
+describe('currentAvailability', () => {
+  it.effect('reads the availability from the provided backend, "ask the backend, do not guess"', () =>
+    Effect.gen(function* () {
+      const recorded = yield* makeRecordingBackend('locked')
+      const availability = yield* currentAvailability.pipe(
+        Effect.provide(Layer.succeed(AudioBackendPort, recorded.backend)),
+      )
+      expect(availability).toBe('locked')
     }),
   )
 })

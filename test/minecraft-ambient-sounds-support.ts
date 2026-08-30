@@ -1,21 +1,27 @@
 import { Effect, Layer } from 'effect'
-import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { type CameraPoseSnapshot, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
 import {
   type AudioAvailability,
   AudioBackendPort,
   makeRecordingBackend,
+  type RecordedBackend,
 } from '../src/domain/backend-port.js'
 import {
   initialMinecraftAmbientSoundsState,
   planMinecraftAmbientSounds,
   type MinecraftAmbientSoundsDefinition,
+  type MinecraftAmbientSoundsPlan,
   type MinecraftAmbientSoundsPlannerInput,
   type MinecraftAmbientSoundsState,
 } from '../src/domain/minecraft-ambient-sounds.js'
-import { makeMinecraftAmbientSoundsPlayer } from '../src/domain/minecraft-ambient-sounds-player.js'
+import {
+  makeMinecraftAmbientSoundsPlayer,
+  type MinecraftAmbientSoundsPlayer,
+} from '../src/domain/minecraft-ambient-sounds-player.js'
 import { parseMinecraftSoundsJson } from '../src/domain/minecraft-sounds.js'
+import type { MinecraftSoundRegistry } from '../src/domain/minecraft-sounds-types.js'
 
-export const REGISTRY = parseMinecraftSoundsJson(
+export const REGISTRY: MinecraftSoundRegistry = parseMinecraftSoundsJson(
   {
     'ambient.addition': { sounds: ['ambient/addition'] },
     'ambient.loop': {
@@ -39,7 +45,7 @@ export const REGISTRY = parseMinecraftSoundsJson(
 )
 
 export const LISTENER = { x: 0, y: 64, z: 0 }
-export const CAMERA = {
+export const CAMERA: CameraPoseSnapshot = {
   capturedAtSecs: MonotonicTimeSecs(5),
   pitchRadians: 0,
   position: LISTENER,
@@ -56,7 +62,9 @@ export const state = (overrides: Partial<MinecraftAmbientSoundsState> = {}): Min
   ...overrides,
 })
 
-export const plan = (overrides: Partial<MinecraftAmbientSoundsPlannerInput> = {}) =>
+export const plan = (
+  overrides: Partial<MinecraftAmbientSoundsPlannerInput> = {},
+): MinecraftAmbientSoundsPlan =>
   planMinecraftAmbientSounds({
     cameraPosition: LISTENER,
     definition: null,
@@ -69,7 +77,7 @@ export const plan = (overrides: Partial<MinecraftAmbientSoundsPlannerInput> = {}
 export const makeHarness = (
   availability: AudioAvailability = 'ready',
   randomSource: () => number = () => 0,
-) =>
+): Effect.Effect<{ readonly player: MinecraftAmbientSoundsPlayer; readonly recorded: RecordedBackend }> =>
   Effect.gen(function* makeHarnessEffect() {
     const recorded = yield* makeRecordingBackend(availability)
     const player = yield* makeMinecraftAmbientSoundsPlayer(REGISTRY, randomSource).pipe(

@@ -46,7 +46,7 @@ const normalizeRandom = (random: number): number => {
 
 export const selectMinecraftSoundVariant = (
   event: MinecraftSoundEvent,
-  random = DEFAULT_RANDOM,
+  random: number = DEFAULT_RANDOM,
 ): MinecraftSoundVariant => {
   if (event.sounds.length === EMPTY_LENGTH) {
     throw new RangeError(`Sound event ${event.id} has no sound variants`)
@@ -113,7 +113,7 @@ const resolveEvent = ({ eventId, random, registry, rootEventId, visited }: Resol
 export const resolveMinecraftSound = (
   registry: MinecraftSoundRegistry,
   eventId: string,
-  random = DEFAULT_RANDOM,
+  random: number = DEFAULT_RANDOM,
 ): ResolvedMinecraftSound => resolveEvent({
   eventId,
   random,

@@ -136,6 +136,15 @@ describe('visibleCaptions', () => {
     }),
   )
 
+  it.effect('keeps the later timestamp when a same-text event arrives out of chronological order', () =>
+    Effect.sync(() => {
+      const visible = visibleCaptions([caption('Footsteps', 2), caption('Footsteps', 1)], MonotonicTimeSecs(2.5))
+
+      expect(visible).toHaveLength(1)
+      expect(visible[0]?.atSecs).toBe(2)
+    }),
+  )
+
   it.effect('deduplicates by text, so two footstep cues share one row', () =>
     Effect.sync(() => {
       const grass: CaptionEvent = { cueId: 'footstepGrass', text: 'Footsteps', atSecs: MonotonicTimeSecs(1), reason: 'audible' }

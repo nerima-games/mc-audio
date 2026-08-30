@@ -5,11 +5,11 @@ import type { AudioSampleManifest } from './audio-sample.js'
 
 export const ORIGINAL_SAMPLE_RATE = 16_000
 
-export const ORIGINAL_SAMPLE_SOUND_IDS = [
+export const ORIGINAL_SAMPLE_SOUND_IDS: readonly (SoundCueId | EndAudioEventKind | 'endAmbience')[] = [
   ...SOUND_CUE_IDS,
   ...END_AUDIO_EVENT_KINDS,
   'endAmbience',
-] as const
+]
 
 export type OriginalSampleSoundId = (typeof ORIGINAL_SAMPLE_SOUND_IDS)[number]
 

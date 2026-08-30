@@ -55,7 +55,7 @@ export type NormalizedMinecraftMusicDefinition = Omit<MinecraftMusicDefinition, 
   readonly replace_current_music: boolean
 }
 
-export const MINECRAFT_BACKGROUND_MUSIC = {
+export const MINECRAFT_BACKGROUND_MUSIC: Readonly<Record<MinecraftBackgroundMusicKey, MinecraftMusicDefinition>> = {
   creative: {
     max_delay: MINECRAFT_MUSIC_DEFAULT_MAX_DELAY_TICKS,
     min_delay: MINECRAFT_MUSIC_DEFAULT_MIN_DELAY_TICKS,
@@ -71,7 +71,7 @@ export const MINECRAFT_BACKGROUND_MUSIC = {
     min_delay: MINECRAFT_MUSIC_DEFAULT_MIN_DELAY_TICKS,
     sound: 'minecraft:music.under_water',
   },
-} as const satisfies Readonly<Record<'creative' | 'default' | 'underwater', MinecraftMusicDefinition>>
+}
 
 export type MinecraftMusicContext = {
   readonly creative: boolean

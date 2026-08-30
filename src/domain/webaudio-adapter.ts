@@ -526,10 +526,13 @@ export const makeWebAudioBackend = (
         // Unreachable: `tone` above only exists in `activeRef` because
         // `playTone` put it there, and `playTone` cannot add an entry without
         // `ensureRuntime` first setting `runtimeRef` to Some — which it never
-        // Unsets. v8's coverage-ignore pragma below is fixed, lowercase
-        // Syntax (vitest.dev/guide/coverage#ignoring-code).
+        // Unsets. The `@preserve` suffix on the v8 ignore-hint below keeps the
+        // Comment through esbuild's TypeScript transpile step (vitest 4 /
+        // @vitest/coverage-v8 4.x strips comments that lack it before
+        // Coverage instrumentation ever sees them — vitest.dev/guide/coverage
+        // #ignoring-code); without it this hint silently stopped applying.
         // oxlint-disable-next-line capitalized-comments
-        /* v8 ignore next 3 */
+        /* v8 ignore next 3 -- @preserve */
         if (Option.isNone(runtime)) {
           return
         }
@@ -650,6 +653,9 @@ export const makeWebAudioBackend = (
         })
       })
 
+    // No catchAllCause wrapper: `preloadAudioSamples` types its error channel
+    // As `never` (per-sample failures are reported in the returned counts,
+    // Not thrown), so there is nothing for a catch here to ever handle.
     const autoPreload = preloadAudioSamples(undefined, {
       cache: sampleCache,
       loadSample,
@@ -658,7 +664,7 @@ export const makeWebAudioBackend = (
       pendingLoads: sampleLoads,
       preloadStream: options.preloadStream,
       preloadedStreams,
-    }).pipe(Effect.asVoid, Effect.catchAllCause(() => Effect.void))
+    }).pipe(Effect.asVoid)
     yield* Ref.set(autoPreloadEffectRef, autoPreload)
 
     const report: Effect.Effect<WebAudioReport> = Effect.gen(function*  report() {

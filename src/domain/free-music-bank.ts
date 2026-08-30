@@ -2,7 +2,6 @@
 import {
   FREE_MINECRAFT_MUSIC_EVENT_VARIANTS,
   FREE_MINECRAFT_MUSIC_TRACKS,
-  type FreeMusicEventId,
   type FreeMusicTrack,
 } from './free-music-data.js'
 import type { AudioSampleManifest } from './audio-sample.js'
@@ -130,19 +129,15 @@ export const createFreeMinecraftMusicManifest = (
   ]),
 )
 
-const FREE_MINECRAFT_MUSIC_EVENT_IDS = Object.keys(
-  FREE_MINECRAFT_MUSIC_EVENT_VARIANTS,
-) as FreeMusicEventId[]
-
 /** Sound events matching Minecraft's built-in, biome, and music-disc names. */
 export const createFreeMinecraftMusicRegistry = (): MinecraftSoundRegistry => ({
   events: Object.fromEntries(
-    FREE_MINECRAFT_MUSIC_EVENT_IDS.map((eventId) => [
+    Object.entries(FREE_MINECRAFT_MUSIC_EVENT_VARIANTS).map(([eventId, variants]) => [
       eventId,
       {
         id: eventId,
         replace: false,
-        sounds: FREE_MINECRAFT_MUSIC_EVENT_VARIANTS[eventId].map((variant) => ({
+        sounds: variants.map((variant) => ({
           attenuationDistance: 16,
           name: variant.soundId,
           pitch: 1,

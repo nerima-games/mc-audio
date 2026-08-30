@@ -51,11 +51,12 @@ mc-audio に依存するのは `mx-gameplay` と `mx-ui` の 2 つである。
 ### セットアップ
 
 ```console
-$ direnv allow          # flake.nix の devShell で nodejs_24 + corepack が入る
+$ direnv allow          # flake.nix の devShell で nodejs_24 + corepack + oxlint + ast-grep が入る
 $ pnpm install
 ```
 
-Nix を使わない場合は Node.js 24 以上と pnpm 11（`corepack` 推奨）を用意する。
+Nix を使わない場合は Node.js 24 以上と pnpm 11.24 以上（`corepack` 推奨）、
+および oxlint / ast-grep のバイナリを別途用意する。
 
 > **注意**: ツールチェーンは `devenv.nix` から `flake.nix` + `flake.lock` に移行済みである。
 > `flake.lock` はコミットされているので、`nix develop`（`.envrc` は `use flake`）は
@@ -66,14 +67,18 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11（`corepack` 推奨）
 | コマンド | 内容 |
 | --- | --- |
 | `pnpm typecheck` | build / test / preview の全 TypeScript プロジェクトを型検査 |
-| `pnpm lint` | oxlint（唯一の lint/format 設定）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`.oxlintrc.json` は 5 カテゴリすべてと個別 40 ルールが `warn`、`error` は 2 つだけ。このフラグが無かった頃は実質その 2 つしかゲートになっていなかった） |
+| `pnpm lint` | oxlint + `ast-grep scan`。oxlint がこのリポジトリ唯一の lint/format 設定。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす。`ast-grep scan` は oxlint が実装していない構造的なゲート（`no-wall-clock-read`）を担う |
 | `pnpm lint:fix` | oxlint の自動修正 |
 | `pnpm test` | vitest（`@effect/vitest` の `it.effect`） |
 | `pnpm test:watch` | vitest watch |
 | `pnpm test:coverage` | カバレッジ計測（文・分岐・関数・行の閾値は各 100%。[docs/testing.md](./docs/testing.md) 参照） |
-| `pnpm check:deps` | 依存ホワイトリスト + 循環検査 + `Date.now()` 禁止 |
-| `pnpm build` | `tsconfig.release.json` から declaration / source map 付きの `dist/` を生成 |
-| `pnpm verify` | `typecheck && lint && check:deps && test && test:coverage && build` |
+| `pnpm build` | `scripts/clean-dist.mjs` で `dist/` を掃除してから `tsconfig.release.json` から declaration / source map 付きの `dist/` を生成 |
+| `pnpm package:verify` | `pnpm build` してから `scripts/verify-package.mjs` でパッケージ境界を検証 |
+| `pnpm verify` | `typecheck && lint && test`（TEST_STANDARD §1 の 3 段。カバレッジと `package:verify` は CI の別 step） |
+
+依存境界（`@nerima-games/*` の import 制限）は `.oxlintrc.json` の `no-restricted-imports`（`error`）
+が担う。旧 `pnpm check:deps`（`scripts/check-dependency-whitelist.ts`）は
+DEPENDENCY_POLICY.md のホワイトリスト機構が org 全体で廃止されたため削除した。
 
 ### 構成
 

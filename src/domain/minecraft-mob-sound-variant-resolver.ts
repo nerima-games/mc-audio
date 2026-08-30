@@ -72,7 +72,7 @@ const eventIdFromSoundSet = (
 export const resolveMinecraftMobSoundEventId = (
   definition: MinecraftMobSoundVariantDefinition,
   behavior: MinecraftMobSoundBehavior,
-  isBaby = DEFAULT_IS_BABY,
+  isBaby: boolean = DEFAULT_IS_BABY,
 ): string => eventIdFromSoundSet(
   soundSetFor(definition, isBaby),
   SOUND_FIELD_BY_BEHAVIOR[behavior],
@@ -112,7 +112,7 @@ export const resolveMinecraftMobSoundVariant = (
 export const resolveMinecraftWolfSoundEventId = (
   definition: MinecraftWolfSoundDefinition,
   behavior: MinecraftWolfSoundBehavior,
-  isBaby = DEFAULT_IS_BABY,
+  isBaby: boolean = DEFAULT_IS_BABY,
 ): string => eventIdFromSoundSet(
   wolfSoundSetFor(definition, isBaby),
   WOLF_SOUND_FIELD_BY_BEHAVIOR[behavior],

@@ -6,8 +6,12 @@
 
 ```json
 "version": "0.2.6",
-"publishConfig": { "registry": "https://npm.pkg.github.com", "access": "restricted" }
+"publishConfig": { "registry": "https://npm.pkg.github.com", "access": "public" }
 ```
+
+`access` は 2026-08-08 の全 package public 化決定に合わせて `public` にしてある
+（`restricted` のままだと publish 時に下流 CI が 403 になる）。この repo 自体はまだ
+publish していないため、これは将来 publish したときの挙動を先取りしているだけである。
 
 `publishConfig` は書いてあるが、**publish はまだ一度も行っていない**。
 
@@ -41,7 +45,7 @@ Port とデータ型はこのリポジトリで管理する。
 
 - `@nerima-games/mc-kernel` は `package.json` と lockfile で明示的に固定する
 - `minecraft-sound-player.ts` は kernel の `ClockPort` と `Position` を直接使う
-- `scripts/check-dependency-whitelist.ts` が tier 1 の依存境界を検査する
+- `.oxlintrc.json` の `no-restricted-imports`（`error`）が tier 1 の依存境界を検査する
 
 意図された依存グラフは**ドキュメントと検査スクリプト**に記録してある:
 
@@ -89,10 +93,13 @@ mc-audio の場合、具体的には:
 "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } }
 ```
 
-`pnpm build` は `tsconfig.release.json` から `dist/` に JavaScript、宣言、source map を生成する。
-開発時の `tsconfig.base.json` は検査専用で `noEmit: true` のままである。
+`pnpm build` は `scripts/clean-dist.mjs` で `dist/` を掃除してから `tsconfig.release.json` で
+`dist/` に JavaScript、宣言、source map を生成する。開発時の `tsconfig.base.json` は検査専用で
+`noEmit: true` のままである。
 
-公開パッケージの consumer は `dist/` の条件付き export を読む。
+公開パッケージの consumer は `dist/` の条件付き export を読む。`package.json` の `exports` は
+`src/index.ts` が re-export する `src/domain/*` モジュールごとにサブパスを持ち、
+`pnpm package:verify`（`scripts/verify-package.mjs`）がこの一致と実際の import 可能性を検証する。
 
 ### 現在の release build
 

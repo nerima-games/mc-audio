@@ -104,8 +104,11 @@ const startSampleLoad = (soundId: string, source: AudioSampleSource, options: Au
     return existingLoad
   }
 
+  // No catchAll wrapper: `loadForSource` types its error channel as `never`
+  // (a failed decode or stream load already resolves to `false`, not a
+  // Throw), so there is nothing for a catch here to ever handle.
   const load = loadForSource(soundId, source, options)
-  const newLoad = Effect.runPromise(load.pipe(Effect.catchAll(() => Effect.succeed(false)))).finally(() =>
+  const newLoad = Effect.runPromise(load).finally(() =>
     options.pendingLoads.delete(soundId),
   )
   options.pendingLoads.set(soundId, newLoad)

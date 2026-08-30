@@ -147,10 +147,13 @@ export type SoundCueService = {
   readonly play: (cueId: SoundCueId, options?: CuePlayOptions) => Effect.Effect<void>
 }
 
-export class SoundCuePort extends Context.Tag('@nerima-games/mc-audio/SoundCuePort')<
+const SoundCuePortBase: Context.TagClass<
   SoundCuePort,
+  '@nerima-games/mc-audio/SoundCuePort',
   SoundCueService
->() {}
+> = Context.Tag('@nerima-games/mc-audio/SoundCuePort')<SoundCuePort, SoundCueService>()
+
+export class SoundCuePort extends SoundCuePortBase {}
 
 /**
  * Build the cue service.
