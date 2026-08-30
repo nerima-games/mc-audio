@@ -5,16 +5,20 @@
 | コマンド | 内容 |
 | --- | --- |
 | `pnpm typecheck` | `tsconfig.build.json`（出荷ソース）、`tsconfig.test.json`（テスト+ツール）、`tsconfig.preview.json`（プレビュー）の 3 つ |
-| `pnpm lint` | oxlint。このリポジトリ唯一の lint/format 設定（prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす（`.oxlintrc.json` は 5 カテゴリすべてと個別 40 ルールが `warn`、`error` は 2 つだけ。このフラグが無かった頃は実質その 2 つしかゲートになっていなかった） |
-| `pnpm check:deps` | 依存ホワイトリスト + 循環検査 + `Date.now()` 禁止 |
+| `pnpm lint` | oxlint + `ast-grep scan`。oxlint がこのリポジトリ唯一の lint/format 設定（prettier も biome も .editorconfig も置かない）。**`--deny-warnings` 付きで走る**ため、`warn` のルールもビルドを落とす。`ast-grep scan` は oxlint が実装していない構造的なゲート（`no-wall-clock-read`）を担う |
 | `pnpm test` | vitest（`@effect/vitest` の `it.effect` が主 API） |
 | `pnpm preview` | サウンドボードプレビュー。**ゲートではない**（`pnpm verify` は実行しない） |
 | `pnpm test:coverage` | カバレッジ計測。文・分岐・関数・行の閾値は 100% |
-| `pnpm build` | 出荷用 `dist/` と宣言ファイルを生成 |
-| `pnpm verify` | typecheck、lint、依存境界、全テスト、100% カバレッジ、出荷ビルド |
+| `pnpm build` | `scripts/clean-dist.mjs` で `dist/` を掃除してから `tsconfig.release.json` で出荷用 `dist/` と宣言ファイルを生成 |
+| `pnpm package:verify` | `pnpm build` してから `scripts/verify-package.mjs`（`pnpm pack` → アーカイブ内容 → `exports` サブパスと `src/index.ts` の一致 → 公開パッケージからの import 検証） |
+| `pnpm verify` | typecheck、lint、全テスト（TEST_STANDARD §1 の 3 段）。カバレッジと `package:verify` は CI の別 step |
 
 `pnpm` は PATH に無い場合がある。通常は `corepack pnpm <cmd>` で package.json の
-`pnpm@11.17.0` を起動し、corepack が使えない環境では `nix run nixpkgs#pnpm -- <cmd>` を使う。
+`pnpm@11.24.0` を起動し、corepack が使えない環境では `nix run nixpkgs#pnpm -- <cmd>` を使う。
+
+依存境界（`@nerima-games/*` の import 制限）は `.oxlintrc.json` の `no-restricted-imports`（`error`）
+が担う。旧 `pnpm check:deps`（`scripts/check-dependency-whitelist.ts`）は
+DEPENDENCY_POLICY.md のホワイトリスト機構が org 全体で廃止されたため削除した。
 
 ## 2. 現状のテスト
 

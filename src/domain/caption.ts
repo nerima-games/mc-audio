@@ -62,10 +62,13 @@ export type CaptionSink = {
   readonly emit: (event: CaptionEvent) => Effect.Effect<void>
 }
 
-export class CaptionStream extends Context.Tag('@nerima-games/mc-audio/CaptionStream')<
+const CaptionStreamBase: Context.TagClass<
   CaptionStream,
+  '@nerima-games/mc-audio/CaptionStream',
   CaptionSink
->() {}
+> = Context.Tag('@nerima-games/mc-audio/CaptionStream')<CaptionStream, CaptionSink>()
+
+export class CaptionStream extends CaptionStreamBase {}
 
 /**
  * How long a caption stays on screen. `CAPTION_DISPLAY_MS = 2500` in

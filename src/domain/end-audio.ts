@@ -130,16 +130,18 @@ const isEventAllowed = (
     // Unreachable: the cases above already exhaust every EndAudioEventKind
     // Member, so `kind` is narrowed to `never` here. This arm exists only so
     // A future addition to END_AUDIO_EVENT_KINDS fails to compile instead of
-    // Silently being allowed nowhere. v8's coverage-ignore pragma below is
-    // Fixed, lowercase syntax (vitest.dev/guide/coverage#ignoring-code).
+    // Silently being allowed nowhere. The `@preserve` suffix keeps the ignore
+    // Hint through esbuild's TypeScript transpile step (vitest 4 /
+    // @vitest/coverage-v8 4.x strips comments lacking it before coverage
+    // Instrumentation sees them).
     // oxlint-disable-next-line capitalized-comments
-    /* v8 ignore start */
+    /* v8 ignore start -- @preserve */
     default: {
       const exhaustive: never = kind
       return exhaustive
     }
     // oxlint-disable-next-line capitalized-comments
-    /* v8 ignore stop */
+    /* v8 ignore stop -- @preserve */
   }
 }
 

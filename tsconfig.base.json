@@ -7,7 +7,6 @@
     "target": "ES2024",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "resolveJsonModule": true,
     // No DOM, no WebWorker, no Node globals — yes, in an audio repository.
     //
     // Keeping `DOM` out forces WebAudio-specific behavior behind the
@@ -16,15 +15,16 @@
     //
     // `domain/webaudio-adapter.ts` talks to a real `AudioContext` through
     // `domain/webaudio-surface.ts`, which describes only the members it uses;
-    // `test/webaudio-surface.test.ts` compiles a
-    // fixture against the real `lib.dom.d.ts` to prove a real `AudioContext`
-    // satisfies those types with no cast.
+    // `test/webaudio-surface.test.ts` compiles a fixture against the real
+    // `lib.dom.d.ts` to prove a real `AudioContext` satisfies those types with
+    // no cast, and separately asserts THIS file still has no "DOM" in `lib`.
     //
     // DO NOT ADD "DOM" HERE. With it on, every module in `domain/` silently
     // becomes able to reach `window`, `document` and `localStorage`; the suite
     // stays green, `pnpm typecheck` stops being a proof that this toolkit is
-    // platform-free, and nobody notices for months. If something genuinely
-    // cannot be described structurally, say so in
+    // platform-free, and `test/webaudio-surface.test.ts` starts failing its
+    // "the shipped project still compiles with NO DOM at all" assertion. If
+    // something genuinely cannot be described structurally, say so in
     // `domain/webaudio-surface.ts` — it already names the one member that
     // could not (`AudioNode.connect`) and what that costs.
     "lib": ["ES2024"],
@@ -41,6 +41,7 @@
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
+    "strictBuiltinIteratorReturn": true,
     "strictFunctionTypes": true,
     "strictBindCallApply": true,
     "strictPropertyInitialization": true,
@@ -62,6 +63,21 @@
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
+    // Public declarations must be derivable from each source file's explicit
+    // annotations. This prevents an implementation-only inference change from
+    // silently changing the package API.
+    "isolatedDeclarations": true,
+    // A type-only import must say so. The emitted JavaScript then follows from
+    // the import statement alone, with no whole-program analysis deciding which
+    // specifiers survive — which is what a package shipping ESM to consumers
+    // wants.
+    "verbatimModuleSyntax": true,
+    // Nothing that needs a runtime transform to have meaning: no enum, no
+    // namespace, no parameter property. The domain is types and const data
+    // already, so this pins the property rather than requesting a change.
+    "erasableSyntaxOnly": true,
+    // A side-effect import that resolves to nothing is an error, not a no-op.
+    "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "resolvePackageJsonExports": true,
     "resolvePackageJsonImports": true,

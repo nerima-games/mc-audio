@@ -1,4 +1,6 @@
-import officialSounds from './minecraft-26-3-snapshot-9-sounds.json' with { type: 'json' }
+// A `.ts` module rather than a `.json` import with `with { type: 'json' }`:
+// See the identical note in minecraft-26-2-sound-data.ts.
+import officialSounds from './minecraft-26-3-snapshot-9-sounds-raw.js'
 
 export type Minecraft26_3Snapshot9SoundVariantDefinition =
   | string

@@ -1,17 +1,8 @@
 {
+  // The only emitting configuration. Keep the build/test/preview configs
+  // check-only so local type checks never leave generated files in src.
   "extends": "./tsconfig.base.json",
-  "compilerOptions": {
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "noEmit": false,
-    "noEmitOnError": true,
-    "rootDir": "src",
-    "outDir": "dist",
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "coverage", "dist", "test/**", "apps/**", "scripts/**"]
+  "compilerOptions": { "noEmit": false, "rootDir": "src", "outDir": "dist" },
+  "include": ["src/index.ts", "src/domain/**/*.ts"],
+  "exclude": ["node_modules", "coverage", "dist", "test/**", "apps/**", "scripts/**", "**/*.test.ts", "**/*.spec.ts"]
 }
-

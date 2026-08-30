@@ -114,10 +114,13 @@ export type AudioBackend = {
   readonly setMasterGain: (gain: number) => Effect.Effect<void>
 }
 
-export class AudioBackendPort extends Context.Tag('@nerima-games/mc-audio/AudioBackendPort')<
+const AudioBackendPortBase: Context.TagClass<
   AudioBackendPort,
+  '@nerima-games/mc-audio/AudioBackendPort',
   AudioBackend
->() {}
+> = Context.Tag('@nerima-games/mc-audio/AudioBackendPort')<AudioBackendPort, AudioBackend>()
+
+export class AudioBackendPort extends AudioBackendPortBase {}
 
 export type RecordedBackend = {
   readonly backend: AudioBackend

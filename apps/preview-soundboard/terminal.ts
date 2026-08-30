@@ -53,7 +53,7 @@ export const screenSize = (): Screen => ({
   rows: process.stdout.rows ?? FALLBACK_SCREEN.rows,
 })
 
-export const NEWLINE = String.fromCharCode(10)
+export const NEWLINE: string = String.fromCharCode(10)
 
 export const write = (text: string): void => {
   process.stdout.write(text)

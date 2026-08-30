@@ -37,6 +37,25 @@ describe('makeRecordingBackend', () => {
     }),
   )
 
+  it.effect('answers accepted: false for playTone and playMusic when not ready, and tracks no active handle', () =>
+    Effect.gen(function* () {
+      const recorded = yield* makeRecordingBackend('locked')
+
+      const toneHandle = yield* recorded.backend.playTone(CUE)
+      expect(toneHandle.accepted).toBe(false)
+      expect(yield* recorded.backend.isToneActive(toneHandle)).toBe(false)
+
+      const musicHandle = yield* recorded.backend.playMusic({
+        gain: 0.75,
+        playbackRate: 1,
+        soundId: 'minecraft:music/free_game',
+        stream: false,
+      })
+      expect(musicHandle.accepted).toBe(false)
+      expect(yield* recorded.backend.isToneActive(musicHandle)).toBe(false)
+    }),
+  )
+
   it.effect('records music, active handles, and per-track gain changes', () =>
     Effect.gen(function* () {
       const recorded = yield* makeRecordingBackend('ready')

@@ -3,14 +3,6 @@
   // ever leaks into domain code this project fails, which is what keeps the
   // pure audio core usable from browser, worker and server alike.
   "extends": "./tsconfig.base.json",
-  "include": ["src/**/*.ts"],
-  "exclude": [
-    "node_modules",
-    "coverage",
-    "dist",
-    "test/**",
-    "scripts/**",
-    "**/*.test.ts",
-    "**/*.spec.ts"
-  ]
+  "include": ["src/index.ts", "src/domain/**/*.ts"],
+  "exclude": ["node_modules", "coverage", "dist", "test/**", "scripts/**", "**/*.test.ts", "**/*.spec.ts"]
 }

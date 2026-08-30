@@ -141,11 +141,13 @@ const makeMusicCommandApplier = ({
 ) => Effect.Effect<AppliedMusicPlan, MinecraftMusicPlaybackError> => {
   const applyGainCommand = (gain: number): Effect.Effect<void> =>
     Effect.gen(function* applyGainCommandEffect() {
-      const handle = yield* Ref.get(handleRef)
-      if (handle !== null) {
-        const scale = yield* Ref.get(gainScaleRef)
-        yield* backend.setToneGain(handle, clampNonNegative(gain * scale))
-      }
+      // Never null here: a 'gain' command is only planned when
+      // `state.currentSound !== null`, and this player only ever sets that
+      // Non-null in the same step it sets `handleRef` non-null; a refused or
+      // Failed start resets both together (applyMusicCommands, applyMusicPlan).
+      const handle = (yield* Ref.get(handleRef))!
+      const scale = yield* Ref.get(gainScaleRef)
+      yield* backend.setToneGain(handle, clampNonNegative(gain * scale))
     })
 
   const resolveStartCommand = (

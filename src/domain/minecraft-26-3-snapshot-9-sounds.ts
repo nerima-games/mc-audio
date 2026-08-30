@@ -19,7 +19,19 @@ const eventIdsWithPrefix = (prefix: string): readonly Minecraft26_3Snapshot9Soun
 export const MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_IDS: readonly Minecraft26_3Snapshot9SoundEventId[] =
   SOUND_EVENT_KEYS.map(namespacedSoundEventId)
 
-export const MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_GROUPS = {
+export const MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_GROUPS: {
+  readonly ambient: readonly Minecraft26_3Snapshot9SoundEventId[]
+  readonly blocks: readonly Minecraft26_3Snapshot9SoundEventId[]
+  readonly enchant: readonly Minecraft26_3Snapshot9SoundEventId[]
+  readonly entities: readonly Minecraft26_3Snapshot9SoundEventId[]
+  readonly events: readonly Minecraft26_3Snapshot9SoundEventId[]
+  readonly items: readonly Minecraft26_3Snapshot9SoundEventId[]
+  readonly music: readonly Minecraft26_3Snapshot9SoundEventId[]
+  readonly musicDiscs: readonly Minecraft26_3Snapshot9SoundEventId[]
+  readonly particles: readonly Minecraft26_3Snapshot9SoundEventId[]
+  readonly ui: readonly Minecraft26_3Snapshot9SoundEventId[]
+  readonly weather: readonly Minecraft26_3Snapshot9SoundEventId[]
+} = {
   ambient: eventIdsWithPrefix('ambient'),
   blocks: eventIdsWithPrefix('block'),
   enchant: eventIdsWithPrefix('enchant'),

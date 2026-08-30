@@ -222,13 +222,17 @@ const emptyLog = (): FakeAudioLog => ({
 
 class FakeAudioParam implements AudioParamSurface {
   #value = 0
+  private readonly log: FakeAudioLog
+  private readonly node: string
+  private readonly name: ParamCall['param']
+  private readonly clock: () => number
 
-  constructor(
-    private readonly log: FakeAudioLog,
-    private readonly node: string,
-    private readonly name: ParamCall['param'],
-    private readonly clock: () => number,
-  ) {}
+  constructor(log: FakeAudioLog, node: string, name: ParamCall['param'], clock: () => number) {
+    this.log = log
+    this.node = node
+    this.name = name
+    this.clock = clock
+  }
 
   get value(): number {
     return this.#value
@@ -280,11 +284,15 @@ class FakeAudioParam implements AudioParamSurface {
 }
 
 class FakeAudioNode implements AudioNodeSurface {
-  constructor(
-    protected readonly log: FakeAudioLog,
-    readonly id: string,
-    private readonly disconnectThrows: boolean = false,
-  ) {}
+  protected readonly log: FakeAudioLog
+  readonly id: string
+  private readonly disconnectThrows: boolean
+
+  constructor(log: FakeAudioLog, id: string, disconnectThrows: boolean = false) {
+    this.log = log
+    this.id = id
+    this.disconnectThrows = disconnectThrows
+  }
 
   connect(destination: AudioNodeSurface): AudioNodeSurface {
     // The fake accepts any surface-shaped destination, exactly as the bivariant
@@ -335,17 +343,21 @@ class FakeOscillatorNode extends FakeAudioNode implements OscillatorSurface {
   /** `null` until `stop` is called; the virtual clock ends the tone. */
   stopAtSecs: number | null = null
   ended = false
+  private readonly startThrows: boolean
+  private readonly stopThrows: boolean
 
   constructor(
     log: FakeAudioLog,
     id: string,
     clock: () => number,
     disconnectThrows: boolean,
-    private readonly startThrows: boolean,
-    private readonly stopThrows: boolean,
+    startThrows: boolean,
+    stopThrows: boolean,
   ) {
     super(log, id, disconnectThrows)
     this.frequency = new FakeAudioParam(log, id, 'frequency', clock)
+    this.startThrows = startThrows
+    this.stopThrows = stopThrows
   }
 
   start(when?: number): void {
@@ -372,17 +384,21 @@ class FakeBufferSourceNode extends FakeAudioNode implements AudioBufferSourceSur
   onended: ((event: never) => void) | null = null
   stopAtSecs: number | null = null
   ended = false
+  private readonly startThrows: boolean
+  private readonly stopThrows: boolean
 
   constructor(
     log: FakeAudioLog,
     id: string,
     clock: () => number,
     disconnectThrows: boolean,
-    private readonly startThrows: boolean,
-    private readonly stopThrows: boolean,
+    startThrows: boolean,
+    stopThrows: boolean,
   ) {
     super(log, id, disconnectThrows)
     this.playbackRate = new FakeAudioParam(log, id, 'playbackRate', clock)
+    this.startThrows = startThrows
+    this.stopThrows = stopThrows
   }
 
   start(when?: number): void {
@@ -416,9 +432,10 @@ export class FakeAudioContext implements AudioContextSurface {
   readonly oscillators: Array<FakeOscillatorNode> = []
   readonly bufferSources: Array<FakeBufferSourceNode> = []
   readonly decodedData: Array<ArrayBuffer> = []
+  private readonly options: FakeWebAudioOptions
 
   constructor(
-    private readonly options: FakeWebAudioOptions,
+    options: FakeWebAudioOptions,
     /**
      * Run before anything is built. This is where `makeFakeWebAudio` counts the
      * call and, for `constructionThrows`, throws — so a refused construction
@@ -427,6 +444,7 @@ export class FakeAudioContext implements AudioContextSurface {
      */
     onConstruct?: () => void,
   ) {
+    this.options = options
     onConstruct?.()
     this.#state = options.initialState ?? 'suspended'
     this.destination = new FakeAudioNode(this.log, 'destination', options.disconnectThrows === true)

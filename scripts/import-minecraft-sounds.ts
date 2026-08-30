@@ -9,12 +9,19 @@ const TARGETS = {
   '26.2': {
     label: 'Minecraft 26.2',
     versionId: '26.2',
-    outputPath: resolve(import.meta.dirname, '../src/domain/minecraft-26-2-sounds.json'),
+    // A `.ts` module exporting the data as `export default {...}` rather
+    // than a `.json` file imported with `with { type: 'json' }`: TypeScript's
+    // declaration emit drops import attributes from the emitted `.d.ts`
+    // regardless of the emitting project's `module`/`moduleResolution`,
+    // which then fails to typecheck for any downstream consumer resolving
+    // under NodeNext (caught by scripts/verify-package.mjs's
+    // declaration-consumer check, TS1543).
+    outputPath: resolve(import.meta.dirname, '../src/domain/minecraft-26-2-sounds-raw.ts'),
   },
   '26.3-snapshot-9': {
     label: 'Minecraft 26.3 Snapshot 9',
     versionId: '26.3-snapshot-9',
-    outputPath: resolve(import.meta.dirname, '../src/domain/minecraft-26-3-snapshot-9-sounds.json'),
+    outputPath: resolve(import.meta.dirname, '../src/domain/minecraft-26-3-snapshot-9-sounds-raw.ts'),
   },
 } as const
 
@@ -131,7 +138,7 @@ if (sha1 !== asset.sha1) {
 }
 
 const input = validateSoundsDocument(JSON.parse(bytes.toString('utf8')) as unknown, target.label)
-await writeFile(target.outputPath, `${JSON.stringify(input, null, 2)}\n`, 'utf8')
+await writeFile(target.outputPath, `export default ${JSON.stringify(input, null, 2)}\n`, 'utf8')
 process.stdout.write(
   `Imported ${Object.keys(input).length} ${target.label} sound events from ${asset.url} `
   + `(sha1 ${sha1}) to ${target.outputPath}\n`,

@@ -9,7 +9,7 @@ export type FreeMusicTrack = {
   readonly weight: number
 }
 
-export const FREE_MINECRAFT_MUSIC_TRACKS = [
+export const FREE_MINECRAFT_MUSIC_TRACKS: readonly FreeMusicTrack[] = [
   {
     bpm: 96,
     eventId: 'minecraft:music.free_game',
@@ -90,7 +90,7 @@ export const FREE_MINECRAFT_MUSIC_TRACKS = [
     volume: 1,
     weight: 1,
   },
-] as const satisfies readonly FreeMusicTrack[]
+]
 
 type OfficialMusicVariant = {
   readonly name: string
@@ -117,7 +117,7 @@ const event = (name: string): OfficialMusicVariant => ({
  * IDs, variant order, weights, volumes, and stream/type metadata while mapping
  * copyrighted source names to the original free samples above.
  */
-const MINECRAFT_26_2_MUSIC_EVENTS = {
+const MINECRAFT_26_2_MUSIC_EVENTS: Readonly<Record<string, readonly OfficialMusicVariant[]>> = {
   'minecraft:music.creative': [
     event('minecraft:music.game'),
     sound('music/game/creative/aria_math'),
@@ -514,17 +514,17 @@ const MINECRAFT_26_2_MUSIC_EVENTS = {
   'minecraft:music_disc.tears': [sound('records/tears')],
   'minecraft:music_disc.wait': [sound('records/wait')],
   'minecraft:music_disc.ward': [sound('records/ward')],
-} as const satisfies Readonly<Record<string, readonly OfficialMusicVariant[]>>
+}
 
-const FREE_MUSIC_EVENTS = {
+const FREE_MUSIC_EVENTS: Readonly<Record<string, readonly OfficialMusicVariant[]>> = {
   'minecraft:music.free_game': [sound('music/free_game')],
   'minecraft:music.free_sulfur_caves': [sound('music/free_sulfur_caves')],
-} as const satisfies Readonly<Record<string, readonly OfficialMusicVariant[]>>
+}
 
-const ALL_MUSIC_EVENTS = {
+const ALL_MUSIC_EVENTS: Readonly<Record<string, readonly OfficialMusicVariant[]>> = {
   ...MINECRAFT_26_2_MUSIC_EVENTS,
   ...FREE_MUSIC_EVENTS,
-} as const satisfies Readonly<Record<string, readonly OfficialMusicVariant[]>>
+}
 
 const FREE_GAME_SOUND_ID = 'minecraft:music/free_game'
 const FREE_UNDERWATER_SOUND_ID = 'minecraft:music/free_underwater'
@@ -608,7 +608,8 @@ const mapMusicEvents = <Table extends Readonly<Record<string, readonly OfficialM
  * A free fallback with the complete 26.2 music event topology. Only the
  * generated sample names differ from the official sounds.json entries.
  */
-export const FREE_MINECRAFT_MUSIC_EVENT_VARIANTS = mapMusicEvents(ALL_MUSIC_EVENTS)
+export const FREE_MINECRAFT_MUSIC_EVENT_VARIANTS: Readonly<Record<string, readonly FreeMusicEventVariant[]>> =
+  mapMusicEvents(ALL_MUSIC_EVENTS)
 
 export type FreeMusicEventId = keyof typeof FREE_MINECRAFT_MUSIC_EVENT_VARIANTS
 

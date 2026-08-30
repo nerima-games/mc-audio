@@ -19,7 +19,19 @@ const eventIdsWithPrefix = (prefix: string): readonly Minecraft26_2SoundEventId[
 export const MINECRAFT_26_2_SOUND_EVENT_IDS: readonly Minecraft26_2SoundEventId[] =
   SOUND_EVENT_KEYS.map(namespacedSoundEventId)
 
-export const MINECRAFT_26_2_SOUND_EVENT_GROUPS = {
+export const MINECRAFT_26_2_SOUND_EVENT_GROUPS: {
+  readonly ambient: readonly Minecraft26_2SoundEventId[]
+  readonly blocks: readonly Minecraft26_2SoundEventId[]
+  readonly enchant: readonly Minecraft26_2SoundEventId[]
+  readonly entities: readonly Minecraft26_2SoundEventId[]
+  readonly events: readonly Minecraft26_2SoundEventId[]
+  readonly items: readonly Minecraft26_2SoundEventId[]
+  readonly music: readonly Minecraft26_2SoundEventId[]
+  readonly musicDiscs: readonly Minecraft26_2SoundEventId[]
+  readonly particles: readonly Minecraft26_2SoundEventId[]
+  readonly ui: readonly Minecraft26_2SoundEventId[]
+  readonly weather: readonly Minecraft26_2SoundEventId[]
+} = {
   ambient: eventIdsWithPrefix('ambient'),
   blocks: eventIdsWithPrefix('block'),
   enchant: eventIdsWithPrefix('enchant'),
