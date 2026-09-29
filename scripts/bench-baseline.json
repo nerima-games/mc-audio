@@ -1,11 +1,10 @@
 {
-  "guards": {
-    "cue-lookup/mixed-vs-registered-only": 0.2067
-  },
-  "note": "Adapted from mc-meshing R-C5; guards are same-process A/B ratios and workloads are workload/yardstick ratios.",
-  "recordedOn": "macOS; uptime load averages 10.66 8.58 11.17",
+  "guards": {},
+  "note": "Adapted from mc-meshing R-C5; workloads are same-process median measurements normalized by a fixed probe yardstick.",
+  "recordedOn": "macOS; uptime load averages 14.41 16.26 13.68",
   "version": 1,
   "workloads": {
-    "mixer/build-tone-graph": 8.584
+    "cue-lookup/public-api": 6.569,
+    "mixer/public-play-tone": 50020
   }
 }
