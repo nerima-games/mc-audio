@@ -115,7 +115,6 @@ jobs:
         run: nix develop --command pnpm exec playwright install --with-deps chromium
 
       - name: Browser test
-        # Vitest's Playwright provider launches headless Chromium with its
-        # default autoplay policy; tests must cover both gesture and refusal
-        # paths instead of relying on a CI-only policy override.
+        # The browser smoke deliberately runs with autoplay unlocked so the
+        # real AudioContext path can be exercised deterministically in CI.
         run: nix develop --command pnpm test:browser

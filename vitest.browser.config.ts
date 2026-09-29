@@ -8,9 +8,7 @@ const config: ReturnType<typeof defineConfig> = defineConfig({
       headless: true,
       instances: [{ browser: 'chromium' }],
       provider: playwright({
-        launchOptions: {
-          args: ['--autoplay-policy=no-user-gesture-required'],
-        },
+        launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] },
       }),
     },
     include: ['test/browser/**/*.browser.ts'],
