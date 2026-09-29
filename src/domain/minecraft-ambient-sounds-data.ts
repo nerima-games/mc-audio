@@ -7,11 +7,14 @@ const AMBIENT_ADDITION_KEYS = ['sound', 'tick_chance'] as const
 
 const isMissing = (value: unknown): value is undefined => Object.is(value, globalThis.undefined)
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
 const requireRecord = (value: unknown, label: string): Record<string, unknown> => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new TypeError(`${label} must be an object`)
   }
-  return value as Record<string, unknown>
+  return value
 }
 
 const assertKnownKeys = (
@@ -121,7 +124,7 @@ const normalizeLoop = (value: unknown): string | null => {
 }
 
 export const normalizeMinecraftAmbientSoundsDefinition = (
-  definition?: MinecraftAmbientSoundsDefinition | null,
+  definition?: unknown,
 ): NormalizedMinecraftAmbientSoundsDefinition => {
   if (isMissing(definition) || definition === null) {
     return { additions: [], loop: null, mood: null }

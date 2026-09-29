@@ -90,11 +90,14 @@ const minecraftBackgroundMusicKeyFor = function minecraftBackgroundMusicKeyFor(
   return 'default'
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
 const requireRecord = (value: unknown, label: string): Record<string, unknown> => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new TypeError(`${label} must be an object`)
   }
-  return value as Record<string, unknown>
+  return value
 }
 
 const assertKnownKeys = (
@@ -118,7 +121,7 @@ type RawMinecraftMusicDefinition = {
 }
 
 const readMinecraftMusicDefinition = (
-  definition: MinecraftMusicDefinition,
+  definition: unknown,
 ): RawMinecraftMusicDefinition => {
   const rawDefinition = requireRecord(definition, 'Minecraft music definition')
   assertKnownKeys(rawDefinition, MINECRAFT_MUSIC_DEFINITION_KEYS, 'Minecraft music definition')
@@ -183,7 +186,7 @@ export const resolveMinecraftMusicDefinition = (
 ): MinecraftMusicDefinition => MINECRAFT_BACKGROUND_MUSIC[minecraftBackgroundMusicKeyFor(context)]
 
 export const normalizeMinecraftMusicDefinition = (
-  definition: MinecraftMusicDefinition,
+  definition: unknown,
 ): NormalizedMinecraftMusicDefinition => {
   const rawDefinition = readMinecraftMusicDefinition(definition)
   const sound = requireMinecraftMusicSound(rawDefinition.sound)
@@ -202,7 +205,7 @@ export const normalizeMinecraftMusicDefinition = (
 }
 
 export const normalizeMinecraftBiomeMusicDefinition = (
-  definition: MinecraftBiomeMusicDefinition,
+  definition: unknown,
 ): NormalizedMinecraftBiomeMusicDefinition => {
   const rawDefinition = requireRecord(definition, 'Minecraft biome music definition')
   assertKnownKeys(
@@ -211,9 +214,7 @@ export const normalizeMinecraftBiomeMusicDefinition = (
     'Minecraft biome music definition',
   )
   const { data, weight } = rawDefinition
-  const normalized = normalizeMinecraftMusicDefinition(
-    requireRecord(data, 'Minecraft biome music data') as MinecraftMusicDefinition,
-  )
+  const normalized = normalizeMinecraftMusicDefinition(requireRecord(data, 'Minecraft biome music data'))
   if (typeof weight !== 'number' || !Number.isInteger(weight) || weight < ONE_TICK) {
     throw new RangeError('Minecraft biome music weight must be a positive integer')
   }
@@ -221,7 +222,7 @@ export const normalizeMinecraftBiomeMusicDefinition = (
 }
 
 export const normalizeMinecraftBiomeMusic = (
-  music: MinecraftBiomeMusic,
+  music: readonly unknown[],
 ): readonly NormalizedMinecraftBiomeMusicDefinition[] => music.map(normalizeMinecraftBiomeMusicDefinition)
 
 const randomUnitInterval = (random: number): number => {
@@ -256,6 +257,5 @@ export const selectMinecraftBiomeMusicDefinition = (
     }
     target -= definition.weight
   }
-  return withoutBiomeMusicWeight(normalized[normalized.length - ONE_TICK]!)
+  return withoutBiomeMusicWeight(normalized.reduce((_previousDefinition, definition) => definition))
 }
-

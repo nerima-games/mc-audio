@@ -89,7 +89,12 @@ const renderFreeMusicWav = (
     const timeSecs = index / sampleRate
     const noteIndex = Math.floor(timeSecs / beatSecs) % track.notes.length
     const noteTimeSecs = timeSecs % beatSecs
-    const frequency = track.notes[noteIndex]!
+    let frequency = 0
+    for (const [noteIndexInTrack, note] of track.notes.entries()) {
+      if (noteIndexInTrack === noteIndex) {
+        frequency = note
+      }
+    }
     const phase = 2 * Math.PI * frequency * timeSecs
     const attack = Math.min(1, noteTimeSecs * 24)
     const release = Math.min(1, Math.max(0, beatSecs - noteTimeSecs) * 8)
@@ -159,4 +164,3 @@ export const createFreeMinecraftMusicPack = (
   manifest: createFreeMinecraftMusicManifest(options),
   registry: createFreeMinecraftMusicRegistry(),
 })
-

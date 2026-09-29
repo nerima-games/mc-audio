@@ -61,8 +61,7 @@ export const selectMinecraftSoundVariant = (
     remaining -= variant.weight
   }
 
-  const lastIndex = event.sounds.length - INDEX_STEP
-  return event.sounds[lastIndex]!
+  return event.sounds.reduce((_previousVariant, variant) => variant)
 }
 
 const eventOrThrow = (registry: MinecraftSoundRegistry, eventId: string): MinecraftSoundEvent => {
@@ -176,8 +175,7 @@ export const minecraftSoundManifest = (
   }
 
   const manifest: Record<string, AudioSampleSource> = {}
-  for (const soundId of [...soundSources.keys()].sort()) {
-    const metadata = soundSources.get(soundId)!
+  for (const [soundId, metadata] of [...soundSources.entries()].sort(([left], [right]) => left.localeCompare(right))) {
     manifest[soundId] = {
       kind: 'url',
       preload: metadata.preload,
@@ -187,4 +185,3 @@ export const minecraftSoundManifest = (
   }
   return manifest
 }
-

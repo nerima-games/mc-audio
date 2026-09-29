@@ -1,8 +1,6 @@
 id: no-type-assertion
 language: TypeScript
-# Wave 0 installs at warning: 67 pre-existing hits; W3-mc-audio removes the
-# assertions and raises to error.
-severity: warning
+severity: error
 files:
   - "src/**/*.ts"
   - "src/**/*.tsx"

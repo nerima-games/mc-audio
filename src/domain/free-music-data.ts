@@ -4,7 +4,7 @@ export type FreeMusicTrack = {
   readonly eventId: string
   readonly soundId: string
   readonly bpm: number
-  readonly notes: readonly number[]
+  readonly notes: readonly [number, ...number[]]
   readonly volume: number
   readonly weight: number
 }
@@ -595,14 +595,14 @@ const mapMusicEventVariant = (eventId: string, variant: OfficialMusicVariant): F
   weight: variant.weight ?? 1,
 })
 
-const mapMusicEvents = <Table extends Readonly<Record<string, readonly OfficialMusicVariant[]>>>(
-  table: Table,
-): { readonly [Key in keyof Table]: readonly FreeMusicEventVariant[] } => Object.fromEntries(
+const mapMusicEvents = (
+  table: Readonly<Record<string, readonly OfficialMusicVariant[]>>,
+): Readonly<Record<string, readonly FreeMusicEventVariant[]>> => Object.fromEntries(
   Object.entries(table).map(([eventId, variants]) => [
     eventId,
     variants.map((variant) => mapMusicEventVariant(eventId, variant)),
   ]),
-) as unknown as { readonly [Key in keyof Table]: readonly FreeMusicEventVariant[] }
+)
 
 /**
  * A free fallback with the complete 26.2 music event topology. Only the
@@ -612,4 +612,3 @@ export const FREE_MINECRAFT_MUSIC_EVENT_VARIANTS: Readonly<Record<string, readon
   mapMusicEvents(ALL_MUSIC_EVENTS)
 
 export type FreeMusicEventId = keyof typeof FREE_MINECRAFT_MUSIC_EVENT_VARIANTS
-

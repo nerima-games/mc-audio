@@ -26,6 +26,9 @@ const definition = (overrides: Partial<MinecraftMusicDefinition> = {}): Minecraf
   ...overrides,
 })
 
+const normalizeMusicUnknown = (value: unknown) => normalizeMinecraftMusicDefinition(value)
+const normalizeBiomeUnknown = (value: unknown) => normalizeMinecraftBiomeMusicDefinition(value)
+
 const state = (overrides: Partial<MinecraftMusicState> = {}): MinecraftMusicState => ({
   currentGain: 0,
   currentSound: null,
@@ -42,7 +45,7 @@ const plan = (overrides: Partial<MinecraftMusicPlannerInput> = {}) =>
     randomIntInclusive: () => 0,
     state: state(),
     ...overrides,
-  } as MinecraftMusicPlannerInput)
+  })
 
 describe('minecraft music definitions', () => {
   it('resolves the vanilla context priority', () => {
@@ -108,8 +111,8 @@ describe('minecraft music definitions', () => {
     })
 
     for (const invalid of [
-      null as unknown as MinecraftMusicDefinition,
-      [] as unknown as MinecraftMusicDefinition,
+      null,
+      [],
       definition({ sound: '' }),
       definition({ min_delay: -1 }),
       definition({ min_delay: 0.5 }),
@@ -117,10 +120,10 @@ describe('minecraft music definitions', () => {
       definition({ max_delay: 0.5 }),
       definition({ max_delay: -1, min_delay: 0 }),
       definition({ max_delay: 1, min_delay: 2 }),
-      definition({ replace_current_music: 'true' as unknown as boolean }),
-      { ...definition(), unknown: true } as unknown as MinecraftMusicDefinition,
+      { ...definition(), replace_current_music: 'true' },
+      { ...definition(), unknown: true },
     ]) {
-      expect(() => normalizeMinecraftMusicDefinition(invalid)).toThrow()
+      expect(() => normalizeMusicUnknown(invalid)).toThrow()
     }
   })
 
@@ -140,16 +143,16 @@ describe('minecraft music definitions', () => {
     expect(normalizeMinecraftBiomeMusic([])).toStrictEqual([])
 
     for (const invalid of [
-      null as unknown as number,
-      [] as unknown as number,
+      null,
+      [],
       0,
       -1,
       0.5,
       Number.NaN,
       Number.POSITIVE_INFINITY,
-      '1' as unknown as number,
+      '1',
     ]) {
-      expect(() => normalizeMinecraftBiomeMusicDefinition({ data: definition(), weight: invalid })).toThrow()
+      expect(() => normalizeBiomeUnknown({ data: definition(), weight: invalid })).toThrow()
     }
     expect(
       () =>
@@ -157,9 +160,9 @@ describe('minecraft music definitions', () => {
           data: definition(),
           unknown: true,
           weight: 1,
-        } as unknown as MinecraftBiomeMusicDefinition),
+        }),
     ).toThrow()
-    expect(() => normalizeMinecraftBiomeMusicDefinition({ ...definition(), weight: 1 } as never)).toThrow()
+    expect(() => normalizeBiomeUnknown({ ...definition(), weight: 1 })).toThrow()
   })
 
   it('selects weighted biome music without exposing the internal weight', () => {
@@ -185,6 +188,15 @@ describe('minecraft music definitions', () => {
           { data: definition({ sound: 'minecraft:music.creative' }), weight: Number.MAX_VALUE },
         ],
         0.5,
+      )?.sound,
+    ).toBe('minecraft:music.creative')
+    expect(
+      selectMinecraftBiomeMusicDefinition(
+        [
+          { data: definition({ sound: 'minecraft:music.game' }), weight: Number.MAX_VALUE },
+          { data: definition({ sound: 'minecraft:music.creative' }), weight: Number.MAX_VALUE },
+        ],
+        Number.MAX_VALUE,
       )?.sound,
     ).toBe('minecraft:music.creative')
   })

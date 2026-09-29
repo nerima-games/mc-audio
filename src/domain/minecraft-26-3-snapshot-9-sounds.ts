@@ -8,7 +8,10 @@ type Minecraft26_3Snapshot9SoundKey = Extract<keyof typeof MINECRAFT_26_3_SNAPSH
 
 export type Minecraft26_3Snapshot9SoundEventId = `minecraft:${Minecraft26_3Snapshot9SoundKey}`
 
-const SOUND_EVENT_KEYS = Object.keys(MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON) as readonly Minecraft26_3Snapshot9SoundKey[]
+const isSoundEventKey = (key: string): key is Minecraft26_3Snapshot9SoundKey =>
+  Object.hasOwn(MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON, key)
+
+const SOUND_EVENT_KEYS = Object.keys(MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON).filter(isSoundEventKey)
 
 const namespacedSoundEventId = (key: Minecraft26_3Snapshot9SoundKey): Minecraft26_3Snapshot9SoundEventId =>
   `minecraft:${key}`

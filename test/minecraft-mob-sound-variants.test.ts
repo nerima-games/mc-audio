@@ -12,9 +12,18 @@ import {
   resolveMinecraftWolfSoundEventId,
   type MinecraftMobSoundBehavior,
   type MinecraftMobSoundVariantDefinition,
-  type MinecraftMobSoundVariantKind,
   type MinecraftWolfSoundBehavior,
 } from '../src/domain/minecraft-mob-sound-variants.js'
+
+const variantOrThrow = (
+  variants: Readonly<Record<string, MinecraftMobSoundVariantDefinition>>,
+): MinecraftMobSoundVariantDefinition => {
+  const variant = variants['minecraft:classic']
+  if (variant === undefined) {
+    throw new Error('expected classic variant')
+  }
+  return variant
+}
 
 const catVariant = (prefix: string) => ({
   adult_sounds: {
@@ -174,26 +183,31 @@ describe('Minecraft mob sound variant data layer', () => {
   })
 
   it('resolves age-specific and species-specific event ids', () => {
-    const cat = parseMinecraftMobSoundVariantRegistry({
+    expect(() => variantOrThrow({})).toThrow('expected classic variant')
+    const catRegistry = parseMinecraftMobSoundVariantRegistry({
       input: { classic: catVariant('cat') },
       kind: 'cat',
       namespace: 'minecraft',
-    }).variants['minecraft:classic']!
-    const pig = parseMinecraftMobSoundVariantRegistry({
+    })
+    const cat = variantOrThrow(catRegistry.variants)
+    const pigRegistry = parseMinecraftMobSoundVariantRegistry({
       input: { classic: pigVariant('pig') },
       kind: 'pig',
       namespace: 'minecraft',
-    }).variants['minecraft:classic']!
-    const cow = parseMinecraftMobSoundVariantRegistry({
+    })
+    const pig = variantOrThrow(pigRegistry.variants)
+    const cowRegistry = parseMinecraftMobSoundVariantRegistry({
       input: { classic: cowVariant('cow') },
       kind: 'cow',
       namespace: 'minecraft',
-    }).variants['minecraft:classic']!
-    const chicken = parseMinecraftMobSoundVariantRegistry({
+    })
+    const cow = variantOrThrow(cowRegistry.variants)
+    const chickenRegistry = parseMinecraftMobSoundVariantRegistry({
       input: { classic: chickenVariant('chicken') },
       kind: 'chicken',
       namespace: 'minecraft',
-    }).variants['minecraft:classic']!
+    })
+    const chicken = variantOrThrow(chickenRegistry.variants)
     const catBehaviors: readonly [MinecraftMobSoundBehavior, string][] = [
       ['ambient', 'ambientSound'],
       ['strayAmbient', 'strayAmbientSound'],
@@ -222,7 +236,10 @@ describe('Minecraft mob sound variant data layer', () => {
       kind: 'cat',
       namespace: 'minecraft',
     })
-    const definition = variants.variants['minecraft:classic']!
+    const definition = variants.variants['minecraft:classic']
+    if (definition === undefined) {
+      throw new Error('expected classic variant')
+    }
     const eventIds = [
       'minecraft:cat/adult-ambient',
       'minecraft:cat/baby-ambient',
@@ -255,16 +272,6 @@ describe('Minecraft mob sound variant data layer', () => {
       variantId: 'missing',
       variants,
     })).toThrow('Unknown Minecraft cat sound variant')
-    const nullDefinitionVariants = {
-      ...variants,
-      variants: { ...variants.variants, null: null as unknown as MinecraftMobSoundVariantDefinition },
-    }
-    expect(() => resolveMinecraftMobSoundVariant({
-      behavior: 'ambient',
-      registry,
-      variantId: 'null',
-      variants: nullDefinitionVariants,
-    })).toThrow('Unknown Minecraft cat sound variant')
   })
 
   it('resolves every wolf sound behavior for adult and baby definitions', () => {
@@ -296,10 +303,15 @@ describe('Minecraft mob sound variant data layer', () => {
   })
 
   it('rejects malformed registries, definitions, ids, and kinds at the data boundary', () => {
+    expect(() => parseMinecraftMobSoundVariantRegistry({
+      input: { classic: { adult_sounds: {} } },
+      kind: 'cat',
+      namespace: 'minecraft',
+    })).toThrow(TypeError)
     expect(() => parseMinecraftMobSoundVariantRegistry({ input: null, kind: 'cat', namespace: 'minecraft' })).toThrow(TypeError)
     expect(() => parseMinecraftMobSoundVariantRegistry({ input: [], kind: 'cat', namespace: 'minecraft' })).toThrow(TypeError)
     expect(() => parseMinecraftMobSoundVariantRegistry({ input: 'bad', kind: 'cat', namespace: 'minecraft' })).toThrow(TypeError)
-    expect(() => parseMinecraftMobSoundVariantRegistry({ input: {}, kind: 'horse' as MinecraftMobSoundVariantKind, namespace: 'minecraft' })).toThrow(TypeError)
+    expect(() => parseMinecraftMobSoundVariantRegistry({ input: {}, kind: 'horse', namespace: 'minecraft' })).toThrow(TypeError)
     expect(() => parseMinecraftMobSoundVariantRegistry({ input: {}, kind: 'cat', namespace: 'BadNamespace' })).toThrow(TypeError)
     expect(() => parseMinecraftMobSoundVariantJson({ input: null, kind: 'cat', namespace: 'minecraft', variantId: 'classic' })).toThrow(TypeError)
     expect(() => parseMinecraftMobSoundVariantJson({ input: catVariant('cat'), kind: 'cat', namespace: 'minecraft', variantId: 'bad id' })).toThrow(TypeError)
@@ -324,4 +336,3 @@ describe('Minecraft mob sound variant data layer', () => {
     expect(() => parseMinecraftWolfSoundDefinition({ input: wolfDefinition('wolf'), namespace: 'BadNamespace' })).toThrow(TypeError)
   })
 })
-

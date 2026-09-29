@@ -617,7 +617,7 @@ export const makeWebAudioBackend = (
       const runtime = yield* ensureRuntime
       if (Option.isNone(runtime)) {
         yield* Ref.update(unlockRefusalsRef, (count) => count + 1)
-        return 'unavailable' as AudioAvailability
+        return 'unavailable'
       }
 
       const {context} = runtime.value

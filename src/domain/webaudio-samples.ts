@@ -47,13 +47,14 @@ const startStreamLoad = (
   source: AudioSampleSource,
   options: AudioSamplePreloadOptions,
 ): Effect.Effect<boolean> => {
-  if (!options.preloadStream) {
+  const { preloadStream } = options
+  if (!preloadStream) {
     return Effect.succeed(false)
   }
   return Effect.gen(function* startStreamLoadEffect() {
     const preload = yield* Effect.try({
       catch: (cause) => cause,
-      try: () => options.preloadStream!(soundId, source),
+      try: () => preloadStream(soundId, source),
     })
     return yield* preload
   }).pipe(

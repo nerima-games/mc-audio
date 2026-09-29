@@ -6,7 +6,7 @@ plan.md §3.6 の要求を出発点に、現行 package の `src/index.ts` と `
 
 ## 0. plan.md が要求している API
 
-> **主要な公開 API**: `SoundCuePort`（`play(cueId, options)`）、字幕イベントの `CaptionStream`、
+> **主要な公開 API**: `SoundCuePort`（`play(cueId, options)` を持つ service の依存注入タグ）、字幕イベントの `CaptionStream`、
 > 音量カテゴリ（master/sfx/music）、Minecraft `sounds.json` レジストリ、WebAudio アダプタ
 
 ---

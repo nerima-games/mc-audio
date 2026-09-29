@@ -111,59 +111,84 @@ const normalizeSoundSet = ({ fields, input, namespace, path }: NormalizeSoundSet
 
   const sounds: Record<string, string> = {}
   for (const [jsonName, propertyName] of fields) {
-    sounds[propertyName] = normalizeMinecraftSoundId(input[jsonName], namespace, `${path}.${jsonName}`)
+    if (Object.hasOwn(input, jsonName)) {
+      sounds[propertyName] = normalizeMinecraftSoundId(input[jsonName], namespace, `${path}.${jsonName}`)
+    }
   }
   return sounds
 }
 
-const parseCatSoundSet = (input: unknown, namespace: string, path: string): MinecraftCatSoundSet =>
-  normalizeSoundSet({ fields: CAT_SOUND_FIELDS, input, namespace, path }) as MinecraftCatSoundSet
-
-const parsePigSoundSet = (input: unknown, namespace: string, path: string): MinecraftPigSoundSet =>
-  normalizeSoundSet({ fields: PIG_SOUND_FIELDS, input, namespace, path }) as MinecraftPigSoundSet
-
-const parseCowSoundSet = (input: unknown, namespace: string, path: string): MinecraftCowSoundSet =>
-  normalizeSoundSet({ fields: COW_SOUND_FIELDS, input, namespace, path }) as MinecraftCowSoundSet
-
-const parseChickenSoundSet = (input: unknown, namespace: string, path: string): MinecraftChickenSoundSet =>
-  normalizeSoundSet({ fields: CHICKEN_SOUND_FIELDS, input, namespace, path }) as MinecraftChickenSoundSet
-
-const parseWolfSoundSet = (input: unknown, namespace: string, path: string): MinecraftWolfSoundSet =>
-  normalizeSoundSet({ fields: WOLF_SOUND_FIELDS, input, namespace, path }) as MinecraftWolfSoundSet
-
-const parseKind = (kind: MinecraftMobSoundVariantKind): MinecraftMobSoundVariantKind => {
-  if (!(MINECRAFT_MOB_SOUND_VARIANT_KINDS as readonly string[]).includes(kind)) {
-    invalidVariant('kind', 'unsupported mob sound variant registry')
-  }
-  return kind
+const missingSound = (key: string): never => {
+  throw new TypeError(`Missing normalized sound field: ${key}`)
 }
 
-const parseAgeBasedVariant = (
-  options: {
-    readonly input: JsonObject
-    readonly kind: Exclude<MinecraftMobSoundVariantKind, 'cow'>
-    readonly namespace: string
-    readonly path: string
-  },
-): Omit<MinecraftMobSoundVariantDefinition, 'id' | 'kind'> => {
-  const { input, kind, namespace, path } = options
-  assertKnownKeys(input, ['adult_sounds', 'baby_sounds'], path)
-  if (kind === 'cat') {
-    return {
-      adultSounds: parseCatSoundSet(input['adult_sounds'], namespace, `${path}.adult_sounds`),
-      babySounds: parseCatSoundSet(input['baby_sounds'], namespace, `${path}.baby_sounds`),
-    }
+const requiredSound = (sounds: Readonly<Record<string, string>>, key: string): string => {
+  const sound = sounds[key]
+  return sound ?? missingSound(key)
+}
+
+const toCatSoundSet = (sounds: Readonly<Record<string, string>>): MinecraftCatSoundSet => ({
+  ambientSound: requiredSound(sounds, 'ambientSound'),
+  begForFoodSound: requiredSound(sounds, 'begForFoodSound'),
+  deathSound: requiredSound(sounds, 'deathSound'),
+  eatSound: requiredSound(sounds, 'eatSound'),
+  hissSound: requiredSound(sounds, 'hissSound'),
+  hurtSound: requiredSound(sounds, 'hurtSound'),
+  purrSound: requiredSound(sounds, 'purrSound'),
+  purreowSound: requiredSound(sounds, 'purreowSound'),
+  strayAmbientSound: requiredSound(sounds, 'strayAmbientSound'),
+})
+
+const toPigSoundSet = (sounds: Readonly<Record<string, string>>): MinecraftPigSoundSet => ({
+  ambientSound: requiredSound(sounds, 'ambientSound'),
+  deathSound: requiredSound(sounds, 'deathSound'),
+  eatSound: requiredSound(sounds, 'eatSound'),
+  hurtSound: requiredSound(sounds, 'hurtSound'),
+  stepSound: requiredSound(sounds, 'stepSound'),
+})
+
+const toCowSoundSet = (sounds: Readonly<Record<string, string>>): MinecraftCowSoundSet => ({
+  ambientSound: requiredSound(sounds, 'ambientSound'),
+  deathSound: requiredSound(sounds, 'deathSound'),
+  hurtSound: requiredSound(sounds, 'hurtSound'),
+  stepSound: requiredSound(sounds, 'stepSound'),
+})
+
+const toChickenSoundSet = (sounds: Readonly<Record<string, string>>): MinecraftChickenSoundSet =>
+  toCowSoundSet(sounds)
+
+const toWolfSoundSet = (sounds: Readonly<Record<string, string>>): MinecraftWolfSoundSet => ({
+  ambientSound: requiredSound(sounds, 'ambientSound'),
+  deathSound: requiredSound(sounds, 'deathSound'),
+  growlSound: requiredSound(sounds, 'growlSound'),
+  hurtSound: requiredSound(sounds, 'hurtSound'),
+  pantSound: requiredSound(sounds, 'pantSound'),
+  whineSound: requiredSound(sounds, 'whineSound'),
+})
+
+const parseCatSoundSet = (input: unknown, namespace: string, path: string): MinecraftCatSoundSet =>
+  toCatSoundSet(normalizeSoundSet({ fields: CAT_SOUND_FIELDS, input, namespace, path }))
+
+const parsePigSoundSet = (input: unknown, namespace: string, path: string): MinecraftPigSoundSet =>
+  toPigSoundSet(normalizeSoundSet({ fields: PIG_SOUND_FIELDS, input, namespace, path }))
+
+const parseCowSoundSet = (input: unknown, namespace: string, path: string): MinecraftCowSoundSet =>
+  toCowSoundSet(normalizeSoundSet({ fields: COW_SOUND_FIELDS, input, namespace, path }))
+
+const parseChickenSoundSet = (input: unknown, namespace: string, path: string): MinecraftChickenSoundSet =>
+  toChickenSoundSet(normalizeSoundSet({ fields: CHICKEN_SOUND_FIELDS, input, namespace, path }))
+
+const parseWolfSoundSet = (input: unknown, namespace: string, path: string): MinecraftWolfSoundSet =>
+  toWolfSoundSet(normalizeSoundSet({ fields: WOLF_SOUND_FIELDS, input, namespace, path }))
+
+const isMobSoundVariantKind = (kind: unknown): kind is MinecraftMobSoundVariantKind =>
+  MINECRAFT_MOB_SOUND_VARIANT_KINDS.some((candidate) => candidate === kind)
+
+const parseKind = (kind: unknown): MinecraftMobSoundVariantKind => {
+  if (!isMobSoundVariantKind(kind)) {
+    return invalidVariant('kind', 'unsupported mob sound variant registry')
   }
-  if (kind === 'pig') {
-    return {
-      adultSounds: parsePigSoundSet(input['adult_sounds'], namespace, `${path}.adult_sounds`),
-      babySounds: parsePigSoundSet(input['baby_sounds'], namespace, `${path}.baby_sounds`),
-    }
-  }
-  return {
-    adultSounds: parseChickenSoundSet(input['adult_sounds'], namespace, `${path}.adult_sounds`),
-    babySounds: parseChickenSoundSet(input['baby_sounds'], namespace, `${path}.baby_sounds`),
-  }
+  return kind
 }
 
 const parseVariant = (
@@ -180,11 +205,29 @@ const parseVariant = (
   if (kind === 'cow') {
     return { id, kind, sounds: parseCowSoundSet(input, namespace, path) }
   }
+  assertKnownKeys(input, ['adult_sounds', 'baby_sounds'], path)
+  if (kind === 'cat') {
+    return {
+      adultSounds: parseCatSoundSet(input['adult_sounds'], namespace, `${path}.adult_sounds`),
+      babySounds: parseCatSoundSet(input['baby_sounds'], namespace, `${path}.baby_sounds`),
+      id,
+      kind,
+    }
+  }
+  if (kind === 'pig') {
+    return {
+      adultSounds: parsePigSoundSet(input['adult_sounds'], namespace, `${path}.adult_sounds`),
+      babySounds: parsePigSoundSet(input['baby_sounds'], namespace, `${path}.baby_sounds`),
+      id,
+      kind,
+    }
+  }
   return {
+    adultSounds: parseChickenSoundSet(input['adult_sounds'], namespace, `${path}.adult_sounds`),
+    babySounds: parseChickenSoundSet(input['baby_sounds'], namespace, `${path}.baby_sounds`),
     id,
     kind,
-    ...parseAgeBasedVariant({ input, kind, namespace, path }),
-  } as MinecraftMobSoundVariantDefinition
+  }
 }
 
 type ParseRegistryEntriesOptions = {
@@ -240,4 +283,3 @@ export const parseMinecraftWolfSoundDefinition = (
     babySounds: parseWolfSoundSet(input['baby_sounds'], parsedNamespace, '$.baby_sounds'),
   }
 }
-

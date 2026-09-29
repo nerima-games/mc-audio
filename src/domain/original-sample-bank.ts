@@ -48,14 +48,17 @@ const cueSpec = (id: SoundCueId): SampleSpec => {
   }
 }
 
+const isSoundCueId = (id: OriginalSampleSoundId): id is SoundCueId =>
+  SOUND_CUE_IDS.some((cueId) => cueId === id)
+
 const specFor = (id: OriginalSampleSoundId): SampleSpec => {
   if (id === 'endAmbience') {
     return { durationSecs: 1.5, frequency: 46, noise: 0.16, sweep: 1.04 }
   }
-  if ((SOUND_CUE_IDS as ReadonlyArray<string>).includes(id)) {
-    return cueSpec(id as SoundCueId)
+  if (isSoundCueId(id)) {
+    return cueSpec(id)
   }
-  return endSpec(id as EndAudioEventKind)
+  return endSpec(id)
 }
 
 const hash = (text: string, seed: number): number => {

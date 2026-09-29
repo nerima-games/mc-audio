@@ -1,5 +1,5 @@
 /* oxlint-disable max-statements, no-magic-numbers */
-import { AIR_BLOCK_ID, blockIdOf, type BlockId } from '@nerima-games/mc-kernel'
+import { AIR_BLOCK_ID, blockIdOf } from '@nerima-games/mc-kernel'
 import { describe, expect, it } from 'vitest'
 import {
   canPlayMinecraftFireflyBushIdleSounds,
@@ -157,13 +157,17 @@ describe('Minecraft audio component', () => {
         fireflyBushSounds: true,
       }),
     ).toBe(false)
-    expect(() =>
+    expect(
       canPlayMinecraftFireflyBushIdleSounds({
-        belowBlockId: 999 as BlockId,
-        belowOpaqueBlock: false,
+        belowOpaqueBlock: true,
         fireflyBushSounds: true,
       }),
-    ).toThrow(RangeError)
+    ).toBe(false)
+    expect(() => Reflect.apply(canPlayMinecraftFireflyBushIdleSounds, undefined, [{
+      belowBlockId: 999,
+      belowOpaqueBlock: false,
+      fireflyBushSounds: true,
+    }])).toThrow(RangeError)
   })
 
   it('rejects malformed component, background, ambient, firefly, and volume values', () => {
@@ -190,4 +194,3 @@ describe('Minecraft audio component', () => {
     }
   })
 })
-
