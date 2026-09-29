@@ -157,6 +157,12 @@ describe('Minecraft audio component', () => {
         fireflyBushSounds: true,
       }),
     ).toBe(false)
+    expect(
+      canPlayMinecraftFireflyBushIdleSounds({
+        belowOpaqueBlock: true,
+        fireflyBushSounds: true,
+      }),
+    ).toBe(false)
   })
 
   it('rejects malformed component, background, ambient, firefly, and volume values', () => {
