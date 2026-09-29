@@ -163,6 +163,11 @@ describe('Minecraft audio component', () => {
         fireflyBushSounds: true,
       }),
     ).toBe(false)
+    expect(() => Reflect.apply(canPlayMinecraftFireflyBushIdleSounds, undefined, [{
+      belowBlockId: 999,
+      belowOpaqueBlock: false,
+      fireflyBushSounds: true,
+    }])).toThrow(RangeError)
   })
 
   it('rejects malformed component, background, ambient, firefly, and volume values', () => {

@@ -61,7 +61,7 @@ export const selectMinecraftSoundVariant = (
     remaining -= variant.weight
   }
 
-  return event.sounds.reduce((previousVariant, variant) => variant ?? previousVariant)
+  return event.sounds.reduce((_previousVariant, variant) => variant)
 }
 
 const eventOrThrow = (registry: MinecraftSoundRegistry, eventId: string): MinecraftSoundEvent => {

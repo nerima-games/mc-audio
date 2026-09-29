@@ -257,5 +257,5 @@ export const selectMinecraftBiomeMusicDefinition = (
     }
     target -= definition.weight
   }
-  return withoutBiomeMusicWeight(normalized.reduce((previousDefinition, definition) => definition ?? previousDefinition))
+  return withoutBiomeMusicWeight(normalized.reduce((_previousDefinition, definition) => definition))
 }

@@ -284,7 +284,7 @@ const interpolateSegment = (segment: EnvelopeSegment, atSecs: number): number =>
  * that no caller could ever exercise.
  */
 const lastGain = (points: ReadonlyArray<EnvelopePoint>): number =>
-  points.reduce((previousPoint, point) => point ?? previousPoint).gain
+  points.reduce((_previousPoint, point) => point).gain
 
 /**
  * The gain at an instant, by the same interpolation a browser performs.

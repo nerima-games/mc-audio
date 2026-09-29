@@ -190,6 +190,15 @@ describe('minecraft music definitions', () => {
         0.5,
       )?.sound,
     ).toBe('minecraft:music.creative')
+    expect(
+      selectMinecraftBiomeMusicDefinition(
+        [
+          { data: definition({ sound: 'minecraft:music.game' }), weight: Number.MAX_VALUE },
+          { data: definition({ sound: 'minecraft:music.creative' }), weight: Number.MAX_VALUE },
+        ],
+        Number.MAX_VALUE,
+      )?.sound,
+    ).toBe('minecraft:music.creative')
   })
 })
 

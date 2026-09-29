@@ -94,6 +94,12 @@ type MusicCommandApplierOptions = MusicPlayerResources & {
   readonly registry: MinecraftSoundRegistry
 }
 
+type StartMusicCommandWithResolution = StartMusicCommand & {
+  readonly resolved: ReturnType<typeof resolveMinecraftSound>
+}
+
+type ResolvedMusicCommand = Exclude<MinecraftMusicPlan['commands'][number], StartMusicCommand> | StartMusicCommandWithResolution
+
 type StartMusicCommand = Extract<MinecraftMusicPlan['commands'][number], { readonly kind: 'start' }>
 
 type AppliedMusicPlan = {
@@ -145,10 +151,8 @@ const makeMusicCommandApplier = ({
       // `state.currentSound !== null`, and this player only ever sets that
       // Non-null in the same step it sets `handleRef` non-null; a refused or
       // Failed start resets both together (applyMusicCommands, applyMusicPlan).
-      const handle = yield* Ref.get(handleRef)
-      if (handle === null) {
-        return yield* Effect.die(new Error('Music gain command has no active tone handle'))
-      }
+      const currentHandle = yield* Ref.get(handleRef)
+      const handle = yield* Effect.fromNullable(currentHandle).pipe(Effect.orDie)
       const scale = yield* Ref.get(gainScaleRef)
       yield* backend.setToneGain(handle, clampNonNegative(gain * scale))
     })
@@ -159,6 +163,24 @@ const makeMusicCommandApplier = ({
     Effect.try({
       catch: (cause) => playbackError(definition.definition.sound, cause),
       try: () => resolveMinecraftSound(registry, definition.definition.sound, randomSource()),
+    })
+
+  const resolveStartCommands = (
+    plan: MinecraftMusicPlan,
+  ): Effect.Effect<ReadonlyArray<ResolvedMusicCommand>, MinecraftMusicPlaybackError> =>
+    Effect.gen(function* resolveMinecraftStartCommands() {
+      const resolvedCommands: ResolvedMusicCommand[] = []
+      for (const command of plan.commands) {
+        if (command.kind === 'start') {
+          resolvedCommands.push({
+            ...command,
+            resolved: yield* resolveStartCommand(command),
+          })
+        } else {
+          resolvedCommands.push(command)
+        }
+      }
+      return resolvedCommands
     })
 
   const applyStartCommand = (
@@ -188,25 +210,8 @@ const makeMusicCommandApplier = ({
       return true
     })
 
-  const resolveStartCommands = (
-    plan: MinecraftMusicPlan,
-  ): Effect.Effect<Map<StartMusicCommand, ReturnType<typeof resolveMinecraftSound>>, MinecraftMusicPlaybackError> =>
-    Effect.gen(function* resolveMinecraftStartCommands() {
-      const resolvedStarts = new Map<
-        StartMusicCommand,
-        ReturnType<typeof resolveMinecraftSound>
-      >()
-      for (const command of plan.commands) {
-        if (command.kind === 'start') {
-          resolvedStarts.set(command, yield* resolveStartCommand(command))
-        }
-      }
-      return resolvedStarts
-    })
-
   const applyMusicCommand = (
-    command: MinecraftMusicPlan['commands'][number],
-    resolvedStarts: Map<StartMusicCommand, ReturnType<typeof resolveMinecraftSound>>,
+    command: ResolvedMusicCommand,
   ): Effect.Effect<boolean, MinecraftMusicPlaybackError> => {
     if (command.kind === 'stop') {
       return stopActiveHandle({ backend, gainScaleRef, handleRef }).pipe(Effect.as(false))
@@ -214,21 +219,16 @@ const makeMusicCommandApplier = ({
     if (command.kind === 'gain') {
       return applyGainCommand(command.gain).pipe(Effect.as(false))
     }
-    const resolved = resolvedStarts.get(command)
-    if (!resolved) {
-      return Effect.fail(playbackError(command.definition.sound, new Error('Music start command was not resolved')))
-    }
-    return applyStartCommand(command, resolved)
+    return applyStartCommand(command, command.resolved)
   }
 
   const applyMusicCommands = (
-    plan: MinecraftMusicPlan,
-    resolvedStarts: Map<StartMusicCommand, ReturnType<typeof resolveMinecraftSound>>,
+    plan: ReadonlyArray<ResolvedMusicCommand>,
   ): Effect.Effect<boolean, MinecraftMusicPlaybackError> =>
     Effect.gen(function* applyMinecraftMusicCommands() {
       let played = false
-      for (const command of plan.commands) {
-        const commandPlayed = yield* applyMusicCommand(command, resolvedStarts)
+      for (const command of plan) {
+        const commandPlayed = yield* applyMusicCommand(command)
         if (command.kind === 'start') {
           played = commandPlayed
           if (!played) {
@@ -243,8 +243,8 @@ const makeMusicCommandApplier = ({
 
   return (plan) =>
     Effect.gen(function* applyMusicPlan() {
-      const resolvedStarts = yield* resolveStartCommands(plan)
-      const played = yield* applyMusicCommands(plan, resolvedStarts)
+      const resolvedCommands = yield* resolveStartCommands(plan)
+      const played = yield* applyMusicCommands(resolvedCommands)
       if (!played && plan.commands.some((command) => command.kind === 'start')) {
         return { played: false, state: initialMinecraftMusicState() }
       }

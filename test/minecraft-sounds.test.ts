@@ -117,6 +117,31 @@ describe('Minecraft sounds.json data layer', () => {
       ],
     }
     expect(selectMinecraftSoundVariant(zeroWeightEvent, 0).name).toBe('minecraft:zero')
+    expect(selectMinecraftSoundVariant({
+      ...zeroWeightEvent,
+      sounds: [
+        {
+          name: 'minecraft:zero',
+          type: 'sound',
+          volume: 1,
+          pitch: 1,
+          weight: 0,
+          stream: false,
+          attenuationDistance: 16,
+          preload: false,
+        },
+        {
+          name: 'minecraft:zero-second',
+          type: 'sound',
+          volume: 1,
+          pitch: 1,
+          weight: 0,
+          stream: false,
+          attenuationDistance: 16,
+          preload: false,
+        },
+      ],
+    }, 0).name).toBe('minecraft:zero-second')
 
     expect(resolveMinecraftSound(registry, 'minecraft:entity.echo')).toStrictEqual({
       eventId: 'minecraft:entity.echo',
