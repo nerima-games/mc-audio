@@ -16,6 +16,37 @@
 `pnpm` は PATH に無い場合がある。通常は `corepack pnpm <cmd>` で package.json の
 `pnpm@11.24.0` を起動し、corepack が使えない環境では `nix run nixpkgs#pnpm -- <cmd>` を使う。
 
+### R-C5 オーディオベンチ
+
+`pnpm bench` は `scripts/bench-audio.ts` を実行し、同一プロセス内の中央値で次を計測する。
+
+| ホットパス | 場所 | 割り当て |
+| --- | --- | --- |
+| 公開 cue lookup | `src/index.ts:35` (`isSoundCueId` / `cueDefinition`) | probe ID は計測前に生成済み |
+| 公開 mixer graph 構築 | `src/domain/webaudio-adapter.ts:471` (`WebAudioBackend.playTone`) | fake WebAudio node/edge が増加 |
+
+lookup は登録済み 17 件と固定 seed で生成した未登録 256 件を混ぜた 273 件を使い、公開 API の lookup 時間を ms/probe で測る。mixer は fake WebAudio surface 上で公開 `WebAudioBackend.playTone` を呼び、内部 graph 構築までを測る。各 workload は同一プロセス内で warm-up 後に 7 回の中央値を取り、`scripts/bench-baseline.json` の workload tolerance（2.0x）を超えた場合は非ゼロで終了する。
+
+```sh
+uptime
+nix develop --command pnpm bench
+nix develop --command pnpm bench --update-baseline
+```
+
+`--update-baseline` は低負荷時にだけ使い、出力された workload、fake WebAudio node/edge 件数と `uptime` を PR に記録する。JS heap allocation の測定や削減はこの PR の範囲外である。
+
+### 実ブラウザ WebAudio smoke
+
+Node の fake WebAudio テストとは別に、`test/browser/webaudio.browser.ts` が Chromium の実 `AudioContext` で unlock、cue（tone）再生、mixer graph の `OscillatorNode → GainNode → StereoPannerNode → master` 接続、停止と active 状態解除を確認する。Playwright の起動引数には `--autoplay-policy=no-user-gesture-required` を指定する。
+
+依存を導入した Nix 環境では次で再現できる。
+
+```sh
+nix develop --command pnpm install --frozen-lockfile
+nix develop --command pnpm exec playwright install --with-deps chromium
+nix develop --command pnpm test:browser
+```
+
 依存境界（`@nerima-games/*` の import 制限）は `.oxlintrc.json` の `no-restricted-imports`（`error`）
 が担う。旧 `pnpm check:deps`（`scripts/check-dependency-whitelist.ts`）は
 DEPENDENCY_POLICY.md のホワイトリスト機構が org 全体で廃止されたため削除した。

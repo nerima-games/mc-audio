@@ -11,5 +11,5 @@
   // `OscillatorNode` and friends, which this project has no `lib.DOM` for. It is
   // compiled BY a test (`test/webaudio-surface.test.ts`) with DOM turned on, and
   // that compilation is the proof `domain/webaudio-surface.ts` rests on.
-  "exclude": ["node_modules", "coverage", "dist", "test/fixtures/**"]
+  "exclude": ["node_modules", "coverage", "dist", "test/fixtures/**", "test/browser/**"]
 }

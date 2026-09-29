@@ -1,0 +1,10 @@
+{
+  "guards": {},
+  "note": "Adapted from mc-meshing R-C5; workloads are same-process median measurements normalized by a fixed probe yardstick.",
+  "recordedOn": "macOS; uptime load averages 14.41 16.26 13.68",
+  "version": 1,
+  "workloads": {
+    "cue-lookup/public-api": 6.569,
+    "mixer/public-play-tone": 50020
+  }
+}
