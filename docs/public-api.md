@@ -686,3 +686,24 @@ mob の標準 variant は `parseMinecraftMobSoundVariantJson`、
 
 root export の完全な機械的な一覧は `src/index.ts` を正とする。この表は各モジュールの利用目的を示し、
 音声バイナリやブラウザ固有の型を公開契約に混ぜないという境界を補足する。
+
+## 10. 利用者が移行するときの確認事項
+
+次の minor release を既存の consumer に導入するときは、次の順で確認する。
+
+1. `pnpm typecheck` または consumer の型検査を実行する。`Position`、`ClockPort`、
+   `CameraPoseSnapshot` などは consumer が利用している `@nerima-games/mc-kernel` の公開型を
+   そのまま渡し、mc-audio 側の型を重複定義しない。
+2. resource pack や `minecraft:audio/*` component を外部入力から読む場合、先に
+   `parseMinecraftSoundsJson`、`parseMinecraftMobSoundVariantJson`、
+   `parseMinecraftAudioComponent` のいずれかへ `unknown` として渡す。入力不正時は
+   `TypeError` または `RangeError` になるため、読み込み境界でエラーを表示または破棄する。
+   型アサーションだけで不正な JSON を通してはならない。
+3. ブラウザでは `makeWebAudioBackend` の戻り値を保持し、最初のユーザージェスチャーから
+   `backend.unlock` を実行する。`webAudioBackendLayer` だけを提供しても `unlock` は公開されないため、
+   `locked` のまま再生を始めない。
+4. 独自 `AudioBackend` を実装する場合、`playTone` と `playMusic` の戻り値の
+   `accepted` を成功判定に使う。ハンドルの `id` が返ったことだけで再生成功と判定しない。
+
+mc-kernel の依存版数はこのガイドに記載しない。consumer は package manager の解決結果を使い、
+型検査で互換性を確認する。
