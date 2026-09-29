@@ -5,7 +5,7 @@
 ## 1. 責務（plan.md §3.6 原文）
 
 > WebAudio エンジン・効果音キューレジストリ・音楽コンテキスト（BGM 状態機械）・
-> 字幕イベント発行。音声ファイル同梱
+> 字幕イベント発行。音声サンプルの manifest 境界
 
 ### 具体的に持つもの
 
@@ -97,7 +97,7 @@ playEffect: (
 `applySettings` / `setEnvironment` / `updateFromContext` / `stop` /
 `getCurrentEnvironment` / `getState` の 6 メソッドを持つ。
 
-### 3-3. `CaptionEventStream` — **存在しない**
+### 3-3. `CaptionEventStream` — 参照実装には**存在しない**
 
 plan.md は「UI が購読する」ストリームを要求しているが、参照実装にあるのは
 単一メソッドの投げっぱなしシンクである。→ [design-notes.md](./design-notes.md#dn-3)
@@ -138,6 +138,9 @@ schema 側にも `:71-74` に「audioEnabled defaults to false intentionally」�
 
 > 独立アセットリポジトリは作らない。アセットは消費者に同梱（テクスチャ → render、**音声 → audio**）。
 > リソースパック機能を作る時に再検討
+
+音声バイナリをこの repository に同梱する意味ではない。消費者または resource pack が
+`AudioSampleManifest` として音源を渡し、mc-audio は解決・再生の境界を提供する。
 
 音声の解決・再生に必要なデータ形式は mc-audio が所有する。バイナリ音源を無断で固定せず、
 `createOriginalSampleManifest()` が決定的な短い WAV を生成し、`AudioSampleManifest` は URL または

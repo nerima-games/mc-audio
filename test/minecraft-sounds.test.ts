@@ -91,10 +91,13 @@ describe('Minecraft sounds.json data layer', () => {
   it('selects weighted variants deterministically and resolves event references', () => {
     const registry = parse(BASE_SOUNDS)
     const first = registry.events['minecraft:block.break']
-    expect(first).toBeDefined()
-    expect(selectMinecraftSoundVariant(first!, 0).name).toBe('minecraft:block/stone')
-    expect(selectMinecraftSoundVariant(first!, 0.99).name).toBe('custom:rare')
-    expect(selectMinecraftSoundVariant(first!, Number.NaN).name).toBe('minecraft:block/stone')
+    if (first === undefined) {
+      throw new Error('expected block.break sound event')
+    }
+    expect(selectMinecraftSoundVariant(first, 0).name).toBe('minecraft:block/stone')
+    expect(selectMinecraftSoundVariant(first, 0.99).name).toBe('custom:rare')
+    expect(selectMinecraftSoundVariant(first, Number.NaN).name).toBe('minecraft:block/stone')
+    expect(selectMinecraftSoundVariant(first, 1).name).toBe('custom:rare')
 
     const zeroWeightEvent: MinecraftSoundEvent = {
       id: 'minecraft:zero',
@@ -250,4 +253,3 @@ describe('Minecraft sounds.json data layer', () => {
     ).toThrow('duplicate normalized sound event id minecraft:foo')
   })
 })
-

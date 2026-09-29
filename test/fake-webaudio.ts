@@ -207,8 +207,8 @@ export type FakeAudioLog = {
  * `test/fixtures/webaudio-surface.ts` compiled against the real `lib.dom.d.ts`.
  * Nothing here participates in it.
  */
-const dispatch = (handler: ((event: never) => void) | null): void => {
-  handler?.(undefined as never)
+const dispatch = (handler: ((event: unknown) => void) | null): void => {
+  handler?.(undefined)
 }
 
 const emptyLog = (): FakeAudioLog => ({
@@ -338,7 +338,7 @@ class FakeStereoPannerNode extends FakeAudioNode implements StereoPannerSurface 
 class FakeOscillatorNode extends FakeAudioNode implements OscillatorSurface {
   type: OscillatorWave = 'sine'
   readonly frequency: AudioParamSurface
-  onended: ((event: never) => void) | null = null
+  onended: ((event: unknown) => void) | null = null
 
   /** `null` until `stop` is called; the virtual clock ends the tone. */
   stopAtSecs: number | null = null
@@ -381,7 +381,7 @@ class FakeBufferSourceNode extends FakeAudioNode implements AudioBufferSourceSur
   readonly playbackRate: AudioParamSurface
   buffer: AudioBufferSurface | null = null
   loop = false
-  onended: ((event: never) => void) | null = null
+  onended: ((event: unknown) => void) | null = null
   stopAtSecs: number | null = null
   ended = false
   private readonly startThrows: boolean
@@ -425,7 +425,7 @@ export class FakeAudioContext implements AudioContextSurface {
 
   readonly log: FakeAudioLog = emptyLog()
   readonly destination: AudioNodeSurface
-  onstatechange: ((event: never) => void) | null = null
+  onstatechange: ((event: unknown) => void) | null = null
 
   readonly createStereoPanner: () => StereoPannerSurface
 

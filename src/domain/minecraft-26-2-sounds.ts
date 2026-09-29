@@ -8,7 +8,10 @@ type Minecraft26_2SoundKey = Extract<keyof typeof MINECRAFT_26_2_SOUNDS_JSON, st
 
 export type Minecraft26_2SoundEventId = `minecraft:${Minecraft26_2SoundKey}`
 
-const SOUND_EVENT_KEYS = Object.keys(MINECRAFT_26_2_SOUNDS_JSON) as readonly Minecraft26_2SoundKey[]
+const isSoundEventKey = (key: string): key is Minecraft26_2SoundKey =>
+  Object.hasOwn(MINECRAFT_26_2_SOUNDS_JSON, key)
+
+const SOUND_EVENT_KEYS = Object.keys(MINECRAFT_26_2_SOUNDS_JSON).filter(isSoundEventKey)
 
 const namespacedSoundEventId = (key: Minecraft26_2SoundKey): Minecraft26_2SoundEventId =>
   `minecraft:${key}`
@@ -52,4 +55,3 @@ export const missingMinecraft26_2SoundEvents = (
   registry: MinecraftSoundRegistry,
 ): readonly Minecraft26_2SoundEventId[] =>
   MINECRAFT_26_2_SOUND_EVENT_IDS.filter((eventId) => !Object.hasOwn(registry.events, eventId))
-

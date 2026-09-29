@@ -48,14 +48,23 @@ const cueSpec = (id: SoundCueId): SampleSpec => {
   }
 }
 
+const isSoundCueId = (id: OriginalSampleSoundId): id is SoundCueId =>
+  SOUND_CUE_IDS.some((cueId) => cueId === id)
+
+const isEndAudioEventKind = (id: OriginalSampleSoundId): id is EndAudioEventKind =>
+  END_AUDIO_EVENT_KINDS.some((eventKind) => eventKind === id)
+
 const specFor = (id: OriginalSampleSoundId): SampleSpec => {
   if (id === 'endAmbience') {
     return { durationSecs: 1.5, frequency: 46, noise: 0.16, sweep: 1.04 }
   }
-  if ((SOUND_CUE_IDS as ReadonlyArray<string>).includes(id)) {
-    return cueSpec(id as SoundCueId)
+  if (isSoundCueId(id)) {
+    return cueSpec(id)
   }
-  return endSpec(id as EndAudioEventKind)
+  if (isEndAudioEventKind(id)) {
+    return endSpec(id)
+  }
+  throw new RangeError(`Unknown original sample sound id: ${id}`)
 }
 
 const hash = (text: string, seed: number): number => {

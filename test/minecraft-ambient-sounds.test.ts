@@ -11,7 +11,6 @@ import {
   initialMinecraftAmbientSoundsState,
   normalizeMinecraftAmbientSoundsDefinition,
   planMinecraftAmbientSounds,
-  type MinecraftAmbientSoundsDefinition,
   type MinecraftAmbientSoundsPlannerInput,
   type MinecraftAmbientSoundsState,
 } from '../src/domain/minecraft-ambient-sounds.js'
@@ -51,8 +50,8 @@ const CAMERA = {
 const MOOD_POSITION = { x: 6, y: 64, z: 0 }
 const LISTENER_FORWARD = { x: 0, y: 0, z: -1 }
 
-const asDefinition = (value: unknown): MinecraftAmbientSoundsDefinition =>
-  value as MinecraftAmbientSoundsDefinition
+const normalizeUnknown = (value: unknown): unknown => normalizeMinecraftAmbientSoundsDefinition(value)
+const invalidDefinition = (value: unknown): (() => unknown) => () => normalizeUnknown(value)
 
 const state = (overrides: Partial<MinecraftAmbientSoundsState> = {}): MinecraftAmbientSoundsState => ({
   ...initialMinecraftAmbientSoundsState(),
@@ -61,13 +60,14 @@ const state = (overrides: Partial<MinecraftAmbientSoundsState> = {}): MinecraftA
 
 const plan = (overrides: Partial<MinecraftAmbientSoundsPlannerInput> = {}) =>
   planMinecraftAmbientSounds({
+    cameraPosition: LISTENER,
     definition: null,
     moodPosition: null,
     randomSource: () => 0,
     state: state(),
     tick: 0,
     ...overrides,
-  } as MinecraftAmbientSoundsPlannerInput)
+  })
 
 const makeHarness = (
   availability: AudioAvailability = 'ready',
@@ -94,8 +94,7 @@ describe('Minecraft ambient sound definitions', () => {
       mood: null,
     })
     expect(
-      normalizeMinecraftAmbientSoundsDefinition(
-        asDefinition({
+      normalizeUnknown({
           additions: [],
           loop: 'minecraft:ambient.loop',
           mood: {
@@ -104,8 +103,7 @@ describe('Minecraft ambient sound definitions', () => {
             sound: 'minecraft:ambient.mood',
             tick_delay: 80,
           },
-        }),
-      ),
+      }),
     ).toStrictEqual({
       additions: [],
       loop: 'minecraft:ambient.loop',
@@ -117,22 +115,20 @@ describe('Minecraft ambient sound definitions', () => {
       },
     })
     expect(
-      normalizeMinecraftAmbientSoundsDefinition(
-        asDefinition({ additions: null, loop: null, mood: null }),
-      ),
+      normalizeUnknown({ additions: null, loop: null, mood: null }),
     ).toStrictEqual({ additions: [], loop: null, mood: null })
   })
 
   it('rejects malformed loop, mood, addition, and probability fields', () => {
     for (const invalid of [
-      asDefinition([]),
-      asDefinition({ unknown: true }),
-      asDefinition({ loop: 1 }),
-      asDefinition({ loop: '' }),
-      asDefinition({ mood: [] }),
-      asDefinition({ mood: 1 }),
-      asDefinition({ mood: {} }),
-      asDefinition({
+      invalidDefinition([]),
+      invalidDefinition({ unknown: true }),
+      invalidDefinition({ loop: 1 }),
+      invalidDefinition({ loop: '' }),
+      invalidDefinition({ mood: [] }),
+      invalidDefinition({ mood: 1 }),
+      invalidDefinition({ mood: {} }),
+      invalidDefinition({
         mood: {
           block_search_extent: 0,
           offset: 0,
@@ -141,25 +137,25 @@ describe('Minecraft ambient sound definitions', () => {
           unknown: true,
         },
       }),
-      asDefinition({ mood: { block_search_extent: 0, offset: 0, sound: '', tick_delay: 1 } }),
-      asDefinition({ mood: { block_search_extent: 0, offset: 0, sound: 'mood', tick_delay: '1' } }),
-      asDefinition({ mood: { block_search_extent: 0, offset: 0, sound: 'mood', tick_delay: 0 } }),
-      asDefinition({ mood: { block_search_extent: 0, offset: 0, sound: 'mood', tick_delay: 0.5 } }),
-      asDefinition({ mood: { block_search_extent: -1, offset: 0, sound: 'mood', tick_delay: 1 } }),
-      asDefinition({ mood: { block_search_extent: 0.5, offset: 0, sound: 'mood', tick_delay: 1 } }),
-      asDefinition({ mood: { block_search_extent: 0, offset: '0', sound: 'mood', tick_delay: 1 } }),
-      asDefinition({ mood: { block_search_extent: 0, offset: Number.NaN, sound: 'mood', tick_delay: 1 } }),
-      asDefinition({ additions: 1 }),
-      asDefinition({ additions: [1] }),
-      asDefinition({ additions: [{}] }),
-      asDefinition({ additions: [[]] }),
-      asDefinition({ additions: [{ sound: 'addition', tick_chance: 1, unknown: true }] }),
-      asDefinition({ additions: [{ sound: 'addition', tick_chance: '0' }] }),
-      asDefinition({ additions: [{ sound: 'addition', tick_chance: Number.NaN }] }),
-      asDefinition({ additions: [{ sound: 'addition', tick_chance: -0.1 }] }),
-      asDefinition({ additions: [{ sound: 'addition', tick_chance: 1.1 }] }),
+      invalidDefinition({ mood: { block_search_extent: 0, offset: 0, sound: '', tick_delay: 1 } }),
+      invalidDefinition({ mood: { block_search_extent: 0, offset: 0, sound: 'mood', tick_delay: '1' } }),
+      invalidDefinition({ mood: { block_search_extent: 0, offset: 0, sound: 'mood', tick_delay: 0 } }),
+      invalidDefinition({ mood: { block_search_extent: 0, offset: 0, sound: 'mood', tick_delay: 0.5 } }),
+      invalidDefinition({ mood: { block_search_extent: -1, offset: 0, sound: 'mood', tick_delay: 1 } }),
+      invalidDefinition({ mood: { block_search_extent: 0.5, offset: 0, sound: 'mood', tick_delay: 1 } }),
+      invalidDefinition({ mood: { block_search_extent: 0, offset: '0', sound: 'mood', tick_delay: 1 } }),
+      invalidDefinition({ mood: { block_search_extent: 0, offset: Number.NaN, sound: 'mood', tick_delay: 1 } }),
+      invalidDefinition({ additions: 1 }),
+      invalidDefinition({ additions: [1] }),
+      invalidDefinition({ additions: [{}] }),
+      invalidDefinition({ additions: [[]] }),
+      invalidDefinition({ additions: [{ sound: 'addition', tick_chance: 1, unknown: true }] }),
+      invalidDefinition({ additions: [{ sound: 'addition', tick_chance: '0' }] }),
+      invalidDefinition({ additions: [{ sound: 'addition', tick_chance: Number.NaN }] }),
+      invalidDefinition({ additions: [{ sound: 'addition', tick_chance: -0.1 }] }),
+      invalidDefinition({ additions: [{ sound: 'addition', tick_chance: 1.1 }] }),
     ]) {
-      expect(() => normalizeMinecraftAmbientSoundsDefinition(invalid)).toThrow()
+      expect(invalid).toThrow()
     }
   })
 })

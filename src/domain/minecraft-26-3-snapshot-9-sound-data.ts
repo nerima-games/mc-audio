@@ -25,4 +25,4 @@ type Minecraft26_3Snapshot9SoundData = {
   readonly [Key in keyof typeof officialSounds]: Minecraft26_3Snapshot9SoundDefinition
 }
 
-export const MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON = officialSounds as unknown as Minecraft26_3Snapshot9SoundData
+export const MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON: Minecraft26_3Snapshot9SoundData = officialSounds satisfies Minecraft26_3Snapshot9SoundData

@@ -95,13 +95,13 @@ export type MinecraftMobSoundVariantRegistryOptions = {
 
 export type MinecraftMobSoundVariantJsonOptions = MinecraftMobSoundVariantRegistryOptions & {
   readonly input: unknown
-  readonly kind: MinecraftMobSoundVariantKind
+  readonly kind: unknown
   readonly variantId: string
 }
 
 export type MinecraftMobSoundVariantRegistryParseOptions = MinecraftMobSoundVariantRegistryOptions & {
   readonly input: unknown
-  readonly kind: MinecraftMobSoundVariantKind
+  readonly kind: unknown
 }
 
 export type MinecraftWolfSoundParserOptions = MinecraftMobSoundVariantRegistryOptions & {
@@ -117,4 +117,3 @@ export type MinecraftWolfSoundDefinition = {
   readonly adultSounds: MinecraftWolfSoundSet
   readonly babySounds: MinecraftWolfSoundSet
 }
-

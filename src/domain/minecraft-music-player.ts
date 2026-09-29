@@ -145,7 +145,10 @@ const makeMusicCommandApplier = ({
       // `state.currentSound !== null`, and this player only ever sets that
       // Non-null in the same step it sets `handleRef` non-null; a refused or
       // Failed start resets both together (applyMusicCommands, applyMusicPlan).
-      const handle = (yield* Ref.get(handleRef))!
+      const handle = yield* Ref.get(handleRef)
+      if (handle === null) {
+        return yield* Effect.die(new Error('Music gain command has no active tone handle'))
+      }
       const scale = yield* Ref.get(gainScaleRef)
       yield* backend.setToneGain(handle, clampNonNegative(gain * scale))
     })
@@ -211,7 +214,11 @@ const makeMusicCommandApplier = ({
     if (command.kind === 'gain') {
       return applyGainCommand(command.gain).pipe(Effect.as(false))
     }
-    return applyStartCommand(command, resolvedStarts.get(command)!)
+    const resolved = resolvedStarts.get(command)
+    if (!resolved) {
+      return Effect.fail(playbackError(command.definition.sound, new Error('Music start command was not resolved')))
+    }
+    return applyStartCommand(command, resolved)
   }
 
   const applyMusicCommands = (

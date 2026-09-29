@@ -1,21 +1,21 @@
 # バージョニングと公開
 
-## 1. 現在: `0.2.6`、未公開
+## 1. 現在の版と公開状態
 
-`package.json`:
+版数は `package.json` の `version` を正とする。公開済み版と公開状態は、同ファイルの
+`publishConfig.registry` が示す registry を照会して確認する。
 
-```json
-"version": "0.2.6",
-"publishConfig": { "registry": "https://npm.pkg.github.com", "access": "public" }
+確認コマンド:
+
+```sh
+npm view @nerima-games/mc-audio version --registry=https://npm.pkg.github.com
 ```
 
 `access` は 2026-08-08 の全 package public 化決定に合わせて `public` にしてある
 （`restricted` のままだと publish 時に下流 CI が 403 になる）。この repo 自体はまだ
-publish していないため、これは将来 publish したときの挙動を先取りしているだけである。
+公開状態を本文に固定記載せず、registry の応答を参照する。
 
-`publishConfig` は書いてあるが、**publish はまだ一度も行っていない**。
-
-## 2. なぜまだ公開しないのか
+## 2. 公開・昇格の方針
 
 plan.md §6 Step 0 / §8 は元々「界面安定（4 週間 API ロック無変更）まで npm 公開・バージョン
 bump 運用を開始しない」という日数計測ベースのゲートを想定していたが、この自動凍結ゲートと
@@ -27,8 +27,8 @@ bump 運用を開始しない」という日数計測ベースのゲートを想
 > **maintainer(take)による裁量判断のみ**で行う
 > （[RELEASE_STANDARD.md §4.2](https://github.com/nerima-games/.github/blob/main/RELEASE_STANDARD.md#42-新しい昇格ポリシー人間による裁量判断)）。
 
-リスク「新規構築初期は全界面が高 churn」への対策（npm 公開を遅らせ dev-meta workspace で開発し、
-bump 連鎖を構造的に回避する)という判断自体は変わらない。
+リスク「新規構築初期は全界面が高 churn」への対策として、dev-meta workspace で開発し、
+bump 連鎖を構造的に回避する。
 
 16 リポジトリが互いに依存している状態で早期に publish を始めると、
 kernel の些細な変更が 15 リポジトリの version bump を誘発する。
@@ -83,7 +83,7 @@ mc-audio の場合、具体的には:
 
 ## 5. ビルドと publish のパイプライン
 
-### 現状: release build は実装済み、publish は未実行
+### 現状: release build と publish 設定は実装済み
 
 `package.json`:
 
@@ -107,7 +107,7 @@ mc-audio の場合、具体的には:
 2. `exports`、`main`、`types` は `dist/` を指す
 3. `files` は `dist`、docs、型設定、LICENSE、README に限定する
 4. `pnpm verify` が `pnpm build` まで実行する
-5. npm publish と認証設定は、この作業では実行していない
+5. npm publish はこの作業では実行しない。認証設定は利用者の環境で行う
 
 ### `.npmrc` の現状
 

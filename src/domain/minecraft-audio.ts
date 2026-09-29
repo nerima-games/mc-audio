@@ -9,7 +9,6 @@ import {
   type MinecraftBackgroundMusicEntry,
   type MinecraftBackgroundMusicInput,
   type MinecraftBackgroundMusicKey,
-  type MinecraftMusicDefinition,
   normalizeMinecraftMusicDefinition,
 } from './minecraft-music.js'
 
@@ -87,7 +86,7 @@ const normalizeBackgroundMusicEntry = (
   if (Object.keys(value).length === ZERO) {
     return null
   }
-  return normalizeMinecraftMusicDefinition(value as MinecraftMusicDefinition)
+  return normalizeMinecraftMusicDefinition(value)
 }
 
 const normalizeBackgroundMusic = (value: unknown): MinecraftBackgroundMusic | null => {
@@ -136,7 +135,7 @@ const normalizeAmbientSounds = (
   if (!isRecord(value) || Array.isArray(value)) {
     throw new TypeError('Minecraft ambient_sounds must be an object')
   }
-  return normalizeMinecraftAmbientSoundsDefinition(value as MinecraftAmbientSoundsDefinition)
+  return normalizeMinecraftAmbientSoundsDefinition(value)
 }
 
 const normalizeRecord = (value: Record<string, unknown>): NormalizedMinecraftAudioComponent => {
@@ -175,4 +174,3 @@ export const canPlayMinecraftFireflyBushIdleSounds = ({
   belowOpaqueBlock,
 }: MinecraftFireflyBushSoundContext): boolean =>
   fireflyBushSounds === true && !isOpaqueBlockBelow(belowBlockId, belowOpaqueBlock)
-

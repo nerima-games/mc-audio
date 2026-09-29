@@ -9,7 +9,6 @@ import {
 import {
   initialMinecraftAmbientSoundsState,
   planMinecraftAmbientSounds,
-  type MinecraftAmbientSoundsDefinition,
   type MinecraftAmbientSoundsPlan,
   type MinecraftAmbientSoundsPlannerInput,
   type MinecraftAmbientSoundsState,
@@ -54,8 +53,7 @@ export const CAMERA: CameraPoseSnapshot = {
 export const MOOD_POSITION = { x: 6, y: 64, z: 0 }
 export const LISTENER_FORWARD = { x: 0, y: 0, z: -1 }
 
-export const asDefinition = (value: unknown): MinecraftAmbientSoundsDefinition =>
-  value as MinecraftAmbientSoundsDefinition
+export const asDefinition = (value: unknown): unknown => value
 
 export const state = (overrides: Partial<MinecraftAmbientSoundsState> = {}): MinecraftAmbientSoundsState => ({
   ...initialMinecraftAmbientSoundsState(),
@@ -68,11 +66,12 @@ export const plan = (
   planMinecraftAmbientSounds({
     cameraPosition: LISTENER,
     definition: null,
+    moodPosition: null,
     randomSource: () => 0,
     state: state(),
     tick: 0,
     ...overrides,
-  } as MinecraftAmbientSoundsPlannerInput)
+  })
 
 export const makeHarness = (
   availability: AudioAvailability = 'ready',
