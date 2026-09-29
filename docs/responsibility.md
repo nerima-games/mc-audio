@@ -123,8 +123,11 @@ schema 側にも `:71-74` に「audioEnabled defaults to false intentionally」�
 
 | リポジトリ | 何のために |
 | --- | --- |
-| `mc-kernel` | 共有語彙の `ClockPort` と `Position`。音声固有の `SoundCuePort` / `CaptionStream` はこの repository が所有する。**唯一の直接依存** |
+| `mc-kernel` | 共有語彙と時計。`Position`、`CameraPoseSnapshot`、`MonotonicTimeSecs`、`ClockPort`、および Minecraft ブロック判定の型・関数を利用する。音声固有の `SoundCuePort` / `CaptionStream` はこの repository が所有する。**唯一の直接依存** |
 
+実装上の利用箇所は `src/domain/engine.ts`、`caption.ts`、`minecraft-sound-player.ts`、
+`minecraft-ambient-sounds-player.ts`、`minecraft-audio.ts`、`volume.ts` などである。
+依存の版数はこの文書に固定記載せず、`package.json` の dependency 宣言と lockfile を正とする。
 直接依存のホワイトリストは `@nerima-games/mc-kernel` を許可している。
 
 ### 子（mc-audio に依存するリポジトリ）

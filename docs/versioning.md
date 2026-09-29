@@ -40,11 +40,13 @@ kernel の些細な変更が 15 リポジトリの version bump を誘発する�
 ### 現在の依存境界
 
 実装は `effect` と `@nerima-games/mc-kernel` に依存する。mc-kernel からは
-`Position` と `ClockPort` という共有語彙だけを直接利用し、オーディオ固有の
-Port とデータ型はこのリポジトリで管理する。
+`Position`、`CameraPoseSnapshot`、`MonotonicTimeSecs`、`ClockPort`、および
+Minecraft ブロック判定の型・関数を直接利用し、オーディオ固有の Port とデータ型は
+このリポジトリで管理する。
 
-- `@nerima-games/mc-kernel` は `package.json` と lockfile で明示的に固定する
-- `minecraft-sound-player.ts` は kernel の `ClockPort` と `Position` を直接使う
+- `@nerima-games/mc-kernel` の依存指定と解決結果は `package.json` と lockfile を正とする。
+  この文書や移行ガイドに kernel の版数を複製して記載しない
+- `minecraft-sound-player.ts` は kernel の `ClockPort`、`CameraPoseSnapshot`、`Position` を直接使う
 - `.oxlintrc.json` の `no-restricted-imports`（`error`）が tier 1 の依存境界を検査する
 
 意図された依存グラフは**ドキュメントと検査スクリプト**に記録してある:
@@ -62,6 +64,23 @@ Port とデータ型はこのリポジトリで管理する。
 | semver | `0.x` なので minor bump で破壊的変更が入りうる |
 | 破壊的変更の扱い | CHANGELOG に必ず書く。黙って変えない |
 | 消費者 | まだ居ない。居ないうちに界面を固める |
+
+### 利用者向け移行手順
+
+次の minor release を導入する利用者は、依存版数を文書から転記せず、package manager で解決した
+`mc-audio` と `mc-kernel` の組み合わせに対して次を確認する。
+
+1. `pnpm typecheck` 相当の consumer の型検査を実行し、`Position` や `ClockPort` を独自の互換型へ
+   置き換えず、kernel の公開型を渡す。
+2. 外部から読む `sounds.json` と `minecraft:audio/*` は parser の引数へ `unknown` のまま渡す。
+   `TypeError` / `RangeError` を読み込み境界で処理し、型アサーションで検証を省略しない。
+3. 独自 backend は `playTone` / `playMusic` の `TonePlayback.accepted` を確認する。`ToneHandle.id`
+   の存在は再生成功を意味しない。
+4. ブラウザでは `makeWebAudioBackend` の backend を保持し、ユーザージェスチャーから `unlock` を
+   実行する。`webAudioBackendLayer` 単独では unlock できない。
+
+この手順で型エラーや parser の検証エラーが出た場合は、該当する consumer の入力または依存解決を
+修正してから公開版を更新する。
 
 ## 4. `1.0.0` にする条件
 
