@@ -52,8 +52,8 @@ Port とデータ型はこのリポジトリで管理する。
 - [DEPENDENCY_POLICY.md §1](https://github.com/nerima-games/.github/blob/main/DEPENDENCY_POLICY.md#1-4層の依存グラフエッジレベル)(16リポジトリ全部のエッジ一覧。実効機構は `.oxlintrc.json` の `no-restricted-imports`)
 - [architecture.md](./architecture.md) の Mermaid 図
 
-publish 開始時も、ボトムアップ（kernel → 各 tier1 → worldgen → …）で
-**publish してから pin する**。現在の npm publish はまだ実行していない。
+公開済み版は、ボトムアップ（kernel → 各 tier1 → worldgen → …）で
+**publish してから pin する**。現在の registry には `0.2.8` が公開されている。
 
 ## 3. `0.x` の間の約束
 
@@ -98,14 +98,14 @@ mc-audio の場合、具体的には:
 `noEmit: true` のままである。
 
 公開パッケージの consumer は `dist/` の条件付き export を読む。`package.json` の `exports` は
-`src/index.ts` が re-export する `src/domain/*` モジュールごとにサブパスを持ち、
-`pnpm package:verify`（`scripts/verify-package.mjs`）がこの一致と実際の import 可能性を検証する。
+root (`.`) のみを公開し、型は `dist/index.d.ts`、実装は `dist/index.js` を指す。
+`pnpm package:verify`（`scripts/verify-package.mjs`）がこの metadata と実際の import 可能性を検証する。
 
 ### 現在の release build
 
 1. `tsconfig.release.json` が `dist/` に JavaScript、宣言、source map を emit する
 2. `exports`、`main`、`types` は `dist/` を指す
-3. `files` は `dist`、docs、型設定、LICENSE、README に限定する
+3. `files` は `dist`、LICENSE、README に限定する
 4. `pnpm verify` が `pnpm build` まで実行する
 5. npm publish はこの作業では実行しない。認証設定は利用者の環境で行う
 
