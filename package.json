@@ -49,6 +49,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.build.json --pretty false && tsc -p tsconfig.test.json --pretty false && tsc -p tsconfig.preview.json --pretty false",
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.release.json --pretty false",
+    "bench": "tsx scripts/bench-audio.ts",
     "lint": "oxlint --deny-warnings src test apps scripts && ast-grep scan",
     "lint:fix": "oxlint --fix src test apps scripts",
     "import:minecraft-sounds": "tsx scripts/import-minecraft-sounds.ts",
@@ -56,7 +57,9 @@
     "preview": "tsx apps/preview-soundboard/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:browser": "pnpm typecheck:browser && vitest --config vitest.browser.config.ts run",
     "test:coverage": "vitest run --coverage",
+    "typecheck:browser": "tsc -p tsconfig.browser.json --pretty false",
     "verify": "pnpm typecheck && pnpm lint && pnpm test",
     "package:verify": "pnpm build && node scripts/verify-package.mjs",
     "prepublishOnly": "pnpm verify && pnpm package:verify"
@@ -70,8 +73,10 @@
     "@changesets/cli": "3.0.1",
     "@effect/vitest": "0.30.0",
     "@types/node": "26.4.0",
+    "@vitest/browser-playwright": "4.1.11",
     "@vitest/coverage-v8": "4.1.11",
     "knip": "6.33.0",
+    "playwright": "1.62.1",
     "tsx": "4.23.12",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
