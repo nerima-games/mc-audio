@@ -1,3 +1,4 @@
+/* oxlint-disable no-await-in-loop -- sequential iterations preserve benchmark workload and timing. */
 /**
  * Benchmark measurement and baseline comparison.
  *
@@ -30,6 +31,21 @@ export const measure = (run: () => void, options: MeasureOptions): number => {
     const started = now()
     for (let index = 0; index < options.iterations; index += 1) {
       run()
+    }
+    samples.push((now() - started) / options.iterations)
+  }
+  return median(samples)
+}
+
+export const measureAsync = async (run: () => Promise<void>, options: MeasureOptions): Promise<number> => {
+  for (let index = 0; index < options.warmupIterations; index += 1) {
+    await run()
+  }
+  const samples: Array<number> = []
+  for (let sample = 0; sample < options.runs; sample += 1) {
+    const started = now()
+    for (let index = 0; index < options.iterations; index += 1) {
+      await run()
     }
     samples.push((now() - started) / options.iterations)
   }
