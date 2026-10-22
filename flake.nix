@@ -38,8 +38,9 @@
           # The pinned nixpkgs has no corepack_26, so the Linux devShell omits
           # Node/Corepack and its activation hook to preserve the CI versions.
           # Local Darwin development keeps Node/Corepack 24, which satisfies
-          # the >=24 engine floor. Corepack reads pnpm's version from
-          # packageManager in package.json.
+          # the >=24 engine floor. Corepack reads pnpm's version from the
+          # `packageManager` field in package.json — one source of truth instead
+          # of two that can drift.
           #
           # oxlint is intentionally supplied by Nix rather than package.json.
           # This keeps the executable version in the reproducible development
