@@ -34,10 +34,12 @@
           pkgs = pkgsFor system;
         in
         {
-          # Node 24 matches the `engines` field and the CI runner. pnpm comes
-          # from corepack rather than nixpkgs so that the version is decided by
-          # the `packageManager` field in package.json — one source of truth
-          # instead of two that can drift.
+          # CI supplies Node 26 with setup-node and pnpm with pnpm/action-setup.
+          # The pinned nixpkgs has no corepack_26, so the Linux devShell omits
+          # Node/Corepack and its activation hook to preserve the CI versions.
+          # Local Darwin development keeps Node/Corepack 24, which satisfies
+          # the >=24 engine floor. Corepack reads pnpm's version from
+          # packageManager in package.json.
           #
           # oxlint is intentionally supplied by Nix rather than package.json.
           # This keeps the executable version in the reproducible development
@@ -51,19 +53,26 @@
           # documented in prose beside the code it governs, and a textual check
           # would fail its own documentation.
           default = pkgs.mkShell {
-            packages = [
-              pkgs.nodejs_24
-              pkgs.corepack_24
-              pkgs.typescript-language-server
-              pkgs.oxlint
-              pkgs.ast-grep
-            ];
+            packages =
+              (if system == "aarch64-darwin" then [
+                pkgs.nodejs_24
+                pkgs.corepack_24
+              ] else [ ])
+              ++ [
+                pkgs.typescript-language-server
+                pkgs.oxlint
+                pkgs.ast-grep
+              ];
 
-            shellHook = ''
-              corepackDir="$(mktemp -d "''${TMPDIR:-/tmp}/mc-audio-corepack.XXXXXX")"
-              corepack enable --install-directory "$corepackDir"
-              export PATH="$corepackDir:$PATH"
-            '';
+            shellHook =
+              if system == "aarch64-darwin" then
+                ''
+                  corepackDir="$(mktemp -d "''${TMPDIR:-/tmp}/mc-audio-corepack.XXXXXX")"
+                  corepack enable --install-directory "$corepackDir"
+                  export PATH="$corepackDir:$PATH"
+                ''
+              else
+                "";
           };
         }
       );
