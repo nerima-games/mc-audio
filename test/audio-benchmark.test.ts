@@ -30,7 +30,9 @@ describe('audio benchmark entrypoint', () => {
     ]
     const { benchmark: pendingBenchmark, fake } = benchmarkFor(cues)
     const benchmark = await pendingBenchmark
-    const run = () => new Promise<void>((resolve, reject) => benchmark.run(resolve, reject))
+    const run = () => new Promise<void>((resolve, reject) => {
+      benchmark.run(resolve, reject)
+    })
 
     expect(benchmark.allocations()).toBe(17)
     expect(benchmark.connections()).toBe(23)
