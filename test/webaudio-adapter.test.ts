@@ -1611,6 +1611,22 @@ describe('resource limits and lifecycle', () => {
 // ---------------------------------------------------------------------------
 
 describe('stopping a tone', () => {
+  it.effect('uses zero when the host audio clock is not numeric', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake()
+      const audio = yield* backend
+      yield* audio.unlock
+      const context = fake.context()
+      if (context === null) {
+        throw new Error('fake audio context was not created')
+      }
+      Object.defineProperty(context, 'currentTime', { value: 'invalid' })
+
+      yield* audio.playTone(CUE)
+      expect(context.log.started).toStrictEqual([{ atSecs: 0, node: 'osc#2' }])
+    }),
+  )
+
   it.effect('uses zero when the host audio clock is invalid', () =>
     Effect.gen(function* () {
       const { fake, backend } = withFake()

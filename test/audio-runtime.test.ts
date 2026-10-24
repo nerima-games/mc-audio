@@ -177,6 +177,14 @@ describe('audio runtime', () => {
       ])
       expect(captionRenderSignature([])).toBe('[]')
       expect(captionRenderSignature(captions.slice(1, 2))).toBe('[["inventoryOpen","Current","audible",2]]')
+
+      const stringify = JSON.stringify
+      Object.defineProperty(JSON, 'stringify', { configurable: true, value: () => undefined })
+      try {
+        expect(captionRenderSignature([])).toBe('[]')
+      } finally {
+        Object.defineProperty(JSON, 'stringify', { configurable: true, writable: true, value: stringify })
+      }
     }),
   )
 })

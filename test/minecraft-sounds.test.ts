@@ -16,6 +16,7 @@ import {
   mergeMinecraftSoundRegistries,
   minecraftSoundAssetUrl,
   minecraftSoundManifest,
+  normalizeMinecraftSoundId,
   parseMinecraftSoundsJson,
   resolveMinecraftSound,
   selectMinecraftSoundVariant,
@@ -106,6 +107,15 @@ describe('Minecraft sounds.json data layer', () => {
       volume: 2,
       pitch: 2.4,
     })
+  })
+
+  it('uses an empty diagnostic path when a JavaScript caller supplies a non-string path', () => {
+    const result = normalizeMinecraftSoundId('bad/path?', NAMESPACE, 1)
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure.path).toBe('')
+    }
   })
 
   it('selects weighted variants deterministically and resolves event references', () => {

@@ -29,5 +29,6 @@ describe('footstep audio mapping', () => {
       }
     }
     expect(surfaceForBlockType('glass')).toBe('default')
+    expect(surfaceForBlockType(null)).toBe('default')
   })
 })
