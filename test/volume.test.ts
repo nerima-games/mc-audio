@@ -1,5 +1,8 @@
 import { describe, expect, it } from '@effect/vitest'
-import { Effect } from 'effect'
+import { Effect, Option } from 'effect'
+import { PositionAxis, type Position } from '@nerima-games/mc-kernel/domain/coordinates'
+import { AudioDistance, AudioGain, AudioOffset, AudioVolume } from '../src/domain/audio-brands.js'
+import { SoundCueId } from '../src/domain/cue'
 import { planCue, type CueContext } from '../src/domain/engine'
 import {
   clamp01,
@@ -17,7 +20,19 @@ import {
 } from '../src/domain/volume'
 import { musicTrackGain, MUSIC_TRACKS } from '../src/domain/music'
 
-const LISTENER = { x: 0, y: 64, z: 0 }
+const position = (x: number, y: number, z: number): Position => ({
+  x: PositionAxis(x),
+  y: PositionAxis(y),
+  z: PositionAxis(z),
+})
+
+const LISTENER = position(0, 64, 0)
+const BLOCK_BREAK = SoundCueId('blockBreak')
+const volumeSettings = (master: number, sfx: number, music: number) => ({
+  master: AudioVolume(master),
+  sfx: AudioVolume(sfx),
+  music: AudioVolume(music),
+})
 
 const context = (overrides: Partial<CueContext> = {}): CueContext => ({
   settings: DEFAULT_VOLUME_SETTINGS,
@@ -37,7 +52,7 @@ describe('volume categories', () => {
   it.effect('carry the reference implementation defaults', () =>
     Effect.sync(() => {
       // packages/game/application/settings-service.ts:35-37
-      expect(DEFAULT_VOLUME_SETTINGS).toStrictEqual({ master: 0.8, sfx: 1, music: 0.55 })
+      expect(DEFAULT_VOLUME_SETTINGS).toStrictEqual(volumeSettings(0.8, 1, 0.55))
     }),
   )
 })
@@ -56,8 +71,8 @@ describe('volume categories', () => {
 describe('master is applied once, by the backend, and never in a per-cue gain', () => {
   it.effect('sfx gain does not change when master changes', () =>
     Effect.sync(() => {
-      const loud = planCue('blockBreak', context({ settings: { master: 1, sfx: 1, music: 1 } }))
-      const quiet = planCue('blockBreak', context({ settings: { master: 0.1, sfx: 1, music: 1 } }))
+      const loud = planCue(BLOCK_BREAK, context({ settings: volumeSettings(1, 1, 1) }))
+      const quiet = planCue(BLOCK_BREAK, context({ settings: volumeSettings(0.1, 1, 1) }))
 
       expect(loud.tone?.gain).toBe(quiet.tone?.gain)
     }),
@@ -65,8 +80,8 @@ describe('master is applied once, by the backend, and never in a per-cue gain', 
 
   it.effect('sfx gain DOES change when the sfx category changes', () =>
     Effect.sync(() => {
-      const full = planCue('blockBreak', context({ settings: { master: 1, sfx: 1, music: 1 } }))
-      const half = planCue('blockBreak', context({ settings: { master: 1, sfx: 0.5, music: 1 } }))
+      const full = planCue(BLOCK_BREAK, context({ settings: volumeSettings(1, 1, 1) }))
+      const half = planCue(BLOCK_BREAK, context({ settings: volumeSettings(1, 0.5, 1) }))
 
       expect(full.tone?.gain).toBeCloseTo((half.tone?.gain ?? 0) * 2, 10)
     }),
@@ -74,16 +89,16 @@ describe('master is applied once, by the backend, and never in a per-cue gain', 
 
   it.effect('music gain does not change when master changes', () =>
     Effect.sync(() => {
-      expect(musicTrackGain('day', 1)).toBe(MUSIC_TRACKS.day.baseGain)
-      expect(musicTrackGain('day', 0.5)).toBeCloseTo(MUSIC_TRACKS.day.baseGain * 0.5, 10)
+      expect(musicTrackGain('day', AudioVolume(1))).toBe(MUSIC_TRACKS.day.baseGain)
+      expect(musicTrackGain('day', AudioVolume(0.5))).toBeCloseTo(MUSIC_TRACKS.day.baseGain * 0.5, 10)
     }),
   )
 
   it.effect('masterNodeGain is the only place master turns into a number', () =>
     Effect.sync(() => {
       expect(masterNodeGain(DEFAULT_VOLUME_SETTINGS)).toBe(0.8)
-      expect(masterNodeGain({ master: 4, sfx: 1, music: 1 })).toBe(1)
-      expect(masterNodeGain({ master: -1, sfx: 1, music: 1 })).toBe(0)
+      expect(masterNodeGain(volumeSettings(1, 1, 1))).toBe(1)
+      expect(masterNodeGain(volumeSettings(0, 1, 1))).toBe(0)
     }),
   )
 })
@@ -92,21 +107,21 @@ describe('effectiveSfxGain', () => {
   it.effect('multiplies base, category, spatial attenuation and per-call scale', () =>
     Effect.sync(() => {
       expect(
-        effectiveSfxGain({ baseGain: 0.5, sfxVolume: 0.5, spatialGain: 0.5, gainScale: 0.5 }),
+        effectiveSfxGain({ baseGain: AudioGain(0.5), sfxVolume: AudioVolume(0.5), spatialGain: AudioVolume(0.5), gainScale: AudioGain(0.5) }),
       ).toBeCloseTo(0.0625, 10)
     }),
   )
 
   it.effect('defaults gainScale to 1 and refuses a negative one', () =>
     Effect.sync(() => {
-      expect(effectiveSfxGain({ baseGain: 1, sfxVolume: 1, spatialGain: 1 })).toBe(1)
-      expect(effectiveSfxGain({ baseGain: 1, sfxVolume: 1, spatialGain: 1, gainScale: -5 })).toBe(0)
+      expect(effectiveSfxGain({ baseGain: AudioGain(1), sfxVolume: AudioVolume(1), spatialGain: AudioVolume(1) })).toBe(1)
+      expect(Option.isNone(AudioGain.option(-5))).toBe(true)
     }),
   )
 
   it.effect('keeps a loud cue finite without clipping its official event gain', () =>
     Effect.sync(() => {
-      expect(effectiveSfxGain({ baseGain: 10, sfxVolume: 10, spatialGain: 1 })).toBe(100)
+      expect(effectiveSfxGain({ baseGain: AudioGain(10), sfxVolume: AudioVolume(1), spatialGain: AudioVolume(1) })).toBe(10)
     }),
   )
 })
@@ -114,8 +129,8 @@ describe('effectiveSfxGain', () => {
 describe('effectiveMusicGain', () => {
   it.effect('is base times the music category, clamped', () =>
     Effect.sync(() => {
-      expect(effectiveMusicGain({ baseGain: 0.4, musicVolume: 0.5 })).toBeCloseTo(0.2, 10)
-      expect(effectiveMusicGain({ baseGain: 2, musicVolume: 2 })).toBe(4)
+      expect(effectiveMusicGain({ baseGain: AudioGain(0.4), musicVolume: AudioVolume(0.5) })).toBeCloseTo(0.2, 10)
+      expect(effectiveMusicGain({ baseGain: AudioGain(2), musicVolume: AudioVolume(1) })).toBe(2)
     }),
   )
 })
@@ -130,27 +145,24 @@ describe('spatialise', () => {
 
   it.effect('halves the gain at exactly SPATIAL_DISTANCE_SCALE blocks', () =>
     Effect.sync(() => {
-      const far = spatialise(LISTENER, { x: SPATIAL_DISTANCE_SCALE, y: 64, z: 0 })
+      const far = spatialise(LISTENER, position(SPATIAL_DISTANCE_SCALE, 64, 0))
       expect(far.gain).toBeCloseTo(0.5, 10)
     }),
   )
 
   it.effect('applies a positive distance offset to attenuation without changing pan', () =>
     Effect.sync(() => {
-      const offset = spatialise(LISTENER, { x: 6, y: 64, z: 0 }, { distanceOffset: 6 })
+      const offset = spatialise(LISTENER, position(6, 64, 0), { distanceOffset: AudioOffset(6) })
       expect(offset.gain).toBeCloseTo(0.5, 10)
       expect(offset.pan).toBeCloseTo(0.5, 10)
-      expect(spatialise(LISTENER, LISTENER, { distanceOffset: -1 })).toStrictEqual({ gain: 1, pan: 0 })
-      expect(spatialise(LISTENER, LISTENER, { distanceOffset: Number.NaN })).toStrictEqual({
-        gain: 1,
-        pan: 0,
-      })
+      expect(spatialise(LISTENER, LISTENER, { distanceOffset: AudioOffset(0) })).toStrictEqual({ gain: 1, pan: 0 })
+      expect(Option.isNone(AudioDistance.option(Number.NaN))).toBe(true)
     }),
   )
 
   it.effect('never reaches zero, so distant sounds fade rather than cut off', () =>
     Effect.sync(() => {
-      const veryFar = spatialise(LISTENER, { x: 100_000, y: 64, z: 0 })
+      const veryFar = spatialise(LISTENER, position(100_000, 64, 0))
       expect(veryFar.gain).toBeGreaterThan(0)
       expect(veryFar.gain).toBeLessThan(0.001)
     }),
@@ -158,31 +170,27 @@ describe('spatialise', () => {
 
   it.effect('uses world +X as right when listener direction is omitted', () =>
     Effect.sync(() => {
-      expect(spatialise(LISTENER, { x: 6, y: 64, z: 0 }).pan).toBeCloseTo(0.5, 10)
-      expect(spatialise(LISTENER, { x: -6, y: 64, z: 0 }).pan).toBeCloseTo(-0.5, 10)
-      expect(spatialise(LISTENER, { x: 9_999, y: 64, z: 0 }).pan).toBe(1)
+      expect(spatialise(LISTENER, position(6, 64, 0)).pan).toBeCloseTo(0.5, 10)
+      expect(spatialise(LISTENER, position(-6, 64, 0)).pan).toBeCloseTo(-0.5, 10)
+      expect(spatialise(LISTENER, position(9_999, 64, 0)).pan).toBe(1)
       // Distance on Z attenuates but does not pan.
-      expect(spatialise(LISTENER, { x: 0, y: 64, z: 50 }).pan).toBe(0)
+      expect(spatialise(LISTENER, position(0, 64, 50)).pan).toBe(0)
     }),
   )
 
   it.effect('rotates stereo left and right with the listener', () =>
     Effect.sync(() => {
-      const source = { x: 0, y: 64, z: 6 }
-      expect(spatialise(LISTENER, source, { listenerForward: { x: 1, y: 0, z: 0 } }).pan).toBeCloseTo(0.5, 10)
-      expect(spatialise(LISTENER, source, { listenerForward: { x: -1, y: 0, z: 0 } }).pan).toBeCloseTo(-0.5, 10)
-      expect(spatialise(LISTENER, source, { listenerForward: { x: 100, y: 7, z: 0 } }).pan).toBeCloseTo(0.5, 10)
+      const source = position(0, 64, 6)
+      expect(spatialise(LISTENER, source, { listenerForward: position(1, 0, 0) }).pan).toBeCloseTo(0.5, 10)
+      expect(spatialise(LISTENER, source, { listenerForward: position(-1, 0, 0) }).pan).toBeCloseTo(-0.5, 10)
+      expect(spatialise(LISTENER, source, { listenerForward: position(100, 7, 0) }).pan).toBeCloseTo(0.5, 10)
     }),
   )
 
   it.effect('falls back deterministically for unusable horizontal directions', () =>
     Effect.sync(() => {
-      const source = { x: 6, y: 64, z: 0 }
-      expect(spatialise(LISTENER, source, { listenerForward: { x: 0, y: 1, z: 0 } }).pan).toBeCloseTo(0.5, 10)
-      expect(spatialise(LISTENER, source, { listenerForward: { x: Number.NaN, y: 0, z: 0 } }).pan).toBeCloseTo(
-        0.5,
-        10,
-      )
+      const source = position(6, 64, 0)
+      expect(spatialise(LISTENER, source, { listenerForward: position(0, 1, 0) }).pan).toBeCloseTo(0.5, 10)
     }),
   )
 })
@@ -192,13 +200,13 @@ describe('minecraftSpatialise', () => {
     Effect.sync(() => {
       expect(minecraftSpatialise(LISTENER, LISTENER)).toStrictEqual({ gain: 1, pan: 0 })
       expect(
-        minecraftSpatialise(LISTENER, { x: 6, y: 64, z: 0 }, { distanceScale: 12 }),
+        minecraftSpatialise(LISTENER, position(6, 64, 0), { distanceScale: AudioDistance(12) }),
       ).toStrictEqual({ gain: 0.5, pan: 0.5 })
       expect(
-        minecraftSpatialise(LISTENER, { x: 12, y: 64, z: 0 }, { distanceScale: 12 }),
+        minecraftSpatialise(LISTENER, position(12, 64, 0), { distanceScale: AudioDistance(12) }),
       ).toStrictEqual({ gain: 0, pan: 1 })
       expect(
-        minecraftSpatialise(LISTENER, { x: 100_000, y: 64, z: 0 }, { distanceScale: 12 }),
+        minecraftSpatialise(LISTENER, position(100_000, 64, 0), { distanceScale: AudioDistance(12) }),
       ).toStrictEqual({ gain: 0, pan: 1 })
     }),
   )
@@ -206,14 +214,14 @@ describe('minecraftSpatialise', () => {
   it.effect('shares generic distance offset, panning, and safe scale handling', () =>
     Effect.sync(() => {
       expect(
-        minecraftSpatialise(LISTENER, { x: 6, y: 64, z: 0 }, { distanceOffset: 6, distanceScale: 24 }),
+        minecraftSpatialise(LISTENER, position(6, 64, 0), { distanceOffset: AudioOffset(6), distanceScale: AudioDistance(24) }),
       ).toStrictEqual({ gain: 0.5, pan: 0.25 })
-      expect(minecraftSpatialise(LISTENER, { x: 6, y: 64, z: 0 }, { distanceScale: 0 })).toStrictEqual({
+      expect(minecraftSpatialise(LISTENER, position(6, 64, 0), { distanceScale: AudioDistance(0) })).toStrictEqual({
         gain: 0.5,
         pan: 0.5,
       })
       expect(
-        minecraftSpatialise(LISTENER, { x: 6, y: 64, z: 0 }, { distanceScale: Number.NaN }),
+        minecraftSpatialise(LISTENER, position(6, 64, 0), { distanceScale: AudioDistance(0) }),
       ).toStrictEqual({ gain: 0.5, pan: 0.5 })
     }),
   )

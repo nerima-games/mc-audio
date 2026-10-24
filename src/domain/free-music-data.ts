@@ -1,15 +1,39 @@
 /* oxlint-disable no-magic-numbers -- These values are the authored musical data for the generated fallback bank. */
 
+import {
+  type AudioBpm,
+  type AudioGain,
+  type AudioNote,
+  type AudioWeight,
+  type MinecraftSoundEventId,
+  type MinecraftSoundResourceId,
+  AudioBpm as makeAudioBpm,
+  AudioGain as makeAudioGain,
+  AudioNote as makeAudioNote,
+  AudioWeight as makeAudioWeight,
+  MinecraftSoundEventId as makeMinecraftSoundEventId,
+  MinecraftSoundResourceId as makeMinecraftSoundResourceId,
+} from './audio-brands.js'
+
 export type FreeMusicTrack = {
+  readonly eventId: MinecraftSoundEventId
+  readonly soundId: MinecraftSoundResourceId
+  readonly bpm: AudioBpm
+  readonly notes: readonly AudioNote[]
+  readonly volume: AudioGain
+  readonly weight: AudioWeight
+}
+
+type RawFreeMusicTrack = {
   readonly eventId: string
   readonly soundId: string
   readonly bpm: number
-  readonly notes: readonly [number, ...number[]]
+  readonly notes: readonly number[]
   readonly volume: number
   readonly weight: number
 }
 
-export const FREE_MINECRAFT_MUSIC_TRACKS: readonly FreeMusicTrack[] = [
+const RAW_FREE_MINECRAFT_MUSIC_TRACKS: readonly RawFreeMusicTrack[] = [
   {
     bpm: 96,
     eventId: 'minecraft:music.free_game',
@@ -91,6 +115,15 @@ export const FREE_MINECRAFT_MUSIC_TRACKS: readonly FreeMusicTrack[] = [
     weight: 1,
   },
 ]
+
+export const FREE_MINECRAFT_MUSIC_TRACKS: readonly FreeMusicTrack[] = RAW_FREE_MINECRAFT_MUSIC_TRACKS.map((track) => ({
+  bpm: makeAudioBpm(track.bpm),
+  eventId: makeMinecraftSoundEventId(track.eventId),
+  notes: track.notes.map(makeAudioNote),
+  soundId: makeMinecraftSoundResourceId(track.soundId),
+  volume: makeAudioGain(track.volume),
+  weight: makeAudioWeight(track.weight),
+}))
 
 type OfficialMusicVariant = {
   readonly name: string
@@ -572,13 +605,16 @@ const freeSoundIdFor = (eventId: string, name: string): string => {
   return freeSoundIdForEvent(eventId)
 }
 
-export type FreeMusicEventVariant = {
-  readonly soundId: string
-  readonly type: 'sound' | 'event'
-  readonly volume: number
-  readonly weight: number
+type FreeMusicEventVariantMetadata = {
+  readonly volume: AudioGain
+  readonly weight: AudioWeight
   readonly stream: boolean
 }
+
+export type FreeMusicEventVariant = FreeMusicEventVariantMetadata & (
+  | { readonly soundId: MinecraftSoundResourceId; readonly type: 'sound' }
+  | { readonly soundId: MinecraftSoundEventId; readonly type: 'event' }
+)
 
 const freeSoundIdForVariant = (eventId: string, variant: OfficialMusicVariant): string => {
   if (variant.type === 'event') {
@@ -587,19 +623,31 @@ const freeSoundIdForVariant = (eventId: string, variant: OfficialMusicVariant): 
   return freeSoundIdFor(eventId, variant.name)
 }
 
-const mapMusicEventVariant = (eventId: string, variant: OfficialMusicVariant): FreeMusicEventVariant => ({
-  soundId: freeSoundIdForVariant(eventId, variant),
-  stream: variant.stream ?? false,
-  type: variant.type ?? 'sound',
-  volume: variant.volume ?? 1,
-  weight: variant.weight ?? 1,
-})
+const mapMusicEventVariant = (eventId: string, variant: OfficialMusicVariant): FreeMusicEventVariant => {
+  const metadata = {
+    stream: variant.stream ?? false,
+    volume: makeAudioGain(variant.volume ?? 1),
+    weight: makeAudioWeight(variant.weight ?? 1),
+  }
+  if (variant.type === 'event') {
+    return {
+      ...metadata,
+      soundId: makeMinecraftSoundEventId(freeSoundIdForVariant(eventId, variant)),
+      type: 'event',
+    }
+  }
+  return {
+    ...metadata,
+    soundId: makeMinecraftSoundResourceId(freeSoundIdForVariant(eventId, variant)),
+    type: 'sound',
+  }
+}
 
 const mapMusicEvents = (
   table: Readonly<Record<string, readonly OfficialMusicVariant[]>>,
-): Readonly<Record<string, readonly FreeMusicEventVariant[]>> => Object.fromEntries(
+): ReadonlyMap<MinecraftSoundEventId, readonly FreeMusicEventVariant[]> => new Map(
   Object.entries(table).map(([eventId, variants]) => [
-    eventId,
+    makeMinecraftSoundEventId(eventId),
     variants.map((variant) => mapMusicEventVariant(eventId, variant)),
   ]),
 )
@@ -608,7 +656,7 @@ const mapMusicEvents = (
  * A free fallback with the complete 26.2 music event topology. Only the
  * generated sample names differ from the official sounds.json entries.
  */
-export const FREE_MINECRAFT_MUSIC_EVENT_VARIANTS: Readonly<Record<string, readonly FreeMusicEventVariant[]>> =
+export const FREE_MINECRAFT_MUSIC_EVENT_VARIANTS: ReadonlyMap<MinecraftSoundEventId, readonly FreeMusicEventVariant[]> =
   mapMusicEvents(ALL_MUSIC_EVENTS)
 
-export type FreeMusicEventId = keyof typeof FREE_MINECRAFT_MUSIC_EVENT_VARIANTS
+export type FreeMusicEventId = MinecraftSoundEventId

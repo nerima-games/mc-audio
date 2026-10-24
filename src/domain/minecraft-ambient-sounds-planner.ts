@@ -1,37 +1,52 @@
 import {
+  type AudioDelayTicks,
+  type AudioOffset,
+  type AudioTick,
+  type MinecraftSoundEventId,
+  AudioDelayTicks as makeAudioDelayTicks,
+  AudioTick as makeAudioTick,
+} from './audio-brands.js'
+import {
   type MinecraftAmbientAddition,
   type MinecraftAmbientMood,
   type MinecraftAmbientSoundsDefinition,
+  type MinecraftAmbientSoundsFailure,
   normalizeMinecraftAmbientSoundsDefinition,
 } from './minecraft-ambient-sounds-data.js'
-import type { Position } from '@nerima-games/mc-kernel'
+import type { Position } from '@nerima-games/mc-kernel/domain/coordinates'
+import { Result } from 'effect'
 
 const ZERO = 0
 const ONE = 1
 const MAX_RANDOM = ONE - Number.EPSILON
 const MIN_MOOD_DELAY = 1
 
+export type MinecraftAmbientSoundsPlannerFailure = {
+  readonly _tag: 'MinecraftAmbientSoundsPlannerFailure'
+  readonly message: string
+}
+
 export type MinecraftAmbientSoundsState = {
-  readonly loopSound: string | null
-  readonly nextMoodTick: number
+  readonly loopSound: MinecraftSoundEventId | null
+  readonly nextMoodTick: AudioTick
 }
 
 export const initialMinecraftAmbientSoundsState = (): MinecraftAmbientSoundsState => ({
   loopSound: null,
-  nextMoodTick: ZERO,
+  nextMoodTick: makeAudioTick(ZERO),
 })
 
 export type MinecraftAmbientSoundsCommand =
   | { readonly kind: 'stop-loop' }
-  | { readonly kind: 'start-loop'; readonly sound: string }
+  | { readonly kind: 'start-loop'; readonly sound: MinecraftSoundEventId }
   | {
       readonly kind: 'play'
       readonly category: 'mood'
-      readonly offset: number
-      readonly sound: string
+      readonly offset: AudioOffset
+      readonly sound: MinecraftSoundEventId
       readonly position: Position
     }
-  | { readonly kind: 'play'; readonly category: 'addition'; readonly sound: string }
+  | { readonly kind: 'play'; readonly category: 'addition'; readonly sound: MinecraftSoundEventId }
 
 export type MinecraftAmbientSoundsPlan = {
   readonly commands: readonly MinecraftAmbientSoundsCommand[]
@@ -39,7 +54,7 @@ export type MinecraftAmbientSoundsPlan = {
 }
 
 export type MinecraftAmbientMoodResolution = {
-  readonly delayTicks: number
+  readonly delayTicks: AudioDelayTicks
   readonly position: Position | null
 }
 
@@ -47,7 +62,7 @@ export type MinecraftAmbientMoodResolverInput = {
   readonly cameraPosition: Position
   readonly mood: MinecraftAmbientMood
   readonly randomSource: () => number
-  readonly tick: number
+  readonly tick: AudioTick
 }
 
 export type MinecraftAmbientMoodResolver = (
@@ -61,7 +76,7 @@ export type MinecraftAmbientSoundsPlannerInput = {
   readonly moodResolver?: MinecraftAmbientMoodResolver
   readonly randomSource: () => number
   readonly state: MinecraftAmbientSoundsState
-  readonly tick: number
+  readonly tick: AudioTick
 }
 
 const randomUnit = (randomSource: () => number): number => {
@@ -72,16 +87,15 @@ const randomUnit = (randomSource: () => number): number => {
   return Math.min(MAX_RANDOM, Math.max(ZERO, value))
 }
 
-const validTick = (tick: number): number => {
-  if (!Number.isInteger(tick) || tick < ZERO) {
-    throw new RangeError('Minecraft ambient sounds tick must be a non-negative integer')
-  }
-  return tick
-}
+const validTick = (tick: AudioTick): Result.Result<AudioTick, MinecraftAmbientSoundsPlannerFailure> =>
+  Result.mapError(makeAudioTick.result(tick), (error) => ({
+    _tag: 'MinecraftAmbientSoundsPlannerFailure',
+    message: error.message,
+  }))
 
 const planLoopCommands = (
-  currentLoop: string | null,
-  desiredLoop: string | null,
+  currentLoop: MinecraftSoundEventId | null,
+  desiredLoop: MinecraftSoundEventId | null,
 ): readonly MinecraftAmbientSoundsCommand[] => {
   const commands: MinecraftAmbientSoundsCommand[] = []
   if (currentLoop !== desiredLoop) {
@@ -101,13 +115,13 @@ type MoodPlanInput = {
   readonly moodPosition: Position | null
   readonly moodResolver: MinecraftAmbientMoodResolver | undefined
   readonly randomSource: () => number
-  readonly nextMoodTick: number
-  readonly tick: number
+  readonly nextMoodTick: AudioTick
+  readonly tick: AudioTick
 }
 
 type MoodPlan = {
   readonly commands: readonly MinecraftAmbientSoundsCommand[]
-  readonly nextMoodTick: number
+  readonly nextMoodTick: AudioTick
 }
 
 const moodCommand = (
@@ -128,12 +142,12 @@ const moodCommand = (
   ]
 }
 
-const moodDelay = (resolution: MinecraftAmbientMoodResolution): number => {
+const moodDelay = (resolution: MinecraftAmbientMoodResolution): Result.Result<AudioDelayTicks, MinecraftAmbientSoundsPlannerFailure> => {
   const { delayTicks } = resolution
   if (!Number.isInteger(delayTicks) || delayTicks < MIN_MOOD_DELAY) {
-    throw new RangeError('Minecraft ambient mood delayTicks must be a positive integer')
+    return Result.fail({ _tag: 'MinecraftAmbientSoundsPlannerFailure', message: 'Minecraft ambient mood delayTicks must be a positive integer' })
   }
-  return delayTicks
+  return Result.succeed(makeAudioDelayTicks(delayTicks))
 }
 
 const planMoodCommands = ({
@@ -144,22 +158,26 @@ const planMoodCommands = ({
   randomSource,
   nextMoodTick,
   tick,
-}: MoodPlanInput): MoodPlan => {
+}: MoodPlanInput): Result.Result<MoodPlan, MinecraftAmbientSoundsPlannerFailure> => {
   if (mood === null) {
-    return { commands: [], nextMoodTick: ZERO }
+    return Result.succeed({ commands: [], nextMoodTick: makeAudioTick(ZERO) })
   }
   if (tick < nextMoodTick) {
-    return { commands: [], nextMoodTick }
+    return Result.succeed({ commands: [], nextMoodTick })
   }
 
   const resolution = moodResolver?.({ cameraPosition, mood, randomSource, tick }) ?? {
     delayTicks: mood.tick_delay,
     position: moodPosition ?? null,
   }
-  return {
-    commands: moodCommand(mood, resolution),
-    nextMoodTick: tick + moodDelay(resolution),
-  }
+  return Result.gen(function* planMoodCommandsEffect() {
+    const delayTicks = yield* moodDelay(resolution)
+    const nextTick = yield* Result.mapError(makeAudioTick.result(tick + delayTicks), (error) => ({
+      _tag: 'MinecraftAmbientSoundsPlannerFailure' as const,
+      message: error.message,
+    }))
+    return { commands: moodCommand(mood, resolution), nextMoodTick: nextTick }
+  })
 }
 
 const shouldPlayAddition = (
@@ -196,12 +214,15 @@ export const planMinecraftAmbientSounds = ({
   randomSource,
   state,
   tick,
-}: MinecraftAmbientSoundsPlannerInput): MinecraftAmbientSoundsPlan => {
-  const normalized = normalizeMinecraftAmbientSoundsDefinition(definition)
-  const currentTick = validTick(tick)
+}: MinecraftAmbientSoundsPlannerInput): Result.Result<
+  MinecraftAmbientSoundsPlan,
+  MinecraftAmbientSoundsFailure | MinecraftAmbientSoundsPlannerFailure
+> => Result.gen(function* planMinecraftAmbientSoundsEffect() {
+  const normalized = yield* normalizeMinecraftAmbientSoundsDefinition(definition)
+  const currentTick = yield* validTick(tick)
   const { loopSound, nextMoodTick } = state
   const loopCommands = planLoopCommands(loopSound, normalized.loop)
-  const moodPlan = planMoodCommands({
+  const moodPlan = yield* planMoodCommands({
     cameraPosition,
     mood: normalized.mood,
     moodPosition,
@@ -210,13 +231,9 @@ export const planMinecraftAmbientSounds = ({
     randomSource,
     tick: currentTick,
   })
-  const additionCommands = planAdditionCommands({
-    additions: normalized.additions,
-    randomSource,
-  })
-
+  const additionCommands = planAdditionCommands({ additions: normalized.additions, randomSource })
   return {
     commands: [...loopCommands, ...moodPlan.commands, ...additionCommands],
     state: { loopSound: normalized.loop, nextMoodTick: moodPlan.nextMoodTick },
   }
-}
+})

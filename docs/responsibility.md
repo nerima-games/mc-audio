@@ -1,13 +1,10 @@
 # 責務
 
-出典: plan.md §3.6。参照実装の実コードで補正した箇所には根拠を付けてある。
+## 1. mc-audio の責務
 
-## 1. 責務（plan.md §3.6 原文）
+mc-audio は、WebAudio の再生基盤、効果音キューレジストリ、BGM の再生計画、字幕イベント、音声サンプル manifest の境界を所有する。
 
-> WebAudio エンジン・効果音キューレジストリ・音楽コンテキスト（BGM 状態機械）・
-> 字幕イベント発行。音声サンプルの manifest 境界
-
-### 具体的に持つもの
+### 具体的な機能
 
 | 要素 | 説明 | 状態 |
 | --- | --- | --- |
@@ -56,7 +53,7 @@ mc-save 側の IndexedDB surface、mc-render、mx-ui と同じ手法である。
 
 | 非スコープ | 正しい置き場 | 理由 |
 | --- | --- | --- |
-| 「ブロックを壊したら音を鳴らす」ルール | **mx-gameplay** | 動詞は体験モジュール（plan.md §2.3-1） |
+| 「ブロックを壊したら音を鳴らす」ルール | **mx-gameplay** | ゲーム内イベントに応じて音を鳴らす判断は mx-gameplay が担う |
 | プレイヤー座標の取得 | **呼び出し側が渡す** | mc-audio は sim を import しない。これが DOM 無しでテストできる理由 |
 | 「今が夜か」の判定 | **mc-sim**（`TimeService`） | mc-audio は `isNight: boolean` を受け取るだけ |
 | 字幕の DOM 描画 | **mx-ui** | DOM は mx-ui の専管 |
@@ -73,11 +70,11 @@ mc-save 側の IndexedDB surface、mc-render、mx-ui と同じ手法である。
 - DOM 無しでのテストが不可能になり、
 - 依存ホワイトリスト CI が落ちる。
 
-## 3. plan.md §3.6 の記述と実態の差
+## 3. 参照設計と実装の差
 
 ### 3-1. `SoundCuePort` — ほぼ一致
 
-> plan.md: `SoundCuePort`（`play(cueId, options)`）
+> 想定された契約: `SoundCuePort`（`play(cueId, options)`）
 
 参照実装の実シグネチャ（`packages/game/application/sound-manager.ts:36-42`）:
 
@@ -88,7 +85,7 @@ playEffect: (
 ) => Effect.Effect<void, never>
 ```
 
-名前が `playEffect` である以外は plan.md どおり。mc-audio では `play` にした。
+`playEffect` という名前を除き、参照実装のシグネチャは想定された契約に沿っている。mc-audio では `play` とした。
 
 ### 3-2. `MusicContextPort` — 実態は `MusicManagerRuntime`
 
@@ -99,12 +96,12 @@ playEffect: (
 
 ### 3-3. `CaptionEventStream` — 参照実装には**存在しない**
 
-plan.md は「UI が購読する」ストリームを要求しているが、参照実装にあるのは
+当初の契約案は「UI が購読する」ストリームを想定していたが、参照実装にあるのは
 単一メソッドの投げっぱなしシンクである。→ [design-notes.md](./design-notes.md#dn-3)
 
 ### 3-4. 音量カテゴリ — 一致、ただし enable は 1 つだけ
 
-`masterVolume` / `sfxVolume` / `musicVolume` の 3 つは plan.md どおり。
+`masterVolume` / `sfxVolume` / `musicVolume` の 3 つは想定された契約どおり。
 
 ただし `audioEnabled` は **sfx と music で共有された 1 個のフラグ**であり、
 カテゴリごとの ON/OFF は無い
@@ -137,7 +134,7 @@ schema 側にも `:71-74` に「audioEnabled defaults to false intentionally」�
 | `mx-gameplay` | 採掘・Mob・天候などのルールからキューを発火する |
 | `mx-ui` | 字幕を購読して表示する。音量設定 UI を提供する |
 
-## 5. アセットの扱い（plan.md §5.3）
+## 5. 音声アセットの扱い
 
 > 独立アセットリポジトリは作らない。アセットは消費者に同梱（テクスチャ → render、**音声 → audio**）。
 > リソースパック機能を作る時に再検討
@@ -158,3 +155,17 @@ subtitle・attenuation・manifest 変換も `minecraft-sounds*` に集約して�
   再生・decode・cache・失敗時の tone fallback は既存の WebAudio アダプタを使える。
 - 外部 resource pack の取得、HTTP streaming、マイク録音は音源 registry / playback と別の機能であり、
   このパッケージの現在のスコープには含めていない。
+
+## 6. W2 ownership in mc-audio 0.4
+
+| Package-owned surface | Responsibility | Boundary |
+| --- | --- | --- |
+| `src/domain/caption.ts` | Caption queue, settings, expiry, and visible-list calculations | Keeps the 2.5-second display lifetime and five-caption limit. `CAPTION_DISPLAY_SECS` remains an alias. |
+| `src/domain/audio-runtime.ts` | Host runtime for cue playback, captions, listener state, settings, unlock, and close | Runtime operations return Effects. The host interprets them at its entrypoint. |
+| `src/qa/audio.ts` and `src/entrypoints/audio-qa.ts` | `audio.report` and `audio.snapshot` QA commands | The provider returns Effects; the package entrypoint preserves the synchronous QA command contract. |
+| `src/domain/footstep.ts` | Footstep surface vocabulary and surface-to-cue mapping | Gameplay owns cadence and runtime state. |
+| `src/domain/weather-ambience.ts` | Ambient behavior for `clear`, `rain`, and `thunder` | Matches mc-sim's weather vocabulary without depending on mc-sim. |
+
+`PlacementAudioLatch`, placement announcements, and footstep cadence remain
+outside mc-audio under mx-gameplay ownership. QA registry merging belongs to
+mc-compose, and browser installation belongs to mc-host-web.

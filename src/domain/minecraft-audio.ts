@@ -1,6 +1,13 @@
-import { type BlockId, isKnownBlockId, transmitsLight } from '@nerima-games/mc-kernel'
+import { type AudioVolume, AudioVolume as makeAudioVolume } from './audio-brands.js'
+import {
+  type BlockId,
+  type BlockRegistryResolutionFailure,
+  isKnownBlockId,
+  transmitsLight,
+} from '@nerima-games/mc-kernel/domain/block-registry'
 import {
   type MinecraftAmbientSoundsDefinition,
+  type MinecraftAmbientSoundsFailure,
   type NormalizedMinecraftAmbientSoundsDefinition,
   normalizeMinecraftAmbientSoundsDefinition,
 } from './minecraft-ambient-sounds.js'
@@ -9,8 +16,10 @@ import {
   type MinecraftBackgroundMusicEntry,
   type MinecraftBackgroundMusicInput,
   type MinecraftBackgroundMusicKey,
+  type MinecraftMusicDataFailure,
   normalizeMinecraftMusicDefinition,
 } from './minecraft-music.js'
+import { Result } from 'effect'
 
 export const MINECRAFT_AUDIO_COMPONENT_NAMES = [
   'minecraft:audio/ambient_sounds',
@@ -32,8 +41,20 @@ export type NormalizedMinecraftAudioComponent = {
   readonly ambientSounds: NormalizedMinecraftAmbientSoundsDefinition | null
   readonly backgroundMusic: MinecraftBackgroundMusic | null
   readonly fireflyBushSounds: boolean | null
-  readonly musicVolume: number | null
+  readonly musicVolume: AudioVolume | null
 }
+
+export type MinecraftAudioComponentFailure = {
+  readonly _tag: 'MinecraftAudioComponentFailure'
+  readonly path: string
+  readonly message: string
+}
+
+export type MinecraftAudioFailure =
+  | MinecraftAudioComponentFailure
+  | MinecraftAmbientSoundsFailure
+  | MinecraftMusicDataFailure
+  | BlockRegistryResolutionFailure
 
 export type MinecraftFireflyBushSoundContext = {
   readonly fireflyBushSounds: boolean | null
@@ -41,19 +62,21 @@ export type MinecraftFireflyBushSoundContext = {
   readonly belowOpaqueBlock: boolean
 }
 
+export type UnknownMinecraftAudioBlockFailure = {
+  readonly _tag: 'UnknownMinecraftAudioBlockFailure'
+  readonly blockId: BlockId
+}
+
+export type MinecraftFireflyBushSoundFailure = BlockRegistryResolutionFailure | UnknownMinecraftAudioBlockFailure
+
 const BACKGROUND_MUSIC_KEYS = ['default', 'underwater', 'creative'] as const
 const ZERO = 0
 const ONE = 1
 
-const isOpaqueBlockBelow = (belowBlockId: BlockId | void, fallback: boolean): boolean => {
-  if (typeof belowBlockId !== 'number') {
-    return fallback
-  }
-  if (!isKnownBlockId(belowBlockId)) {
-    throw new RangeError(`Unknown Minecraft block id: ${belowBlockId}`)
-  }
-  return !transmitsLight(belowBlockId)
-}
+type JsonObject = Record<string, unknown>
+
+const failure = (path: string, message: string): Result.Result<never, MinecraftAudioComponentFailure> =>
+  Result.fail({ _tag: 'MinecraftAudioComponentFailure', message, path })
 
 const emptyAudioComponent = (): NormalizedMinecraftAudioComponent => ({
   ambientSounds: null,
@@ -62,7 +85,7 @@ const emptyAudioComponent = (): NormalizedMinecraftAudioComponent => ({
   musicVolume: null,
 })
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+const isRecord = (value: unknown): value is JsonObject =>
   typeof value === 'object' && value !== null
 
 const isMissing = (value: unknown): value is undefined => Object.is(value, globalThis.undefined)
@@ -70,100 +93,144 @@ const isMissing = (value: unknown): value is undefined => Object.is(value, globa
 const isBackgroundMusicKey = (value: string): value is MinecraftBackgroundMusicKey =>
   BACKGROUND_MUSIC_KEYS.some((key) => key === value)
 
-const assertBackgroundMusicKey = (key: string): void => {
-  if (!isBackgroundMusicKey(key)) {
-    throw new RangeError(`Unknown Minecraft background_music key: ${key}`)
-  }
-}
-
 const normalizeBackgroundMusicEntry = (
   key: MinecraftBackgroundMusicKey,
   value: unknown,
-): MinecraftBackgroundMusicEntry => {
+): Result.Result<MinecraftBackgroundMusicEntry, MinecraftAudioFailure> => {
   if (!isRecord(value) || Array.isArray(value)) {
-    throw new TypeError(`Minecraft background_music.${key} must be an object`)
+    return failure(`minecraft:audio/background_music.${key}`, `Minecraft background_music.${key} must be an object`)
   }
   if (Object.keys(value).length === ZERO) {
-    return null
+    return Result.succeed(null)
   }
-  return normalizeMinecraftMusicDefinition(value)
+  return Result.mapError(normalizeMinecraftMusicDefinition(value), (cause) => cause)
 }
 
-const normalizeBackgroundMusic = (value: unknown): MinecraftBackgroundMusic | null => {
+const normalizeBackgroundMusicEntries = (
+  value: JsonObject,
+): Result.Result<MinecraftBackgroundMusic, MinecraftAudioFailure> => {
+  const normalized: Partial<Record<MinecraftBackgroundMusicKey, MinecraftBackgroundMusicEntry>> = {}
+  for (const key of Object.keys(value)) {
+    if (!isBackgroundMusicKey(key)) {
+      return failure(`minecraft:audio/background_music.${key}`, `Unknown Minecraft background_music key: ${key}`)
+    }
+    const rawEntry = value[key]
+    const entry = normalizeBackgroundMusicEntry(key, rawEntry)
+    if (Result.isFailure(entry)) {
+      return Result.fail(entry.failure)
+    }
+    normalized[key] = entry.success
+  }
+  return Result.succeed(normalized)
+}
+
+const normalizeBackgroundMusic = (
+  value: unknown,
+): Result.Result<MinecraftBackgroundMusic | null, MinecraftAudioFailure> => {
   if (isMissing(value)) {
-    return null
+    return Result.succeed(null)
   }
   if (!isRecord(value) || Array.isArray(value)) {
-    throw new TypeError('Minecraft background_music must be an object')
+    return failure('minecraft:audio/background_music', 'Minecraft background_music must be an object')
   }
-  Object.keys(value).forEach(assertBackgroundMusicKey)
-  const normalized: Partial<Record<MinecraftBackgroundMusicKey, MinecraftBackgroundMusicEntry>> = {}
-  BACKGROUND_MUSIC_KEYS.forEach((key) => {
-    if (Object.hasOwn(value, key)) {
-      normalized[key] = normalizeBackgroundMusicEntry(key, value[key])
-    }
-  })
-  return normalized
+  return normalizeBackgroundMusicEntries(value)
 }
 
-const normalizeMusicVolume = (value: unknown): number | null => {
+const normalizeMusicVolume = (value: unknown): Result.Result<AudioVolume | null, MinecraftAudioComponentFailure> => {
   if (isMissing(value)) {
-    return null
+    return Result.succeed(null)
   }
   if (typeof value !== 'number' || !Number.isFinite(value) || value < ZERO || value > ONE) {
-    throw new RangeError('Minecraft music_volume must be a finite number from 0 through 1')
+    return failure('minecraft:audio/music_volume', 'Minecraft music_volume must be a finite number from 0 through 1')
   }
-  return value
+  return Result.succeed(makeAudioVolume(value))
 }
 
-const normalizeFireflyBushSounds = (value: unknown): boolean | null => {
+const normalizeFireflyBushSounds = (value: unknown): Result.Result<boolean | null, MinecraftAudioComponentFailure> => {
   if (isMissing(value)) {
-    return null
+    return Result.succeed(null)
   }
-  if (typeof value !== 'boolean') {
-    throw new TypeError('Minecraft firefly_bush_sounds must be a boolean')
+  if (typeof value === 'boolean') {
+    return Result.succeed(value)
   }
-  return value
+  return failure('minecraft:audio/firefly_bush_sounds', 'Minecraft firefly_bush_sounds must be a boolean')
 }
 
 const normalizeAmbientSounds = (
   value: unknown,
-): NormalizedMinecraftAmbientSoundsDefinition | null => {
+): Result.Result<NormalizedMinecraftAmbientSoundsDefinition | null, MinecraftAudioFailure> => {
   if (isMissing(value)) {
-    return null
+    return Result.succeed(null)
   }
   if (!isRecord(value) || Array.isArray(value)) {
-    throw new TypeError('Minecraft ambient_sounds must be an object')
+    return failure('minecraft:audio/ambient_sounds', 'Minecraft ambient_sounds must be an object')
   }
   return normalizeMinecraftAmbientSoundsDefinition(value)
 }
 
-const normalizeRecord = (value: Record<string, unknown>): NormalizedMinecraftAudioComponent => {
+const validateComponentKeys = (value: JsonObject): Result.Result<void, MinecraftAudioComponentFailure> => {
   for (const key of Object.keys(value)) {
     if (!MINECRAFT_AUDIO_COMPONENT_NAMES.some((knownKey) => knownKey === key)) {
-      throw new RangeError(`Unknown Minecraft audio component: ${key}`)
+      return failure(key, `Unknown Minecraft audio component: ${key}`)
     }
   }
-  return {
-    ambientSounds: normalizeAmbientSounds(value['minecraft:audio/ambient_sounds']),
-    backgroundMusic: normalizeBackgroundMusic(value['minecraft:audio/background_music']),
-    fireflyBushSounds: normalizeFireflyBushSounds(value['minecraft:audio/firefly_bush_sounds']),
-    musicVolume: normalizeMusicVolume(value['minecraft:audio/music_volume']),
-  }
+  return Result.succeed(globalThis.undefined)
 }
 
-export const parseMinecraftAudioComponent = (value: unknown): NormalizedMinecraftAudioComponent => {
+type MinecraftAudioComponentSnapshot = {
+  readonly ambientSounds: unknown
+  readonly backgroundMusic: unknown
+  readonly fireflyBushSounds: unknown
+  readonly musicVolume: unknown
+}
+
+const snapshotAudioComponent = (value: JsonObject): MinecraftAudioComponentSnapshot => ({
+  ambientSounds: value['minecraft:audio/ambient_sounds'],
+  backgroundMusic: value['minecraft:audio/background_music'],
+  fireflyBushSounds: value['minecraft:audio/firefly_bush_sounds'],
+  musicVolume: value['minecraft:audio/music_volume'],
+})
+
+const normalizeComponentSnapshot = (
+  snapshot: MinecraftAudioComponentSnapshot,
+): Result.Result<NormalizedMinecraftAudioComponent, MinecraftAudioFailure> => Result.gen(function* normalizeComponentSnapshotEffect() {
+  const ambientSounds = yield* normalizeAmbientSounds(snapshot.ambientSounds)
+  const backgroundMusic = yield* normalizeBackgroundMusic(snapshot.backgroundMusic)
+  const fireflyBushSounds = yield* normalizeFireflyBushSounds(snapshot.fireflyBushSounds)
+  const musicVolume = yield* normalizeMusicVolume(snapshot.musicVolume)
+  return {
+    ambientSounds,
+    backgroundMusic,
+    fireflyBushSounds,
+    musicVolume,
+  }
+})
+
+const normalizeRecord = (
+  value: JsonObject,
+): Result.Result<NormalizedMinecraftAudioComponent, MinecraftAudioFailure> => {
+  const keysResult = validateComponentKeys(value)
+  if (Result.isFailure(keysResult)) {
+    return Result.fail(keysResult.failure)
+  }
+  const snapshot = snapshotAudioComponent(value)
+  return normalizeComponentSnapshot(snapshot)
+}
+
+export const parseMinecraftAudioComponent = (
+  value: unknown,
+): Result.Result<NormalizedMinecraftAudioComponent, MinecraftAudioFailure> => {
   if (!isRecord(value) || Array.isArray(value)) {
-    throw new TypeError('Minecraft audio component must be an object')
+    return failure('$', 'Minecraft audio component must be an object')
   }
   return normalizeRecord(value)
 }
 
 export const normalizeMinecraftAudioComponent = (
   value?: MinecraftAudioComponent | null,
-): NormalizedMinecraftAudioComponent => {
+): Result.Result<NormalizedMinecraftAudioComponent, MinecraftAudioFailure> => {
   if (isMissing(value) || value === null) {
-    return emptyAudioComponent()
+    return Result.succeed(emptyAudioComponent())
   }
   return parseMinecraftAudioComponent(value)
 }
@@ -172,5 +239,18 @@ export const canPlayMinecraftFireflyBushIdleSounds = ({
   fireflyBushSounds,
   belowBlockId,
   belowOpaqueBlock,
-}: MinecraftFireflyBushSoundContext): boolean =>
-  fireflyBushSounds === true && !isOpaqueBlockBelow(belowBlockId, belowOpaqueBlock)
+}: MinecraftFireflyBushSoundContext): Result.Result<boolean, MinecraftFireflyBushSoundFailure> => {
+  if (fireflyBushSounds !== true) {
+    return Result.succeed(false)
+  }
+  if (belowBlockId === globalThis.undefined) {
+    return Result.succeed(!belowOpaqueBlock)
+  }
+  return Result.gen(function* canPlayMinecraftFireflyBushIdleSoundsEffect() {
+    const known = yield* isKnownBlockId(belowBlockId)
+    if (!known) {
+      return yield* Result.fail({ _tag: 'UnknownMinecraftAudioBlockFailure' as const, blockId: belowBlockId })
+    }
+    return yield* transmitsLight(belowBlockId)
+  })
+}

@@ -45,6 +45,14 @@
  * (`AudioContextSurface.currentTime`), never a wall clock. `startSecs` is
  * passed in for the same reason `nowSecs` is passed into `makeSoundCueService`.
  */
+import {
+  type AudioDurationSecs,
+  type AudioFrequencyHz,
+  type AudioGain,
+  AudioDurationSecs as audioDurationSecs,
+  AudioFrequencyHz as audioFrequencyHz,
+  AudioGain as audioGain,
+} from './audio-brands.js'
 import type { ToneRequest } from './backend-port.js'
 import { clampNonNegative } from './volume.js'
 
@@ -55,7 +63,8 @@ import { clampNonNegative } from './volume.js'
  * cue still reads as percussive — a block break with a 50 ms attack sounds like
  * a swell, which is a different and worse artefact than the click it replaced.
  */
-export const ATTACK_SECS = 0.005
+const ATTACK_SECS_VALUE = 0.005
+export const ATTACK_SECS: AudioDurationSecs = audioDurationSecs(ATTACK_SECS_VALUE)
 
 /**
  * Fall time from full gain back to silence.
@@ -64,7 +73,8 @@ export const ATTACK_SECS = 0.005
  * release than a slow attack, and because the release is where the reference's
  * click actually lived: `oscillator.stop()` at full amplitude.
  */
-export const RELEASE_SECS = 0.02
+const RELEASE_SECS_VALUE = 0.02
+export const RELEASE_SECS: AudioDurationSecs = audioDurationSecs(RELEASE_SECS_VALUE)
 
 /**
  * The shortest tone that can be asked for.
@@ -75,7 +85,8 @@ export const RELEASE_SECS = 0.02
  * `stop` at or before `start` makes a real oscillator emit nothing while still
  * occupying a node until garbage collection.
  */
-export const MIN_DURATION_SECS = 0.01
+const MIN_DURATION_SECS_VALUE = 0.01
+export const MIN_DURATION_SECS: AudioDurationSecs = audioDurationSecs(MIN_DURATION_SECS_VALUE)
 
 /**
  * The lowest frequency an oscillator is driven at.
@@ -86,7 +97,8 @@ export const MIN_DURATION_SECS = 0.01
  * is accepted by Web Audio and produces the same tone as its absolute value,
  * which would make a caller's sign error silently work.
  */
-export const MIN_FREQUENCY_HZ = 20
+const MIN_FREQUENCY_HZ_VALUE = 20
+export const MIN_FREQUENCY_HZ: AudioFrequencyHz = audioFrequencyHz(MIN_FREQUENCY_HZ_VALUE)
 
 /**
  * One scheduled point on the gain curve.
@@ -101,15 +113,15 @@ export const MIN_FREQUENCY_HZ = 20
 export type EnvelopePoint = {
   readonly kind: 'set' | 'ramp'
   /** Absolute, on the audio device's clock. */
-  readonly atSecs: number
-  readonly gain: number
+  readonly atSecs: AudioDurationSecs
+  readonly gain: AudioGain
 }
 
 export type ToneEnvelope = {
   readonly points: ReadonlyArray<EnvelopePoint>
   /** Peak gain, after finite/non-negative clamping. */
-  readonly peakGain: number
-  readonly startSecs: number
+  readonly peakGain: AudioGain
+  readonly startSecs: AudioDurationSecs
   /**
    * When to stop the oscillator, or `null` for looping/naturally-ending audio.
    *
@@ -120,7 +132,7 @@ export type ToneEnvelope = {
    * `loop` was set (`audio-engine.ts:103-105`), which is why the `durationMs`
    * it passed for BGM was dead code (`docs/public-api.md` §6).
    */
-  readonly stopAtSecs: number | null
+  readonly stopAtSecs: AudioDurationSecs | null
 }
 
 /**
@@ -132,9 +144,9 @@ export type ToneEnvelope = {
  * whose definition is wrong, and that is visible at a glance rather than
  * audible never.
  */
-export const drivenFrequency = (requested: number): number => {
+export const drivenFrequency = (requested: AudioFrequencyHz): AudioFrequencyHz => {
   if (Number.isFinite(requested)) {
-    return Math.max(MIN_FREQUENCY_HZ, requested)
+    return audioFrequencyHz(Math.max(MIN_FREQUENCY_HZ, requested))
   }
   return MIN_FREQUENCY_HZ
 }
@@ -142,14 +154,14 @@ export const drivenFrequency = (requested: number): number => {
 /** `startSecs` falls back to the start of the audio clock when the caller passes something non-finite. */
 const NO_START_SECS = 0
 
-const resolveStart = (startSecs: number): number => {
+const resolveStart = (startSecs: AudioDurationSecs): AudioDurationSecs => {
   if (Number.isFinite(startSecs)) {
     return startSecs
   }
-  return NO_START_SECS
+  return audioDurationSecs(NO_START_SECS)
 }
 
-const resolveDurationSecs = (requestedDurationSecs: number): number => {
+const resolveDurationSecs = (requestedDurationSecs: AudioDurationSecs): AudioDurationSecs => {
   if (Number.isFinite(requestedDurationSecs)) {
     return requestedDurationSecs
   }
@@ -163,6 +175,7 @@ const resolveDurationSecs = (requestedDurationSecs: number): number => {
  */
 const SUSTAIN_FRACTION = 0.9
 const FULL_SCALE = 1
+const SILENT_GAIN_VALUE = 0
 
 const envelopeScale = (shaped: number, duration: number): number => {
   const fittable = duration * SUSTAIN_FRACTION
@@ -191,7 +204,7 @@ const envelopeScale = (shaped: number, duration: number): number => {
  * a triangle with no sustain, which is the right shape for a click-length
  * sound, and never a shape whose points are out of order.
  */
-export const toneEnvelope = (request: ToneRequest, startSecs: number): ToneEnvelope => {
+export const toneEnvelope = (request: ToneRequest, startSecs: AudioDurationSecs): ToneEnvelope => {
   const peakGain = clampNonNegative(request.gain)
   const start = resolveStart(startSecs)
 
@@ -202,25 +215,25 @@ export const toneEnvelope = (request: ToneRequest, startSecs: number): ToneEnvel
     return {
       peakGain,
       points: [
-        { atSecs: start, gain: 0, kind: 'set' },
-        { atSecs: start + ATTACK_SECS, gain: peakGain, kind: 'ramp' },
+        { atSecs: start, gain: audioGain(SILENT_GAIN_VALUE), kind: 'set' },
+        { atSecs: audioDurationSecs(start + ATTACK_SECS), gain: peakGain, kind: 'ramp' },
       ],
       startSecs: start,
       stopAtSecs: null,
     }
   }
 
-  const duration = Math.max(MIN_DURATION_SECS, resolveDurationSecs(request.durationSecs))
-  const end = start + duration
+  const duration = audioDurationSecs(Math.max(MIN_DURATION_SECS, resolveDurationSecs(request.durationSecs)))
+  const end = audioDurationSecs(Math.min(Number.MAX_VALUE, start + duration))
   const scale = envelopeScale(ATTACK_SECS + RELEASE_SECS, duration)
 
   return {
     peakGain,
     points: [
-      { atSecs: start, gain: 0, kind: 'set' },
-      { atSecs: start + ATTACK_SECS * scale, gain: peakGain, kind: 'ramp' },
-      { atSecs: end - RELEASE_SECS * scale, gain: peakGain, kind: 'set' },
-      { atSecs: end, gain: 0, kind: 'ramp' },
+      { atSecs: start, gain: audioGain(SILENT_GAIN_VALUE), kind: 'set' },
+      { atSecs: audioDurationSecs(start + ATTACK_SECS * scale), gain: peakGain, kind: 'ramp' },
+      { atSecs: audioDurationSecs(end - RELEASE_SECS * scale), gain: peakGain, kind: 'set' },
+      { atSecs: end, gain: audioGain(SILENT_GAIN_VALUE), kind: 'ramp' },
     ],
     startSecs: start,
     stopAtSecs: end,
@@ -228,7 +241,7 @@ export const toneEnvelope = (request: ToneRequest, startSecs: number): ToneEnvel
 }
 
 /** The gain to report when there is nothing scheduled, or once every scheduled point is behind `atSecs`. */
-const NO_POINTS_GAIN = 0
+const NO_POINTS_GAIN = audioGain(SILENT_GAIN_VALUE)
 /** Loop step between adjacent points, and the offset from `length` to the last index. */
 const ADJACENT_STEP = 1
 
@@ -248,7 +261,7 @@ type EnvelopeSegment = {
  */
 const findSegment = (
   points: ReadonlyArray<EnvelopePoint>,
-  atSecs: number,
+  atSecs: AudioDurationSecs,
 ): EnvelopeSegment | null => {
   for (let index = ADJACENT_STEP; index < points.length; index += ADJACENT_STEP) {
     const previous = points[index - ADJACENT_STEP]
@@ -267,7 +280,7 @@ const findSegment = (
  * only a `ramp` interpolates. Treating both as ramps would draw a curve the
  * Browser does not produce.
  */
-const interpolateSegment = (segment: EnvelopeSegment, atSecs: number): number => {
+const interpolateSegment = (segment: EnvelopeSegment, atSecs: AudioDurationSecs): number => {
   const { current, previous } = segment
   if (current.kind === 'set') {
     return previous.gain
@@ -283,7 +296,7 @@ const interpolateSegment = (segment: EnvelopeSegment, atSecs: number): number =>
  * `points` non-empty, so the index below is safe without a redundant check
  * that no caller could ever exercise.
  */
-const lastGain = (points: ReadonlyArray<EnvelopePoint>): number =>
+const lastGain = (points: ReadonlyArray<EnvelopePoint>): AudioGain =>
   points.reduce((_previousPoint, point) => point).gain
 
 /**
@@ -299,7 +312,7 @@ const lastGain = (points: ReadonlyArray<EnvelopePoint>): number =>
  * gain, which is what a real `AudioParam` holds too: automation does not
  * extrapolate.
  */
-export const gainAt = (envelope: ToneEnvelope, atSecs: number): number => {
+export const gainAt = (envelope: ToneEnvelope, atSecs: AudioDurationSecs): AudioGain => {
   const { points } = envelope
   const [first] = points
   if (!first) {
@@ -313,5 +326,5 @@ export const gainAt = (envelope: ToneEnvelope, atSecs: number): number => {
   if (!segment) {
     return lastGain(points)
   }
-  return interpolateSegment(segment, atSecs)
+  return audioGain(interpolateSegment(segment, atSecs))
 }

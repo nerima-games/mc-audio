@@ -1,12 +1,21 @@
 /* oxlint-disable max-statements, no-magic-numbers */
-import { AIR_BLOCK_ID, blockIdOf } from '@nerima-games/mc-kernel'
+import { AIR_BLOCK_ID, blockIdOf } from '@nerima-games/mc-kernel/domain/block-registry'
+import { Option, Result } from 'effect'
 import { describe, expect, it } from 'vitest'
+import { AudioVolume } from '../src/domain/audio-brands.js'
 import {
   canPlayMinecraftFireflyBushIdleSounds,
   MINECRAFT_AUDIO_COMPONENT_NAMES,
   normalizeMinecraftAudioComponent,
   parseMinecraftAudioComponent,
 } from '../src/domain/minecraft-audio.js'
+
+const success = <A, E>(result: Result.Result<A, E>): A => {
+  if (Result.isFailure(result)) {
+    throw new Error('expected a successful result')
+  }
+  return result.success
+}
 
 const VALID_COMPONENT = {
   'minecraft:audio/ambient_sounds': {
@@ -49,9 +58,9 @@ describe('Minecraft audio component', () => {
       fireflyBushSounds: null,
       musicVolume: null,
     }
-    expect(normalizeMinecraftAudioComponent()).toStrictEqual(empty)
-    expect(normalizeMinecraftAudioComponent(null)).toStrictEqual(empty)
-    expect(normalizeMinecraftAudioComponent({})).toStrictEqual(empty)
+    expect(success(normalizeMinecraftAudioComponent())).toStrictEqual(empty)
+    expect(success(normalizeMinecraftAudioComponent(null))).toStrictEqual(empty)
+    expect(success(normalizeMinecraftAudioComponent({}))).toStrictEqual(empty)
     expect(MINECRAFT_AUDIO_COMPONENT_NAMES).toStrictEqual([
       'minecraft:audio/ambient_sounds',
       'minecraft:audio/background_music',
@@ -61,7 +70,7 @@ describe('Minecraft audio component', () => {
   })
 
   it('normalizes official ambient, background music, firefly, and volume fields', () => {
-    expect(parseMinecraftAudioComponent(VALID_COMPONENT)).toStrictEqual({
+    expect(success(parseMinecraftAudioComponent(VALID_COMPONENT))).toStrictEqual({
       ambientSounds: {
         additions: [{ sound: 'minecraft:ambient.addition', tick_chance: 1 }],
         loop: 'minecraft:ambient.loop',
@@ -93,24 +102,24 @@ describe('Minecraft audio component', () => {
         },
       },
       fireflyBushSounds: true,
-      musicVolume: 0.8,
+      musicVolume: AudioVolume(0.8),
     })
     expect(
-      parseMinecraftAudioComponent({
+      success(parseMinecraftAudioComponent({
         'minecraft:audio/ambient_sounds': {},
         'minecraft:audio/background_music': {},
         'minecraft:audio/music_volume': 0,
-      }),
+      })),
     ).toStrictEqual({
       ambientSounds: { additions: [], loop: null, mood: null },
       backgroundMusic: {},
       fireflyBushSounds: null,
-      musicVolume: 0,
+      musicVolume: AudioVolume(0),
     })
     expect(
-      parseMinecraftAudioComponent({
+      success(parseMinecraftAudioComponent({
         'minecraft:audio/background_music': { default: {} },
-      }),
+      })),
     ).toStrictEqual({
       ambientSounds: null,
       backgroundMusic: { default: null },
@@ -119,9 +128,18 @@ describe('Minecraft audio component', () => {
     })
   })
 
+  it('accepts the upper boundary for normalized music volume', () => {
+    expect(success(normalizeMinecraftAudioComponent({ 'minecraft:audio/music_volume': 1 }))).toStrictEqual({
+      ambientSounds: null,
+      backgroundMusic: null,
+      fireflyBushSounds: null,
+      musicVolume: AudioVolume(1),
+    })
+  })
+
   it('normalizes explicit firefly false and applies the opaque-block gate', () => {
     expect(
-      parseMinecraftAudioComponent({ 'minecraft:audio/firefly_bush_sounds': false }),
+      success(parseMinecraftAudioComponent({ 'minecraft:audio/firefly_bush_sounds': false })),
     ).toStrictEqual({
       ambientSounds: null,
       backgroundMusic: null,
@@ -129,45 +147,45 @@ describe('Minecraft audio component', () => {
       musicVolume: null,
     })
     expect(
-      canPlayMinecraftFireflyBushIdleSounds({ fireflyBushSounds: true, belowOpaqueBlock: false }),
+      success(canPlayMinecraftFireflyBushIdleSounds({ fireflyBushSounds: true, belowOpaqueBlock: false })),
     ).toBe(true)
     expect(
-      canPlayMinecraftFireflyBushIdleSounds({ fireflyBushSounds: true, belowOpaqueBlock: true }),
+      success(canPlayMinecraftFireflyBushIdleSounds({ fireflyBushSounds: true, belowOpaqueBlock: true })),
     ).toBe(false)
     expect(
-      canPlayMinecraftFireflyBushIdleSounds({ fireflyBushSounds: false, belowOpaqueBlock: false }),
+      success(canPlayMinecraftFireflyBushIdleSounds({ fireflyBushSounds: false, belowOpaqueBlock: false })),
     ).toBe(false)
     expect(
-      canPlayMinecraftFireflyBushIdleSounds({ fireflyBushSounds: null, belowOpaqueBlock: false }),
+      success(canPlayMinecraftFireflyBushIdleSounds({ fireflyBushSounds: null, belowOpaqueBlock: false })),
     ).toBe(false)
   })
 
   it('uses mc-kernel block light transmission when a block id is provided', () => {
     expect(
-      canPlayMinecraftFireflyBushIdleSounds({
+      success(canPlayMinecraftFireflyBushIdleSounds({
         belowBlockId: AIR_BLOCK_ID,
         belowOpaqueBlock: true,
         fireflyBushSounds: true,
-      }),
+      })),
     ).toBe(true)
     expect(
-      canPlayMinecraftFireflyBushIdleSounds({
-        belowBlockId: blockIdOf('stone'),
+      success(canPlayMinecraftFireflyBushIdleSounds({
+        belowBlockId: Option.getOrThrow(blockIdOf('stone')),
         belowOpaqueBlock: false,
         fireflyBushSounds: true,
-      }),
+      })),
     ).toBe(false)
     expect(
-      canPlayMinecraftFireflyBushIdleSounds({
+      success(canPlayMinecraftFireflyBushIdleSounds({
         belowOpaqueBlock: true,
         fireflyBushSounds: true,
-      }),
+      })),
     ).toBe(false)
-    expect(() => Reflect.apply(canPlayMinecraftFireflyBushIdleSounds, undefined, [{
+    expect(Result.isFailure(Reflect.apply(canPlayMinecraftFireflyBushIdleSounds, undefined, [{
       belowBlockId: 999,
       belowOpaqueBlock: false,
       fireflyBushSounds: true,
-    }])).toThrow(RangeError)
+    }]))).toBe(true)
   })
 
   it('rejects malformed component, background, ambient, firefly, and volume values', () => {
@@ -190,7 +208,7 @@ describe('Minecraft audio component', () => {
       { 'minecraft:audio/music_volume': -0.1 },
       { 'minecraft:audio/music_volume': 1.1 },
     ]) {
-      expect(() => parseMinecraftAudioComponent(invalid)).toThrow()
+      expect(Result.isFailure(parseMinecraftAudioComponent(invalid))).toBe(true)
     }
   })
 })

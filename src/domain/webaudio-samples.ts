@@ -4,22 +4,23 @@
  * Loading and cache state are separate from node scheduling so that the
  * backend can keep its platform boundary focused on AudioContext operations.
  */
+import { AudioSampleId, AudioCount as audioCount } from './audio-brands.js'
 import type { AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
+import { Deferred, Effect } from 'effect'
 import type { AudioBufferSurface } from './webaudio-surface.js'
-import { Effect } from 'effect'
 
 const INITIAL_COUNT = 0
 const COUNT_STEP = 1
 
 export type AudioSamplePreloadOptions = {
   readonly manifest: AudioSampleManifest
-  readonly cache: Map<string, AudioBufferSurface>
-  readonly pendingLoads: Map<string, Promise<boolean>>
-  readonly preloadedStreams: Set<string>
-  readonly preloadStream: ((soundId: string, source: AudioSampleSource) => Effect.Effect<boolean, unknown>) | undefined
+  readonly cache: Map<AudioSampleId, AudioBufferSurface>
+  readonly pendingLoads: Map<AudioSampleId, Deferred.Deferred<boolean>>
+  readonly preloadedStreams: Set<AudioSampleId>
+  readonly preloadStream: ((soundId: AudioSampleId, source: AudioSampleSource) => Effect.Effect<boolean, unknown>) | undefined
   readonly onlyPreload?: boolean
   readonly loadSample: (
-    soundId: string,
+    soundId: AudioSampleId,
     source: AudioSampleSource,
   ) => Effect.Effect<AudioBufferSurface | null>
 }
@@ -28,22 +29,22 @@ type PreloadResult = 'cached' | 'failed' | 'loaded'
 
 const addPreloadResult = (summary: AudioSampleLoadReport, result: PreloadResult): AudioSampleLoadReport => {
   if (result === 'cached') {
-    return { ...summary, cached: summary.cached + COUNT_STEP }
+    return { ...summary, cached: audioCount(summary.cached + COUNT_STEP) }
   }
   if (result === 'failed') {
-    return { ...summary, failed: summary.failed + COUNT_STEP }
+    return { ...summary, failed: audioCount(summary.failed + COUNT_STEP) }
   }
-  return { ...summary, loaded: summary.loaded + COUNT_STEP }
+  return { ...summary, loaded: audioCount(summary.loaded + COUNT_STEP) }
 }
 
 const summarizePreloads = (results: ReadonlyArray<PreloadResult>): AudioSampleLoadReport =>
   results.reduce(
-    (summary, result) => ({ ...addPreloadResult(summary, result), requested: summary.requested + COUNT_STEP }),
-    { cached: INITIAL_COUNT, failed: INITIAL_COUNT, loaded: INITIAL_COUNT, requested: INITIAL_COUNT },
+    (summary, result) => ({ ...addPreloadResult(summary, result), requested: audioCount(summary.requested + COUNT_STEP) }),
+    { cached: audioCount(INITIAL_COUNT), failed: audioCount(INITIAL_COUNT), loaded: audioCount(INITIAL_COUNT), requested: audioCount(INITIAL_COUNT) },
   )
 
 const startStreamLoad = (
-  soundId: string,
+  soundId: AudioSampleId,
   source: AudioSampleSource,
   options: AudioSamplePreloadOptions,
 ): Effect.Effect<boolean> => {
@@ -58,7 +59,7 @@ const startStreamLoad = (
     })
     return yield* preload
   }).pipe(
-    Effect.catchAll(() => Effect.succeed(false)),
+    Effect.catch(() => Effect.succeed(false)),
     Effect.tap((loaded) => Effect.sync(() => {
       if (loaded) {
         options.preloadedStreams.add(soundId)
@@ -68,7 +69,7 @@ const startStreamLoad = (
 }
 
 const startDecodedLoad = (
-  soundId: string,
+  soundId: AudioSampleId,
   source: AudioSampleSource,
   options: AudioSamplePreloadOptions,
 ): Effect.Effect<boolean> => options.loadSample(soundId, source).pipe(
@@ -82,7 +83,7 @@ const startDecodedLoad = (
 )
 
 const loadForSource = (
-  soundId: string,
+  soundId: AudioSampleId,
   source: AudioSampleSource,
   options: AudioSamplePreloadOptions,
 ): Effect.Effect<boolean> => {
@@ -99,25 +100,32 @@ const loadForSource = (
   return startDecodedLoad(soundId, source, options)
 }
 
-const startSampleLoad = (soundId: string, source: AudioSampleSource, options: AudioSamplePreloadOptions): Promise<boolean> => {
-  const existingLoad = options.pendingLoads.get(soundId)
-  if (existingLoad) {
-    return existingLoad
-  }
+const startSampleLoad = (soundId: AudioSampleId, source: AudioSampleSource, options: AudioSamplePreloadOptions): Effect.Effect<boolean> =>
+  Effect.gen(function* startSampleLoadEffect() {
+    const existingLoad = options.pendingLoads.get(soundId)
+    if (existingLoad) {
+      return yield* Deferred.await(existingLoad)
+    }
 
-  // No catchAll wrapper: `loadForSource` types its error channel as `never`
-  // (a failed decode or stream load already resolves to `false`, not a
-  // Throw), so there is nothing for a catch here to ever handle.
-  const load = loadForSource(soundId, source, options)
-  const newLoad = Effect.runPromise(load).finally(() =>
-    options.pendingLoads.delete(soundId),
-  )
-  options.pendingLoads.set(soundId, newLoad)
-  return newLoad
-}
+    const deferred = yield* Deferred.make<boolean>()
+    options.pendingLoads.set(soundId, deferred)
+
+    const load = loadForSource(soundId, source, options)
+    const cleanup = Effect.sync(() => {
+      if (options.pendingLoads.get(soundId) === deferred) {
+        options.pendingLoads.delete(soundId)
+      }
+    })
+    const completeLoad = Effect.exit(load).pipe(
+      Effect.flatMap((exit) => Deferred.done(deferred, exit)),
+      Effect.ensuring(cleanup),
+    )
+    yield* Effect.forkDetach(completeLoad)
+    return yield* Deferred.await(deferred)
+  })
 
 const preloadStatus = (
-  soundId: string,
+  soundId: AudioSampleId,
   source: AudioSampleSource,
   options: AudioSamplePreloadOptions,
 ): PreloadResult | null => {
@@ -131,8 +139,8 @@ type PreloadDecision =
   | { readonly kind: 'result'; readonly result: PreloadResult }
   | { readonly kind: 'load'; readonly source: AudioSampleSource }
 
-const preloadDecision = (soundId: string, options: AudioSamplePreloadOptions): PreloadDecision => {
-  const source = options.manifest[soundId]
+const preloadDecision = (soundId: AudioSampleId, options: AudioSamplePreloadOptions): PreloadDecision => {
+  const source = options.manifest.get(soundId)
   if (!source) {
     return { kind: 'result', result: 'failed' }
   }
@@ -143,7 +151,7 @@ const preloadDecision = (soundId: string, options: AudioSamplePreloadOptions): P
   return { kind: 'load', source }
 }
 
-const preloadOneSample = (soundId: string, options: AudioSamplePreloadOptions): Effect.Effect<PreloadResult> =>
+const preloadOneSample = (soundId: AudioSampleId, options: AudioSamplePreloadOptions): Effect.Effect<PreloadResult> =>
   Effect.gen(function* preloadOneSampleEffect() {
     if (options.cache.has(soundId)) {
       return 'cached'
@@ -154,7 +162,7 @@ const preloadOneSample = (soundId: string, options: AudioSamplePreloadOptions): 
       return decision.result
     }
 
-    const loaded = yield* Effect.promise(() => startSampleLoad(soundId, decision.source, options))
+    const loaded = yield* startSampleLoad(soundId, decision.source, options)
     if (loaded) {
       return 'loaded'
     }
@@ -163,14 +171,14 @@ const preloadOneSample = (soundId: string, options: AudioSamplePreloadOptions): 
 
 /** Load each requested sample once and report cache hits, loads, and failures. */
 export const preloadAudioSamples = (
-  soundIds: ReadonlyArray<string> | undefined,
+  soundIds: ReadonlyArray<AudioSampleId> | undefined,
   options: AudioSamplePreloadOptions,
 ): Effect.Effect<AudioSampleLoadReport> =>
   Effect.gen(function* preloadSamplesEffect() {
-    const ids = [...new Set(soundIds ?? Object.keys(options.manifest))]
+  const ids = [...new Set(soundIds ?? [...options.manifest.keys()])]
     let preloadIds = ids
     if (options.onlyPreload === true) {
-      preloadIds = ids.filter((soundId) => options.manifest[soundId]?.preload === true)
+      preloadIds = ids.filter((soundId) => options.manifest.get(soundId)?.preload === true)
     }
     const results = yield* Effect.forEach(preloadIds, (soundId) => preloadOneSample(soundId, options))
     return summarizePreloads(results)

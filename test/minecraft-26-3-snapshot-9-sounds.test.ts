@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { Result } from 'effect'
+import { MinecraftSoundEventId, MinecraftSoundNamespace } from '../src/domain/audio-brands.js'
 
 import {
   MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_GROUPS,
@@ -14,6 +16,13 @@ const completeSoundsJson = (): Record<string, { sounds: string[] }> =>
     MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_IDS.map((eventId) => [eventId, { sounds: [eventId] }]),
   )
 
+const success = <A, E>(result: Result.Result<A, E>): A => {
+  if (Result.isFailure(result)) {
+    throw new Error('expected a successful result')
+  }
+  return result.success
+}
+
 describe('Minecraft 26.3 Snapshot 9 sound event catalog', () => {
   it('contains the complete snapshot event catalog', () => {
     const groupEventIds = Object.values(MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_GROUPS).flat()
@@ -27,13 +36,13 @@ describe('Minecraft 26.3 Snapshot 9 sound event catalog', () => {
   })
 
   it('parses the snapshot sound definitions for every catalog event', () => {
-    const registry = createMinecraft26_3Snapshot9SoundRegistry()
+    const registry = success(createMinecraft26_3Snapshot9SoundRegistry())
     const definitionIds = Object.keys(MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON)
       .map((eventId) => `minecraft:${eventId}`)
       .sort()
-    const poplarAmbient = registry.events['minecraft:block.poplar_leaves.ambient']
-    const cushionSit = registry.events['minecraft:entity.cushion.sit']
-    const sulfurCubeHit = registry.events['minecraft:entity.sulfur_cube.slow_sliding.hit']
+    const poplarAmbient = registry.events.get(MinecraftSoundEventId('minecraft:block.poplar_leaves.ambient'))
+    const cushionSit = registry.events.get(MinecraftSoundEventId('minecraft:entity.cushion.sit'))
+    const sulfurCubeHit = registry.events.get(MinecraftSoundEventId('minecraft:entity.sulfur_cube.slow_sliding.hit'))
 
     if (!poplarAmbient || !cushionSit || !sulfurCubeHit) {
       throw new Error('Expected official Minecraft 26.3 Snapshot 9 sound definitions')
@@ -54,9 +63,9 @@ describe('Minecraft 26.3 Snapshot 9 sound event catalog', () => {
   })
 
   it('accepts a resource-pack registry containing every catalog event', () => {
-    const registry = parseMinecraftSoundsJson(completeSoundsJson(), {
-      namespace: 'minecraft',
-    })
+    const registry = success(parseMinecraftSoundsJson(completeSoundsJson(), {
+      namespace: MinecraftSoundNamespace('minecraft'),
+    }))
 
     expect(missingMinecraft26_3Snapshot9SoundEvents(registry)).toEqual([])
   })
@@ -64,9 +73,9 @@ describe('Minecraft 26.3 Snapshot 9 sound event catalog', () => {
   it('reports an event that the supplied resource pack does not contain', () => {
     const soundsJson = completeSoundsJson()
     delete soundsJson['minecraft:block.shelf_mushroom.break']
-    const registry = parseMinecraftSoundsJson(soundsJson, {
-      namespace: 'minecraft',
-    })
+    const registry = success(parseMinecraftSoundsJson(soundsJson, {
+      namespace: MinecraftSoundNamespace('minecraft'),
+    }))
 
     expect(missingMinecraft26_3Snapshot9SoundEvents(registry)).toEqual([
       'minecraft:block.shelf_mushroom.break',

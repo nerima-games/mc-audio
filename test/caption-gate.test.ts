@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer, Option, Ref } from 'effect'
-import { EpochMillis, FixedClockLayer, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { FixedClockLayer } from '@nerima-games/mc-kernel/domain/clock'
+import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
+import { EpochMillis, MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
 import {
   type AudioAvailability,
   AudioBackendPort,
@@ -16,6 +18,8 @@ import {
   planCue,
   recordingCaptionLayer,
 } from '../src/domain/engine'
+import { SoundCueId } from '../src/domain/cue'
+import { AudioGain } from '../src/domain/audio-brands'
 import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
 
 /**
@@ -38,7 +42,12 @@ import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
  * first visit was never verified.
  */
 
-const LISTENER = { x: 0, y: 64, z: 0 }
+const LISTENER = { x: PositionAxis(0), y: PositionAxis(64), z: PositionAxis(0) }
+const BLOCK_BREAK = SoundCueId('blockBreak')
+const INVENTORY_OPEN = SoundCueId('inventoryOpen')
+const PLAYER_HURT = SoundCueId('playerHurt')
+const LEVEL_UP = SoundCueId('levelUp')
+const THUNDER_CLAP = SoundCueId('thunderClap')
 
 const baseContext = (overrides: Partial<CueContext>): CueContext => ({
   availability: 'ready',
@@ -86,7 +95,7 @@ const runCue = (context: CueContext, availability: AudioAvailability): Effect.Ef
       ),
     )
 
-    yield* service.play('blockBreak', { position: { x: 3, y: 64, z: 0 } })
+    yield* service.play(BLOCK_BREAK, { position: { x: PositionAxis(3), y: PositionAxis(64), z: PositionAxis(0) } })
 
     return {
       captions: yield* Ref.get(captionLog),
@@ -148,13 +157,13 @@ describe('captions fire ahead of the audio gate', () => {
 
   it.effect('an uncaptioned cue stays uncaptioned — a null caption is authorial, not a gate', () =>
     Effect.sync(() => {
-      const plan = planCue('inventoryOpen', baseContext({}))
+      const plan = planCue(INVENTORY_OPEN, baseContext({}))
       expect(plan.caption).toBeNull()
       expect(plan.tone).not.toBeNull()
 
       // ...and it stays null when muted too, i.e. the two reasons for silence
       // Never get confused with each other.
-      const muted = planCue('inventoryOpen', baseContext({ enabled: false }))
+      const muted = planCue(INVENTORY_OPEN, baseContext({ enabled: false }))
       expect(muted.caption).toBeNull()
       expect(muted.tone).toBeNull()
     }),
@@ -171,7 +180,7 @@ describe('planCue', () => {
       ]
 
       for (const state of states) {
-        const plan = planCue('playerHurt', baseContext(state))
+        const plan = planCue(PLAYER_HURT, baseContext(state))
         expect(plan.tone).toBeNull()
         expect(plan.caption).not.toBeNull()
       }
@@ -180,8 +189,8 @@ describe('planCue', () => {
 
   it.effect('carries pan on a spatial cue so a caption can show a direction', () =>
     Effect.sync(() => {
-      const right = planCue('blockBreak', baseContext({}), { position: { x: 12, y: 64, z: 0 } })
-      const left = planCue('blockBreak', baseContext({}), { position: { x: -12, y: 64, z: 0 } })
+      const right = planCue(BLOCK_BREAK, baseContext({}), { position: { x: PositionAxis(12), y: PositionAxis(64), z: PositionAxis(0) } })
+      const left = planCue(BLOCK_BREAK, baseContext({}), { position: { x: PositionAxis(-12), y: PositionAxis(64), z: PositionAxis(0) } })
 
       expect(right.caption?.pan).toBeGreaterThan(0)
       expect(left.caption?.pan).toBeLessThan(0)
@@ -190,7 +199,7 @@ describe('planCue', () => {
 
   it.effect('omits pan on a non-spatial cue rather than reporting a misleading zero', () =>
     Effect.sync(() => {
-      const plan = planCue('levelUp', baseContext({}), { position: { x: 50, y: 64, z: 0 } })
+      const plan = planCue(LEVEL_UP, baseContext({}), { position: { x: PositionAxis(50), y: PositionAxis(64), z: PositionAxis(0) } })
 
       expect(plan.caption?.pan).toBeUndefined()
       // A UI sound is not in the world, so a position must not move it.
@@ -200,8 +209,8 @@ describe('planCue', () => {
 
   it.effect('scales the tone gain by an explicit gainScale, and leaves it unscaled without one', () =>
     Effect.sync(() => {
-      const unscaled = planCue('blockBreak', baseContext({}))
-      const scaled = planCue('blockBreak', baseContext({}), { gainScale: 0.5 })
+      const unscaled = planCue(BLOCK_BREAK, baseContext({}))
+      const scaled = planCue(BLOCK_BREAK, baseContext({}), { gainScale: AudioGain(0.5) })
 
       expect(unscaled.tone?.gain).toBeGreaterThan(0)
       expect(scaled.tone?.gain).toBeCloseTo((unscaled.tone?.gain ?? 0) * 0.5, 10)
@@ -218,7 +227,7 @@ describe('firstCaptionFor', () => {
 
   it.effect('finds the first event matching a cue id, not the most recent one', () =>
     Effect.sync(() => {
-      const found = firstCaptionFor(CAPTIONS, 'blockBreak')
+      const found = firstCaptionFor(CAPTIONS, BLOCK_BREAK)
       expect(Option.isSome(found)).toBe(true)
       expect(Option.getOrThrow(found).atSecs).toBe(1)
     }),
@@ -226,8 +235,8 @@ describe('firstCaptionFor', () => {
 
   it.effect('is none when no event matches the cue id', () =>
     Effect.sync(() => {
-      expect(firstCaptionFor(CAPTIONS, 'thunderClap')).toStrictEqual(Option.none())
-      expect(firstCaptionFor([], 'blockBreak')).toStrictEqual(Option.none())
+      expect(firstCaptionFor(CAPTIONS, THUNDER_CLAP)).toStrictEqual(Option.none())
+      expect(firstCaptionFor([], BLOCK_BREAK)).toStrictEqual(Option.none())
     }),
   )
 })

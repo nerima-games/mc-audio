@@ -271,15 +271,15 @@ export type AudioContextSurface = {
    * REJECTS when the autoplay policy is unsatisfied, which is the single most
    * important fact in this file. The reference implementation swallowed that
    * rejection (`audio-engine.ts:46-49`,
-   * `Effect.catchAllCause(() => Effect.void)`) and carried on building
+   * `Effect.catchCause(() => Effect.void)`) and carried on building
    * oscillators that never sounded. `domain/webaudio-adapter.ts` turns the
    * rejection into an `AudioAvailability` value instead.
    */
-  readonly resume: () => Promise<void>
-  readonly close: () => Promise<void>
+  readonly resume: () => PromiseLike<void>
+  readonly close: () => PromiseLike<void>
   readonly createOscillator: () => OscillatorSurface
   readonly createBufferSource?: () => AudioBufferSourceSurface
-  readonly decodeAudioData: (audioData: ArrayBuffer) => Promise<AudioBufferSurface>
+  readonly decodeAudioData: (audioData: ArrayBuffer) => PromiseLike<AudioBufferSurface>
   readonly createGain: () => GainSurface
   readonly createStereoPanner: () => StereoPannerSurface
   /**

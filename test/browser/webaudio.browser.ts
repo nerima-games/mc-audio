@@ -1,5 +1,11 @@
 import { Effect } from 'effect'
 import { expect, test } from 'vitest'
+import {
+  AudioDurationSecs,
+  AudioFrequencyHz,
+  AudioGain,
+  AudioPan,
+} from '../../src/domain/audio-brands.js'
 import { makeWebAudioBackend } from '../../src/domain/webaudio-adapter.js'
 import type { WebAudioGlobalSurface } from '../../src/domain/webaudio-surface.js'
 
@@ -36,11 +42,11 @@ test('plays a real WebAudio cue through the mixer and stops it', async () => {
     await expect(Effect.runPromise(backend.availability)).resolves.toBe('ready')
 
     const playback = await Effect.runPromise(backend.playTone({
-      durationSecs: 0.1,
-      frequency: 440,
-      gain: 0.25,
+      durationSecs: AudioDurationSecs(0.1),
+      frequency: AudioFrequencyHz(440),
+      gain: AudioGain(0.25),
       loop: true,
-      pan: 0,
+      pan: AudioPan(0),
     }))
 
     expect(playback.accepted).toBe(true)

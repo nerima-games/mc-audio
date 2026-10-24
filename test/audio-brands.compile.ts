@@ -1,9 +1,5 @@
-import {
-  BlockId,
-  DeltaTimeSecs,
-  EpochMillis,
-  MonotonicTimeSecs,
-} from '@nerima-games/mc-kernel'
+import { BlockId } from '@nerima-games/mc-kernel/domain/block-registry'
+import { DeltaTimeSecs, EpochMillis, MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
 import { canPlayMinecraftFireflyBushIdleSounds } from '../src/domain/minecraft-audio'
 import { type CaptionEvent, visibleCaptions } from '../src/domain/caption'
 

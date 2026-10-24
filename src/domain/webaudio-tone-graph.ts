@@ -8,10 +8,18 @@ import type {
   StereoPannerSurface,
 } from './webaudio-surface.js'
 import { type ToneEnvelope, drivenFrequency } from './envelope.js'
+import type { AudioPlaybackRate } from './audio-brands.js'
+import { Effect } from 'effect'
 import type { ToneRequest } from './backend-port.js'
 import { clampPan } from './volume.js'
 
 export const DEFAULT_TONE_WAVE: OscillatorWave = 'sine'
+
+export type ToneGraphFailure = {
+  readonly _tag: 'ToneGraphFailure'
+  readonly cause: unknown
+  readonly soundId: ToneRequest['soundId'] | null
+}
 
 export type ActiveTone = {
   readonly source: AudioScheduledSourceSurface
@@ -29,7 +37,7 @@ export type ToneGraphOptions = {
   readonly request: ToneRequest
   readonly envelope: ToneEnvelope
   readonly sampleBuffer: AudioBufferSurface | null
-  readonly playbackRate: number
+  readonly playbackRate: AudioPlaybackRate
   readonly streamSource: AudioScheduledSourceSurface | null
 }
 
@@ -38,68 +46,77 @@ type ToneSourceOptions = Pick<
   'context' | 'request' | 'sampleBuffer' | 'playbackRate' | 'streamSource'
 >
 
+const graphFailure = (options: ToneSourceOptions, cause: unknown): ToneGraphFailure => ({
+  _tag: 'ToneGraphFailure',
+  cause,
+  soundId: options.request.soundId ?? null,
+})
+
 const createSampleSource = ({
   context,
   request,
   sampleBuffer,
   playbackRate,
-}: ToneSourceOptions): AudioScheduledSourceSurface | null => {
+}: ToneSourceOptions): Effect.Effect<AudioScheduledSourceSurface | null, ToneGraphFailure> => {
   const { createBufferSource } = context
   if (sampleBuffer === null || typeof createBufferSource !== 'function') {
-    return null
+    return Effect.succeed(null)
   }
-
-  try {
-    const bufferSource = createBufferSource.call(context)
-    bufferSource.buffer = sampleBuffer
-    bufferSource.loop = request.loop
-    bufferSource.playbackRate.value = playbackRate
-    return bufferSource
-  } catch {
-    return null
-  }
+  return Effect.try({
+    catch: (cause) => graphFailure({ context, playbackRate, request, sampleBuffer, streamSource: null }, cause),
+    try: () => {
+      const bufferSource = createBufferSource.call(context)
+      bufferSource.buffer = sampleBuffer
+      bufferSource.loop = request.loop
+      bufferSource.playbackRate.value = playbackRate
+      return bufferSource
+    },
+  }).pipe(Effect.catch(() => Effect.succeed(null)))
 }
 
-const createStreamSource = ({ streamSource }: ToneSourceOptions): AudioScheduledSourceSurface => {
+const createStreamSource = ({ streamSource, request, context, sampleBuffer, playbackRate }: ToneSourceOptions): Effect.Effect<AudioScheduledSourceSurface, ToneGraphFailure> => {
   if (streamSource === null) {
-    throw new Error('A streaming source is required for a streaming tone request')
+    return Effect.fail(graphFailure({ context, playbackRate, request, sampleBuffer, streamSource }, 'A streaming source is required for a streaming tone request'))
   }
-  return streamSource
+  return Effect.succeed(streamSource)
 }
 
-const createOscillatorSource = ({ context, request }: ToneSourceOptions): OscillatorSurface => {
-  const oscillator = context.createOscillator()
-  oscillator.type = request.wave ?? DEFAULT_TONE_WAVE
-  oscillator.frequency.value = drivenFrequency(request.frequency)
-  return oscillator
-}
+const createOscillatorSource = ({ context, request, sampleBuffer, playbackRate, streamSource }: ToneSourceOptions): Effect.Effect<OscillatorSurface, ToneGraphFailure> =>
+  Effect.try({
+    catch: (cause) => graphFailure({ context, playbackRate, request, sampleBuffer, streamSource }, cause),
+    try: () => {
+      const oscillator = context.createOscillator()
+      oscillator.type = request.wave ?? DEFAULT_TONE_WAVE
+      oscillator.frequency.value = drivenFrequency(request.frequency)
+      return oscillator
+    },
+  })
 
-const createStreamingSource = (options: ToneSourceOptions): AudioScheduledSourceSurface => {
+const createStreamingSource = (options: ToneSourceOptions): Effect.Effect<AudioScheduledSourceSurface, ToneGraphFailure> => {
   if (options.streamSource !== null) {
     return createStreamSource(options)
   }
-  const sampleSource = createSampleSource(options)
-  if (sampleSource !== null) {
-    return sampleSource
-  }
-  return createStreamSource(options)
+  return Effect.flatMap(createSampleSource(options), (sampleSource) => {
+    if (sampleSource === null) {
+      return createStreamSource(options)
+    }
+    return Effect.succeed(sampleSource)
+  })
 }
 
-const createToneSource = (options: ToneSourceOptions): AudioScheduledSourceSurface => {
+const createToneSource = (options: ToneSourceOptions): Effect.Effect<AudioScheduledSourceSurface, ToneGraphFailure> => {
   if (options.request.stream === true) {
     return createStreamingSource(options)
   }
-
-  const sampleSource = createSampleSource(options)
-  if (sampleSource !== null) {
-    return sampleSource
-  }
-
-  if (options.request.sampleOnly === true) {
-    throw new Error(`No sample source is available for ${options.request.soundId ?? 'the requested audio'}`)
-  }
-
-  return createOscillatorSource(options)
+  return Effect.flatMap(createSampleSource(options), (sampleSource) => {
+    if (sampleSource !== null) {
+      return Effect.succeed(sampleSource)
+    }
+    if (options.request.sampleOnly === true) {
+      return Effect.fail(graphFailure(options, `No sample source is available for ${options.request.soundId ?? 'the requested audio'}`))
+    }
+    return createOscillatorSource(options)
+  })
 }
 
 const scheduleEnvelope = (gain: GainSurface, envelope: ToneEnvelope): void => {
@@ -121,15 +138,15 @@ type OutputConnectionOptions = Pick<ToneConnectionOptions, 'gain' | 'master' | '
   readonly panner: StereoPannerSurface
 }
 
-const disconnectNodes = (nodes: ReadonlyArray<AudioScheduledSourceSurface | GainSurface | StereoPannerSurface | null>): void => {
-  for (const node of nodes) {
-    try {
-      node?.disconnect()
-    } catch {
-      // Best-effort cleanup must not hide the graph construction failure.
-    }
-  }
-}
+const disconnectNodes = (
+  nodes: ReadonlyArray<AudioScheduledSourceSurface | GainSurface | StereoPannerSurface | null>,
+): Effect.Effect<void> =>
+  Effect.forEach(nodes, (node) =>
+    Effect.try({
+      catch: (cause) => cause,
+      try: () => node?.disconnect(),
+    }).pipe(Effect.catch(() => Effect.void)),
+  ).pipe(Effect.asVoid)
 
 const connectOutput = ({ gain, master, panner, request }: OutputConnectionOptions): void => {
   panner.pan.value = clampPan(request.pan)
@@ -143,32 +160,35 @@ const connectToneNodes = ({
   master,
   request,
   source,
-}: ToneConnectionOptions): StereoPannerSurface => {
+}: ToneConnectionOptions): Effect.Effect<StereoPannerSurface, ToneGraphFailure> => {
   let panner: StereoPannerSurface | null = null
-  try {
-    source.connect(gain)
-    panner = context.createStereoPanner()
-    connectOutput({ gain, master, panner, request })
-    return panner
-  } catch (cause) {
-    disconnectNodes([source, gain, panner])
-    throw cause
-  }
+  return Effect.try({
+    catch: (cause): ToneGraphFailure => ({ _tag: 'ToneGraphFailure', cause, soundId: request.soundId ?? null }),
+    try: () => {
+      source.connect(gain)
+      panner = context.createStereoPanner()
+      connectOutput({ gain, master, panner, request })
+      return panner
+    },
+  }).pipe(
+    Effect.catch((cause) => disconnectNodes([source, gain, panner]).pipe(Effect.flatMap(() => Effect.fail(cause)))),
+  )
 }
 
-export const buildToneGraph = (options: ToneGraphOptions): ActiveTone => {
-  let source: AudioScheduledSourceSurface | null = null
-  let gain: GainSurface | null = null
-
-  try {
-    source = createToneSource(options)
-    gain = options.context.createGain()
-    scheduleEnvelope(gain, options.envelope)
-  } catch (cause) {
-    disconnectNodes([source, gain])
-    throw cause
-  }
-
-  const panner = connectToneNodes({ ...options, gain, source })
-  return { envelope: options.envelope, gain, panner, releasing: false, source }
-}
+export const buildToneGraph = (options: ToneGraphOptions): Effect.Effect<ActiveTone, ToneGraphFailure> =>
+  Effect.gen(function* buildToneGraphEffect() {
+    const source = yield* createToneSource(options)
+    let gain: GainSurface | null = null
+    const scheduledGain = yield* Effect.try({
+      catch: (cause) => graphFailure(options, cause),
+      try: () => {
+        gain = options.context.createGain()
+        scheduleEnvelope(gain, options.envelope)
+        return gain
+      },
+    }).pipe(
+      Effect.catch((cause) => disconnectNodes([source, gain]).pipe(Effect.flatMap(() => Effect.fail(cause)))),
+    )
+    const panner = yield* connectToneNodes({ ...options, gain: scheduledGain, source })
+    return { envelope: options.envelope, gain: scheduledGain, panner, releasing: false, source }
+  })

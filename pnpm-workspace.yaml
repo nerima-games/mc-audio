@@ -1,8 +1,8 @@
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
-  # Kernel 0.8.0 was published immediately before this downstream follow-up; exclude it so the pinned install remains reproducible during the migration.
-  - '@nerima-games/mc-kernel@0.4.0 || 0.7.0 || 0.8.0'
+  # Kernel 0.9.0 is the downstream migration target; exclude it so the pinned install remains reproducible during the migration.
+  - '@nerima-games/mc-kernel@0.4.0 || 0.7.0 || 0.8.0 || 0.9.0'
   - vite@8.3.5
 overrides:
   nanoid: 3.3.18

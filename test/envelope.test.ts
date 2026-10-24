@@ -19,27 +19,47 @@
  * and the failure never throws — it just sounds cheap forever.
  */
 import { describe, expect, it } from '@effect/vitest'
-import { Effect } from 'effect'
+import { Effect, Option } from 'effect'
+import { AudioDurationSecs, AudioFrequencyHz, AudioGain, AudioPan } from '../src/domain/audio-brands.js'
 import type { ToneRequest } from '../src/domain/backend-port'
 import {
   ATTACK_SECS,
   drivenFrequency,
-  gainAt,
+  gainAt as brandedGainAt,
   MIN_DURATION_SECS,
   MIN_FREQUENCY_HZ,
   RELEASE_SECS,
-  toneEnvelope,
+  toneEnvelope as brandedToneEnvelope,
   type ToneEnvelope,
 } from '../src/domain/envelope'
 
-const tone = (overrides: Partial<ToneRequest> = {}): ToneRequest => ({
-  frequency: 220,
-  durationSecs: 0.07,
-  gain: 0.4,
-  pan: 0,
+type ToneOverrides = Omit<Partial<ToneRequest>, 'durationSecs' | 'frequency' | 'gain' | 'pan'> & {
+  readonly durationSecs?: number
+  readonly frequency?: number
+  readonly gain?: number
+  readonly pan?: number
+}
+
+const tone = ({
+  durationSecs = 0.07,
+  frequency = 220,
+  gain = 0.4,
+  pan = 0,
+  ...overrides
+}: ToneOverrides = {}): ToneRequest => ({
+  durationSecs: AudioDurationSecs(durationSecs),
+  frequency: AudioFrequencyHz(frequency),
+  gain: AudioGain(gain),
+  pan: AudioPan(pan),
   loop: false,
   ...overrides,
 })
+
+const toneEnvelope = (request: ToneRequest, startSecs: number): ToneEnvelope =>
+  brandedToneEnvelope(request, AudioDurationSecs(startSecs))
+
+const gainAt = (envelope: ToneEnvelope, atSecs: number) =>
+  brandedGainAt(envelope, AudioDurationSecs(atSecs))
 
 /** Samples the curve densely enough that a step of any size shows up. */
 const sample = (
@@ -174,12 +194,11 @@ describe('the short-tone case, which is the one that bites', () => {
     }),
   )
 
-  it.effect('floors a zero-length or negative request rather than scheduling backwards', () =>
+  it.effect('floors a zero-length request rather than scheduling backwards', () =>
     Effect.sync(() => {
-      for (const durationSecs of [0, -1, Number.NaN]) {
-        const envelope = toneEnvelope(tone({ durationSecs }), 4)
-        expect(envelope.stopAtSecs).toBeCloseTo(4 + MIN_DURATION_SECS, 10)
-      }
+      const envelope = toneEnvelope(tone({ durationSecs: 0 }), 4)
+      expect(envelope.stopAtSecs).toBeCloseTo(4 + MIN_DURATION_SECS, 10)
+      expect(Option.isNone(AudioDurationSecs.option(-1))).toBe(true)
     }),
   )
 })
@@ -214,11 +233,11 @@ describe('a looping tone', () => {
 })
 
 describe('clamping', () => {
-  it.effect('keeps peak gain non-negative and treats a non-finite gain as silence', () =>
+  it.effect('rejects invalid gains at the branded request boundary', () =>
     Effect.sync(() => {
       expect(toneEnvelope(tone({ gain: 2 }), 0).peakGain).toBe(2)
-      expect(toneEnvelope(tone({ gain: -1 }), 0).peakGain).toBe(0)
-      expect(toneEnvelope(tone({ gain: Number.NaN }), 0).peakGain).toBe(0)
+      expect(Option.isNone(AudioGain.option(-1))).toBe(true)
+      expect(Option.isNone(AudioGain.option(Number.NaN))).toBe(true)
     }),
   )
 
@@ -227,10 +246,27 @@ describe('clamping', () => {
       // Carried over from `audio-engine.ts:52`. A negative frequency is
       // accepted by Web Audio and produces the same tone as its absolute
       // value, so a caller's sign error would otherwise work by accident.
-      expect(drivenFrequency(220)).toBe(220)
-      expect(drivenFrequency(5)).toBe(MIN_FREQUENCY_HZ)
-      expect(drivenFrequency(-440)).toBe(MIN_FREQUENCY_HZ)
-      expect(drivenFrequency(Number.NaN)).toBe(MIN_FREQUENCY_HZ)
+      expect(drivenFrequency(AudioFrequencyHz(220))).toBe(220)
+      expect(drivenFrequency(AudioFrequencyHz(5))).toBe(MIN_FREQUENCY_HZ)
+      expect(Option.isNone(AudioFrequencyHz.option(-440))).toBe(true)
+      expect(Option.isNone(AudioFrequencyHz.option(Number.NaN))).toBe(true)
+    }),
+  )
+
+  it.effect('uses safe fallbacks for malformed branded frequency and time values', () =>
+    Effect.sync(() => {
+      // @ts-expect-error Simulate an invalid branded duration from JavaScript.
+      const malformedTime: AudioDurationSecs = Number.NaN
+      // @ts-expect-error Simulate an invalid branded frequency from JavaScript.
+      const malformedFrequency: AudioFrequencyHz = Number.NaN
+      const malformedDurationRequest = { ...tone(), durationSecs: malformedTime }
+
+      expect(drivenFrequency(malformedFrequency)).toBe(MIN_FREQUENCY_HZ)
+      expect(brandedToneEnvelope(tone(), malformedTime).startSecs).toBe(AudioDurationSecs(0))
+      expect(brandedToneEnvelope(malformedDurationRequest, AudioDurationSecs(4)).stopAtSecs).toBeCloseTo(
+        4 + MIN_DURATION_SECS,
+        10,
+      )
     }),
   )
 
@@ -243,15 +279,10 @@ describe('clamping', () => {
     }),
   )
 
-  it.effect('floors a non-finite startSecs to the start of the clock', () =>
+  it.effect('rejects non-finite audio clock readings at the branded boundary', () =>
     Effect.sync(() => {
-      // The audio clock (`AudioContextSurface.currentTime`) is always finite
-      // in practice, but toneEnvelope guards the boundary anyway rather than
-      // scheduling NaN automation.
       for (const startSecs of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
-        const envelope = toneEnvelope(tone(), startSecs)
-        expect(envelope.startSecs).toBe(0)
-        expect(gainAt(envelope, 0)).toBe(0)
+        expect(Option.isNone(AudioDurationSecs.option(startSecs))).toBe(true)
       }
     }),
   )
@@ -263,7 +294,7 @@ describe('gainAt on a hand-built envelope', () => {
       // Not producible by toneEnvelope, which always schedules at least two
       // points, but ToneEnvelope is an exported type and gainAt is a general
       // function over it — a caller could hand it an empty schedule.
-      const empty: ToneEnvelope = { peakGain: 0, points: [], startSecs: 0, stopAtSecs: null }
+      const empty: ToneEnvelope = { peakGain: AudioGain(0), points: [], startSecs: AudioDurationSecs(0), stopAtSecs: null }
       expect(gainAt(empty, 0)).toBe(0)
       expect(gainAt(empty, 5)).toBe(0)
     }),
@@ -274,13 +305,13 @@ describe('gainAt on a hand-built envelope', () => {
       // A hand-built two-point ramp, independent of toneEnvelope's own shape,
       // pinning gainAt's interpolation arithmetic directly.
       const ramp: ToneEnvelope = {
-        peakGain: 1,
+        peakGain: AudioGain(1),
         points: [
-          { atSecs: 0, gain: 0, kind: 'set' },
-          { atSecs: 10, gain: 1, kind: 'ramp' },
+          { atSecs: AudioDurationSecs(0), gain: AudioGain(0), kind: 'set' },
+          { atSecs: AudioDurationSecs(10), gain: AudioGain(1), kind: 'ramp' },
         ],
-        startSecs: 0,
-        stopAtSecs: 10,
+        startSecs: AudioDurationSecs(0),
+        stopAtSecs: AudioDurationSecs(10),
       }
       expect(gainAt(ramp, 0)).toBe(0)
       expect(gainAt(ramp, 2.5)).toBeCloseTo(0.25, 10)
