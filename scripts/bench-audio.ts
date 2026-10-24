@@ -9,7 +9,7 @@
  */
 import { AudioCount } from '../src/domain/audio-brands.js'
 import { cueDefinition, isSoundCueId } from '../src/index.js'
-import { makeAudioBenchmark } from '../src/entrypoints/audio-benchmark.js'
+import { type AudioBenchmark, makeAudioBenchmark } from '../src/entrypoints/audio-benchmark.js'
 import { makeFakeWebAudio } from '../test/fake-webaudio.js'
 import { CUE_LOOKUP_IDS, REGISTERED_CUE_DEFINITIONS } from './bench-fixtures.js'
 import {
@@ -42,19 +42,21 @@ const lookupArm = (): void => {
   sink += hits
 }
 
-const makeMixerBench = async () => {
+const makeMixerBench = () => {
   const fake = makeFakeWebAudio()
-  return makeAudioBenchmark({
-    cues: REGISTERED_CUE_DEFINITIONS,
-    global: fake.global,
-    maxConcurrentTones: AudioCount(100_000),
-    metrics: () => {
-      const log = fake.context()?.log
-      return {
-        allocations: AudioCount(log?.created.length ?? 0),
-        connections: AudioCount(log?.edges.length ?? 0),
-      }
-    },
+  return new Promise<AudioBenchmark>((resolve, reject) => {
+    makeAudioBenchmark({
+      cues: REGISTERED_CUE_DEFINITIONS,
+      global: fake.global,
+      maxConcurrentTones: AudioCount(100_000),
+      metrics: () => {
+        const log = fake.context()?.log
+        return {
+          allocations: AudioCount(log?.created.length ?? 0),
+          connections: AudioCount(log?.edges.length ?? 0),
+        }
+      },
+    }, resolve, reject)
   })
 }
 
@@ -62,7 +64,10 @@ const main = async (): Promise<number> => {
   const tolerances = tolerancesFrom(process.argv)
   const lookupMs = measure(lookupArm, options(500, 1000)) / CUE_LOOKUP_IDS.length
   const mixer = await makeMixerBench()
-  const mixerMs = await measureAsync(mixer.run, options(100, 200))
+  const mixerMs = await measureAsync(
+    () => new Promise<void>((resolve, reject) => mixer.run(resolve, reject)),
+    options(100, 200),
+  )
   const yardstickMs = measure(() => {
     let total = 0
     for (const cueId of CUE_LOOKUP_IDS) {
