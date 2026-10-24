@@ -1,4 +1,15 @@
 import {
+  type AudioDiagnosticMessage,
+  type AudioDiagnosticPath,
+  type MinecraftMobSoundVariantId,
+  type MinecraftSoundEventId,
+  type MinecraftSoundNamespace,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
+  MinecraftMobSoundVariantId as makeMinecraftMobSoundVariantId,
+  MinecraftSoundEventId as makeMinecraftSoundEventId,
+} from './audio-brands.js'
+import {
   MINECRAFT_MOB_SOUND_VARIANT_KINDS,
   type MinecraftCatSoundSet,
   type MinecraftChickenSoundSet,
@@ -13,17 +24,6 @@ import {
   type MinecraftWolfSoundParserOptions,
   type MinecraftWolfSoundSet,
 } from './minecraft-mob-sound-variant-types.js'
-import {
-  type AudioDiagnosticMessage,
-  type AudioDiagnosticPath,
-  type MinecraftMobSoundVariantId,
-  type MinecraftSoundEventId,
-  type MinecraftSoundNamespace,
-  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
-  AudioDiagnosticPath as makeAudioDiagnosticPath,
-  MinecraftMobSoundVariantId as makeMinecraftMobSoundVariantId,
-  MinecraftSoundEventId as makeMinecraftSoundEventId,
-} from './audio-brands.js'
 import { Result } from 'effect'
 import { normalizeMinecraftSoundId } from './minecraft-sounds-parser.js'
 

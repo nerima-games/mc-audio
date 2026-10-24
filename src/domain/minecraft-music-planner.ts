@@ -3,10 +3,10 @@ import {
   type AudioTick,
   type AudioVolume,
   type MinecraftSoundEventId,
-  AudioTick as makeAudioTick,
-  AudioVolume as makeAudioVolume,
   AudioDiagnosticMessage as makeAudioDiagnosticMessage,
   AudioDiagnosticPath as makeAudioDiagnosticPath,
+  AudioTick as makeAudioTick,
+  AudioVolume as makeAudioVolume,
 } from './audio-brands.js'
 import {
   MINECRAFT_MUSIC_GAIN_STEP,

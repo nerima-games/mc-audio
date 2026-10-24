@@ -28,8 +28,13 @@
  */
 import { Context, Effect } from 'effect'
 import type { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
-import type { AudioCaptionText, AudioDurationSecs, AudioPan, MinecraftSoundEventId } from './audio-brands.js'
-import { AudioDurationSecs as makeAudioDurationSecs } from './audio-brands.js'
+import {
+  type AudioCaptionText,
+  type AudioDurationSecs,
+  type AudioPan,
+  type MinecraftSoundEventId,
+  AudioDurationSecs as makeAudioDurationSecs,
+} from './audio-brands.js'
 import type { SoundCueId } from '../data/cue-definitions.js'
 
 const ZERO = 0
@@ -80,7 +85,8 @@ export class CaptionStream extends CaptionStreamBase {}
  * `packages/presentation/hud/sound-captions.ts:6`, converted to seconds
  * because every duration in this project is seconds unless it says otherwise.
  */
-export const CAPTION_LIFETIME_SECS: AudioDurationSecs = makeAudioDurationSecs(2.5)
+const CAPTION_LIFETIME_SECS_VALUE = 2.5
+export const CAPTION_LIFETIME_SECS: AudioDurationSecs = makeAudioDurationSecs(CAPTION_LIFETIME_SECS_VALUE)
 
 /** Kept as an alias for existing consumers. */
 export const CAPTION_DISPLAY_SECS: typeof CAPTION_LIFETIME_SECS = CAPTION_LIFETIME_SECS

@@ -9,13 +9,13 @@ import {
   type MinecraftSoundEventId,
   type MinecraftSoundNamespace,
   type MinecraftSoundResourceId,
+  AudioCaptionText as makeAudioCaptionText,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
   AudioDistance as makeAudioDistance,
   AudioGain as makeAudioGain,
   AudioPlaybackRate as makeAudioPlaybackRate,
   AudioWeight as makeAudioWeight,
-  AudioCaptionText as makeAudioCaptionText,
-  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
-  AudioDiagnosticPath as makeAudioDiagnosticPath,
   MinecraftSoundEventId as makeMinecraftSoundEventId,
   MinecraftSoundResourceId as makeMinecraftSoundResourceId,
 } from './audio-brands.js'
@@ -211,7 +211,10 @@ export const normalizeMinecraftSoundId = (
   defaultNamespace: MinecraftSoundNamespace,
   path: unknown,
 ): Result.Result<MinecraftSoundResourceId, MinecraftSoundsParseFailure> => Result.gen(function* normalizeMinecraftSoundIdEffect() {
-  const pathLabel = typeof path === 'string' ? path : ''
+  let pathLabel = ''
+  if (typeof path === 'string') {
+    pathLabel = path
+  }
   const { namespace, path: rawPath } = yield* splitResourceId(value, defaultNamespace, pathLabel)
   const soundPath = yield* normalizeSoundPath(rawPath, pathLabel)
   return yield* brandMinecraftSoundResourceId(`${namespace}:${soundPath}`, pathLabel)

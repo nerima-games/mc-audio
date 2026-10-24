@@ -1,8 +1,18 @@
 import { Effect } from 'effect'
-import { AudioCount, AudioPan } from '../domain/audio-brands.js'
+import {
+  type AudioCount,
+  AudioCount as makeAudioCount,
+  AudioPan as makeAudioPan,
+} from '../domain/audio-brands.js'
 import type { CueDefinition } from '../domain/cue.js'
 import { makeWebAudioBackend } from '../domain/webaudio-adapter.js'
 import type { WebAudioGlobalSurface } from '../domain/webaudio-surface.js'
+
+const NEXT_INDEX = 1
+const SPATIAL_PAN_VALUE = -0.25
+const CENTER_PAN_VALUE = 0
+const SPATIAL_PAN = makeAudioPan(SPATIAL_PAN_VALUE)
+const CENTER_PAN = makeAudioPan(CENTER_PAN_VALUE)
 
 type AudioBenchmarkOptions = {
   readonly cues: ReadonlyArray<CueDefinition>
@@ -30,26 +40,30 @@ export const makeAudioBenchmark = async ({
   let index = 0
   let checksum = 0
   return {
+    allocations: () => metrics().allocations,
+    checksum: () => makeAudioCount(checksum),
+    connections: () => metrics().connections,
     run: async () => {
       const definition = cues[index % cues.length]
-      if (definition === undefined) {
+      if (definition === globalThis.undefined) {
         throw new Error('Benchmark cue definitions are empty')
       }
-      index += 1
+      index += NEXT_INDEX
+      let pan = CENTER_PAN
+      if (definition.spatial) {
+        pan = SPATIAL_PAN
+      }
       const playback = await Effect.runPromise(backend.playTone({
         durationSecs: definition.durationSecs,
         frequency: definition.frequency,
         gain: definition.baseGain,
         loop: false,
-        pan: AudioPan(definition.spatial ? -0.25 : 0),
+        pan,
         wave: definition.wave,
       }))
       if (playback.accepted) {
         checksum += playback.id
       }
     },
-    allocations: () => metrics().allocations,
-    connections: () => metrics().connections,
-    checksum: () => AudioCount(checksum),
   }
 }

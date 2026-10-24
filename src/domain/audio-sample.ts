@@ -1,8 +1,8 @@
 /** Host-neutral sample data exchanged by resource loaders and audio backends. */
 import {
+  AudioCount,
   type AudioDiagnosticMessage,
   type AudioDiagnosticPath,
-  AudioCount,
   AudioDiagnosticMessage as makeAudioDiagnosticMessage,
   AudioDiagnosticPath as makeAudioDiagnosticPath,
   AudioSampleId,

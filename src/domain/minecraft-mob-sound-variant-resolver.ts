@@ -1,3 +1,9 @@
+import {
+  type AudioDiagnosticMessage,
+  type MinecraftMobSoundVariantId,
+  type MinecraftSoundEventId,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+} from './audio-brands.js'
 import type {
   MinecraftMobSoundBehavior,
   MinecraftMobSoundResolutionOptions,
@@ -6,12 +12,6 @@ import type {
   MinecraftWolfSoundBehavior,
   MinecraftWolfSoundDefinition,
 } from './minecraft-mob-sound-variant-types.js'
-import {
-  type AudioDiagnosticMessage,
-  type MinecraftMobSoundVariantId,
-  type MinecraftSoundEventId,
-  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
-} from './audio-brands.js'
 import type { MinecraftSoundRegistry, ResolvedMinecraftSound } from './minecraft-sounds-types.js'
 import { type MinecraftSoundResolutionFailure, resolveMinecraftSound } from './minecraft-sounds-resolver.js'
 import { Result } from 'effect'

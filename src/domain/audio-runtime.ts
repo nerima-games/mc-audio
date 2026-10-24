@@ -1,10 +1,11 @@
 import { type AudioBackend, AudioBackendPort } from './backend-port.js'
-import { type AudioVolume, AudioVolume as audioVolume } from './audio-brands.js'
-import { CAPTION_DISPLAY_SECS, type CaptionEvent, visibleCaptions } from './caption.js'
 import {
   type AudioRuntimeCaptionSignature,
+  type AudioVolume,
   AudioRuntimeCaptionSignature as makeAudioRuntimeCaptionSignature,
+  AudioVolume as audioVolume,
 } from './audio-brands.js'
+import { CAPTION_DISPLAY_SECS, type CaptionEvent, visibleCaptions } from './caption.js'
 import { type CuePlayOptions, type SoundCueId } from './cue.js'
 import { Effect, Layer, Ref } from 'effect'
 import { type GameAudioHost, makeGameAudioHost } from './game-audio.js'

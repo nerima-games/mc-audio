@@ -1,6 +1,6 @@
 import {
-  type AudioDiagnosticMessage,
   type AudioDelayTicks,
+  type AudioDiagnosticMessage,
   type AudioOffset,
   type AudioTick,
   type MinecraftSoundEventId,

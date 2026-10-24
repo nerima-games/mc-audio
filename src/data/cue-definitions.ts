@@ -3,10 +3,10 @@ import {
   type AudioDurationSecs,
   type AudioFrequencyHz,
   type AudioGain,
+  AudioCaptionText as makeAudioCaptionText,
   AudioDurationSecs as makeAudioDurationSecs,
   AudioFrequencyHz as makeAudioFrequencyHz,
   AudioGain as makeAudioGain,
-  AudioCaptionText as makeAudioCaptionText,
 } from '../domain/audio-brands.js'
 import { Brand } from 'effect'
 
@@ -70,14 +70,20 @@ type CueDefinitionInput = {
   readonly wave: CueDefinition['wave']
 }
 
-const cue = ({ audio, caption, spatial, wave }: CueDefinitionInput): CueDefinition => ({
-  baseGain: makeAudioGain(audio.baseGain),
-  caption: caption === null ? null : makeAudioCaptionText(caption),
-  durationSecs: makeAudioDurationSecs(audio.durationSecs),
-  frequency: makeAudioFrequencyHz(audio.frequency),
-  spatial,
-  wave,
-})
+const cue = ({ audio, caption, spatial, wave }: CueDefinitionInput): CueDefinition => {
+  let normalizedCaption: AudioCaptionText | null = null
+  if (caption !== null) {
+    normalizedCaption = makeAudioCaptionText(caption)
+  }
+  return {
+    baseGain: makeAudioGain(audio.baseGain),
+    caption: normalizedCaption,
+    durationSecs: makeAudioDurationSecs(audio.durationSecs),
+    frequency: makeAudioFrequencyHz(audio.frequency),
+    spatial,
+    wave,
+  }
+}
 
 const ACHIEVEMENT_UNLOCK_FREQUENCY_HZ = 990
 const ACHIEVEMENT_UNLOCK_DURATION_SECS = 0.34
