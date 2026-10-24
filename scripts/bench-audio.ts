@@ -65,7 +65,9 @@ const main = async (): Promise<number> => {
   const lookupMs = measure(lookupArm, options(500, 1000)) / CUE_LOOKUP_IDS.length
   const mixer = await makeMixerBench()
   const mixerMs = await measureAsync(
-    () => new Promise<void>((resolve, reject) => mixer.run(resolve, reject)),
+    () => new Promise<void>((resolve, reject) => {
+      mixer.run(resolve, reject)
+    }),
     options(100, 200),
   )
   const yardstickMs = measure(() => {
