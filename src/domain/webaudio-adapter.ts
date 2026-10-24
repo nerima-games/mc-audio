@@ -148,19 +148,21 @@ const closeContext = (context: AudioContextSurface): Effect.Effect<void> =>
     try: () => context.close(),
   }).pipe(Effect.catch(() => Effect.void))
 
-const resolveMaxConcurrentTones = (value: AudioCount | undefined): AudioCount =>
-  value === undefined || !Number.isFinite(value)
-    ? DEFAULT_MAX_CONCURRENT_TONES
-    : AudioCount(Math.max(1, Math.floor(value)))
-
-const resolvePlaybackRate = (playbackRate: AudioPlaybackRate | undefined): AudioPlaybackRate => {
-  if (playbackRate === undefined) {
-    return AudioPlaybackRate(1)
+const resolveMaxConcurrentTones = (value: AudioCount | undefined): Option.Option<AudioCount> => {
+  if (value === undefined) {
+    return Option.some(DEFAULT_MAX_CONCURRENT_TONES)
   }
-  return Option.match(AudioPlaybackRate.option(playbackRate), {
-    onNone: () => AudioPlaybackRate(1),
-    onSome: (value) => value,
+  return Option.match(AudioCount.option(value), {
+    onNone: () => Option.none<AudioCount>(),
+    onSome: (validValue) => Option.some(AudioCount(Math.max(1, Math.floor(validValue)))),
   })
+}
+
+const resolvePlaybackRate = (playbackRate: AudioPlaybackRate | undefined): Option.Option<AudioPlaybackRate> => {
+  if (playbackRate === undefined) {
+    return Option.some(AudioPlaybackRate(1))
+  }
+  return AudioPlaybackRate.option(playbackRate)
 }
 
 const sampleDurationSecs = (
@@ -434,6 +436,22 @@ export const makeWebAudioBackend = (
         // Handles stay uniform across the admission gate; accepted is authoritative.
         const id = AudioHandleId(yield* Ref.updateAndGet(nextIdRef, (value) => value + 1))
         const refusedPlayback = (): TonePlayback => ({ accepted: false, id })
+        const playbackRateOption = resolvePlaybackRate(request.playbackRate)
+        const sampleId = request.soundId === undefined ? Option.none<AudioSampleId>() : AudioSampleId.option(request.soundId)
+        if (
+          Option.isNone(maxConcurrentTones) ||
+          Option.isNone(playbackRateOption) ||
+          (request.soundId !== undefined && Option.isNone(sampleId))
+        ) {
+          yield* Ref.update(refusedTonesRef, (count) => count + 1)
+          return refusedPlayback()
+        }
+        const playbackRequest: ToneRequest = {
+          ...request,
+          playbackRate: playbackRateOption.value,
+          ...(Option.isSome(sampleId) ? { soundId: sampleId.value } : {}),
+        }
+        const playbackRate = playbackRateOption.value
 
         const runtime = yield* ensureRuntime
         if (Option.isNone(runtime)) {
@@ -452,7 +470,6 @@ export const makeWebAudioBackend = (
           return refusedPlayback()
         }
 
-        const sampleId = request.soundId === undefined ? Option.none() : AudioSampleId.option(request.soundId)
         if (Option.isSome(sampleId) && sampleManifest.has(sampleId.value)) {
           yield* preloadSamples([sampleId.value]).pipe(Effect.asVoid)
         }
@@ -462,16 +479,15 @@ export const makeWebAudioBackend = (
           return refusedPlayback()
         }
 
-        const playbackRate = resolvePlaybackRate(request.playbackRate)
-        const sampleBuffer = yield* resolveSampleBuffer(request, options, sampleCache)
+        const sampleBuffer = yield* resolveSampleBuffer(playbackRequest, options, sampleCache)
         const canUseSample = sampleBuffer !== null && context.createBufferSource !== undefined
         const scheduledRequest =
-          canUseSample && sampleBuffer !== null && !request.loop
+          canUseSample && sampleBuffer !== null && !playbackRequest.loop
             ? {
-                ...request,
-                durationSecs: sampleDurationSecs(sampleBuffer, playbackRate, request.durationSecs),
+                ...playbackRequest,
+                durationSecs: sampleDurationSecs(sampleBuffer, playbackRate, playbackRequest.durationSecs),
               }
-            : request
+            : playbackRequest
         const startSecs = audioTime(context.currentTime)
         const envelope = toneEnvelope(scheduledRequest, startSecs)
         if (envelope.peakGain === 0) {
@@ -479,7 +495,7 @@ export const makeWebAudioBackend = (
         }
 
         const activeCount = [...activeTones.values()].filter((tone) => !tone.releasing).length
-        if (activeCount >= maxConcurrentTones) {
+        if (activeCount >= maxConcurrentTones.value) {
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
           yield* Ref.update(capacityRefusalsRef, (count) => count + 1)
           return refusedPlayback()
@@ -488,7 +504,7 @@ export const makeWebAudioBackend = (
         const streamSource = yield* streamSourceForRequest({
           context,
           createStreamSource: options.createStreamSource,
-          request,
+          request: playbackRequest,
           sampleManifest,
         })
 
@@ -497,7 +513,7 @@ export const makeWebAudioBackend = (
           envelope,
           master,
           playbackRate,
-          request,
+          request: playbackRequest,
           sampleBuffer: canUseSample ? sampleBuffer : null,
           streamSource,
         }).pipe(Effect.catch(() => Effect.succeed(null)))

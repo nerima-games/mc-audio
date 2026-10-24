@@ -720,7 +720,7 @@ describe('decoded sample playback', () => {
     }),
   )
 
-  it.effect('uses the default playback rate for an invalid runtime value', () =>
+  it.effect('refuses an invalid runtime playback rate', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()
       const audio = yield* makeWebAudioBackend({
@@ -731,10 +731,16 @@ describe('decoded sample playback', () => {
       yield* audio.unlock
       // JavaScript callers can bypass the branded TypeScript constructor.
       const invalidPlaybackRate = JSON.parse('0')
-      yield* audio.playTone({ ...CUE, playbackRate: invalidPlaybackRate, soundId: sampleId('sample') })
+      const playback = yield* audio.playTone({
+        ...CUE,
+        playbackRate: invalidPlaybackRate,
+        soundId: sampleId('sample'),
+      })
 
-      expect(fake.context()?.bufferSources[0]?.playbackRate.value).toBe(1)
-      expect(fake.context()?.log.stopped).toEqual([{ atSecs: 0.12, node: 'buffer#2' }])
+      expect(playback.accepted).toBe(false)
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+      expect(yield* audio.report).toMatchObject({ refusedTones: 1 })
     }),
   )
 
@@ -1469,10 +1475,9 @@ describe('the master gain node', () => {
 })
 
 describe('resource limits and lifecycle', () => {
-  it.effect('uses the default polyphony limit for a non-finite limit', () =>
+  it.effect('uses the default polyphony limit when omitted', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()
-      expect(Option.isNone(AudioCount.option(Number.NaN))).toBe(true)
       const audio = yield* makeWebAudioBackend({ global: fake.global })
       yield* audio.unlock
 
@@ -1482,6 +1487,24 @@ describe('resource limits and lifecycle', () => {
 
       expect(fake.context()?.oscillators).toHaveLength(32)
       expect(yield* audio.report).toMatchObject({ capacityRefusals: 1, refusedTones: 1 })
+    }),
+  )
+
+  it.effect('refuses an invalid explicit polyphony limit', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const invalidLimit = Number.NaN as unknown as AudioCount
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        maxConcurrentTones: invalidLimit,
+      })
+
+      yield* audio.unlock
+      const playback = yield* audio.playTone(CUE)
+
+      expect(playback.accepted).toBe(false)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+      expect(yield* audio.report).toMatchObject({ refusedTones: 1 })
     }),
   )
 
