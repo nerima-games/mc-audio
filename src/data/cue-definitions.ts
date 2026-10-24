@@ -1,10 +1,12 @@
 import {
+  type AudioCaptionText,
   type AudioDurationSecs,
   type AudioFrequencyHz,
   type AudioGain,
   AudioDurationSecs as makeAudioDurationSecs,
   AudioFrequencyHz as makeAudioFrequencyHz,
   AudioGain as makeAudioGain,
+  AudioCaptionText as makeAudioCaptionText,
 } from '../domain/audio-brands.js'
 import { Brand } from 'effect'
 
@@ -51,7 +53,7 @@ export type CueDefinition = {
   readonly durationSecs: AudioDurationSecs
   readonly wave: 'sine' | 'square' | 'sawtooth' | 'triangle'
   readonly baseGain: AudioGain
-  readonly caption: string | null
+  readonly caption: AudioCaptionText | null
   readonly spatial: boolean
 }
 
@@ -70,7 +72,7 @@ type CueDefinitionInput = {
 
 const cue = ({ audio, caption, spatial, wave }: CueDefinitionInput): CueDefinition => ({
   baseGain: makeAudioGain(audio.baseGain),
-  caption,
+  caption: caption === null ? null : makeAudioCaptionText(caption),
   durationSecs: makeAudioDurationSecs(audio.durationSecs),
   frequency: makeAudioFrequencyHz(audio.frequency),
   spatial,

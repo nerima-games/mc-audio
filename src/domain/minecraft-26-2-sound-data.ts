@@ -11,19 +11,19 @@ import officialSounds from './minecraft-26-2-sounds-raw.js'
 export type Minecraft26_2SoundVariantDefinition =
   | string
   | {
-      readonly name: string
+  readonly name: unknown
       readonly type?: 'sound' | 'event'
-      readonly volume?: number
-      readonly pitch?: number
-      readonly weight?: number
+  readonly volume?: unknown
+  readonly pitch?: unknown
+  readonly weight?: unknown
       readonly stream?: boolean
-      readonly attenuation_distance?: number
+  readonly attenuation_distance?: unknown
       readonly preload?: boolean
     }
 
 export type Minecraft26_2SoundDefinition = {
   readonly sounds: readonly Minecraft26_2SoundVariantDefinition[]
-  readonly subtitle?: string
+  readonly subtitle?: unknown
   readonly replace?: boolean
 }
 

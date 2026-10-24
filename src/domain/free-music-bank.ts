@@ -1,5 +1,7 @@
 /* oxlint-disable max-statements, no-bitwise, no-magic-numbers, no-nested-ternary, no-ternary, prefer-destructuring -- PCM/WAV synthesis is intentionally numeric and stateful. */
 import {
+  type AudioDiagnosticMessage,
+  type AudioDiagnosticPath,
   type AudioDurationSecs,
   type AudioSampleId,
   type AudioSampleRate,
@@ -10,6 +12,8 @@ import {
   AudioPlaybackRate as makeAudioPlaybackRate,
   AudioSampleId as makeAudioSampleId,
   AudioSampleRate as makeAudioSampleRate,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
 } from './audio-brands.js'
 import type { AudioSampleManifest, AudioSampleManifestFailure, AudioSampleSource } from './audio-sample.js'
 import {
@@ -31,8 +35,8 @@ const MAX_FREE_MUSIC_SAMPLE_RATE = 48_000
 
 export type FreeMusicBankFailure = {
   readonly _tag: 'FreeMusicBankFailure'
-  readonly path: string
-  readonly message: string
+  readonly path: AudioDiagnosticPath
+  readonly message: AudioDiagnosticMessage
 }
 
 export type FreeMusicBankOptions = {
@@ -48,7 +52,11 @@ export type FreeMinecraftMusicPack = {
 }
 
 const failure = (path: string, message: string): Result.Result<never, FreeMusicBankFailure> =>
-  Result.fail({ _tag: 'FreeMusicBankFailure', message, path })
+  Result.fail({
+    _tag: 'FreeMusicBankFailure',
+    message: makeAudioDiagnosticMessage(message),
+    path: makeAudioDiagnosticPath(path),
+  })
 
 const sampleRateFor = (requestedSampleRate: AudioSampleRate | undefined): number => {
   const sampleRate = requestedSampleRate ?? FREE_MUSIC_SAMPLE_RATE

@@ -72,23 +72,23 @@ const CENTER_PAN = 0
 const MAX_PAN = 1
 const MIN_PAN = -1
 
-export const clamp01 = (value: number): AudioVolume => {
-  if (!Number.isFinite(value)) {
+export const clamp01 = (value: unknown): AudioVolume => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
     return audioVolume(SILENT_GAIN)
   }
   return audioVolume(Math.min(UNITY_GAIN, Math.max(SILENT_GAIN, value)))
 }
 
 /** Keep an audio gain finite without discarding official variants louder than unity. */
-export const clampNonNegative = (value: number): AudioGain => {
-  if (!Number.isFinite(value)) {
+export const clampNonNegative = (value: unknown): AudioGain => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
     return audioGain(SILENT_GAIN)
   }
   return audioGain(Math.max(SILENT_GAIN, value))
 }
 
-export const clampPan = (value: number): AudioPan => {
-  if (!Number.isFinite(value)) {
+export const clampPan = (value: unknown): AudioPan => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
     return audioPan(CENTER_PAN)
   }
   return audioPan(Math.min(MAX_PAN, Math.max(MIN_PAN, value)))

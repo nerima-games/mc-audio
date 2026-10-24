@@ -2,6 +2,7 @@ import { PositionAxis, type Position } from '@nerima-games/mc-kernel/domain/coor
 import { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Option } from 'effect'
+import { AudioCaptionText } from '../src/domain/audio-brands'
 import {
   CAPTION_DISPLAY_SECS,
   CAPTION_LIFETIME_SECS,
@@ -9,7 +10,7 @@ import {
   visibleCaptions,
   type CaptionEvent,
 } from '../src/domain/caption'
-import { cueDefinition, isSoundCueId, SOUND_CUE_IDS, CUE_DEFINITIONS } from '../src/domain/cue'
+import { cueDefinition, isSoundCueId, SOUND_CUE_IDS, CUE_DEFINITIONS, SoundCueId } from '../src/domain/cue'
 import {
   DEFAULT_CAVE_THRESHOLD_Y,
   resolveMusicEnvironment,
@@ -112,8 +113,8 @@ describe('resolveMusicPlan', () => {
 })
 
 const caption = (text: string, atSecs: number): CaptionEvent => ({
-  cueId: 'blockBreak',
-  text,
+  cueId: SoundCueId('blockBreak'),
+  text: AudioCaptionText(text),
   atSecs: MonotonicTimeSecs(atSecs),
   reason: 'audible',
 })
@@ -163,8 +164,8 @@ describe('visibleCaptions', () => {
 
   it.effect('deduplicates by text, so two footstep cues share one row', () =>
     Effect.sync(() => {
-      const grass: CaptionEvent = { cueId: 'footstepGrass', text: 'Footsteps', atSecs: MonotonicTimeSecs(1), reason: 'audible' }
-      const stone: CaptionEvent = { cueId: 'footstepStone', text: 'Footsteps', atSecs: MonotonicTimeSecs(1.2), reason: 'audible' }
+      const grass: CaptionEvent = { cueId: SoundCueId('footstepGrass'), text: AudioCaptionText('Footsteps'), atSecs: MonotonicTimeSecs(1), reason: 'audible' }
+      const stone: CaptionEvent = { cueId: SoundCueId('footstepStone'), text: AudioCaptionText('Footsteps'), atSecs: MonotonicTimeSecs(1.2), reason: 'audible' }
 
       expect(visibleCaptions([grass, stone], MonotonicTimeSecs(2))).toHaveLength(1)
     }),

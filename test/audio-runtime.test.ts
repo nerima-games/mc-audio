@@ -4,7 +4,7 @@ import { PositionAxis, type Position } from '@nerima-games/mc-kernel/domain/coor
 import { FixedClockLayer, type ClockPort } from '@nerima-games/mc-kernel/domain/clock'
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, type Layer } from 'effect'
-import { AudioCount, AudioVolume } from '../src/domain/audio-brands'
+import { AudioCaptionText, AudioCount, AudioVolume } from '../src/domain/audio-brands'
 import { makeRecordingBackend, type AudioAvailability, type AudioBackend } from '../src/domain/backend-port'
 import {
   captionRenderSignature,
@@ -163,9 +163,9 @@ describe('audio runtime', () => {
   it.effect('retains future captions and expires captions at the display boundary', () =>
     Effect.sync(() => {
       const captions = [
-        { cueId: SoundCueId('playerHurt'), text: 'Old', reason: 'audible' as const, atSecs: MonotonicTimeSecs(0) },
-        { cueId: SoundCueId('inventoryOpen'), text: 'Current', reason: 'audible' as const, atSecs: MonotonicTimeSecs(2) },
-        { cueId: SoundCueId('inventoryClose'), text: 'Future', reason: 'audible' as const, atSecs: MonotonicTimeSecs(8) },
+        { cueId: SoundCueId('playerHurt'), text: AudioCaptionText('Old'), reason: 'audible' as const, atSecs: MonotonicTimeSecs(0) },
+        { cueId: SoundCueId('inventoryOpen'), text: AudioCaptionText('Current'), reason: 'audible' as const, atSecs: MonotonicTimeSecs(2) },
+        { cueId: SoundCueId('inventoryClose'), text: AudioCaptionText('Future'), reason: 'audible' as const, atSecs: MonotonicTimeSecs(8) },
       ]
 
       expect(pruneExpiredCaptionEvents(captions, MonotonicTimeSecs(4)).map((caption) => caption.text)).toEqual([

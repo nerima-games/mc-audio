@@ -1,9 +1,13 @@
 import {
+  type AudioDiagnosticMessage,
+  type AudioDiagnosticPath,
   type AudioDelayTicks,
   type AudioWeight,
   type MinecraftSoundEventId,
   AudioDelayTicks as makeAudioDelayTicks,
   AudioWeight as makeAudioWeight,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
   MinecraftSoundEventId as makeMinecraftSoundEventId,
 } from './audio-brands.js'
 import { Result } from 'effect'
@@ -25,12 +29,16 @@ type JsonObject = Record<string, unknown>
 
 export type MinecraftMusicDataFailure = {
   readonly _tag: 'MinecraftMusicDataFailure'
-  readonly path: string
-  readonly message: string
+  readonly path: AudioDiagnosticPath
+  readonly message: AudioDiagnosticMessage
 }
 
 const failure = (path: string, message: string): Result.Result<never, MinecraftMusicDataFailure> =>
-  Result.fail({ _tag: 'MinecraftMusicDataFailure', message, path })
+  Result.fail({
+    _tag: 'MinecraftMusicDataFailure',
+    message: makeAudioDiagnosticMessage(message),
+    path: makeAudioDiagnosticPath(path),
+  })
 
 /** The normalized background-music object used by Minecraft's data-driven audio format. */
 export type MinecraftMusicDefinition = {
@@ -226,8 +234,8 @@ export const normalizeMinecraftBiomeMusic = (
   return normalized
 })
 
-const randomUnitInterval = (random: number): number => {
-  if (!Number.isFinite(random)) {
+const randomUnitInterval = (random: unknown): number => {
+  if (typeof random !== 'number' || !Number.isFinite(random)) {
     return ZERO_TICKS
   }
   return Math.min(RANDOM_UNIT_UPPER_BOUND, Math.max(ZERO_TICKS, random))
@@ -242,7 +250,7 @@ const withoutBiomeMusicWeight = (
 
 export const selectMinecraftBiomeMusicDefinition = (
   music: MinecraftBiomeMusic,
-  random: number,
+  random: unknown,
 ): Result.Result<NormalizedMinecraftMusicDefinition | null, MinecraftMusicDataFailure> => Result.map(
   normalizeMinecraftBiomeMusic(music),
   (normalized) => {

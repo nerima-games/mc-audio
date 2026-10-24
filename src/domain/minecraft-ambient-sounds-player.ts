@@ -238,7 +238,7 @@ const spatialForCommand = (
 
 export const makeMinecraftAmbientSoundsPlayer = (
   registry: MinecraftSoundRegistry,
-  randomSource: () => number,
+  randomSource: () => unknown,
 ): Effect.Effect<MinecraftAmbientSoundsPlayer, never, AudioBackendPort> =>
   Effect.gen(function* buildMinecraftAmbientSoundsPlayer() {
     const backend = yield* AudioBackendPort

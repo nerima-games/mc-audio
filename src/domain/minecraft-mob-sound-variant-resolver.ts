@@ -6,7 +6,12 @@ import type {
   MinecraftWolfSoundBehavior,
   MinecraftWolfSoundDefinition,
 } from './minecraft-mob-sound-variant-types.js'
-import type { MinecraftMobSoundVariantId, MinecraftSoundEventId } from './audio-brands.js'
+import {
+  type AudioDiagnosticMessage,
+  type MinecraftMobSoundVariantId,
+  type MinecraftSoundEventId,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+} from './audio-brands.js'
 import type { MinecraftSoundRegistry, ResolvedMinecraftSound } from './minecraft-sounds-types.js'
 import { type MinecraftSoundResolutionFailure, resolveMinecraftSound } from './minecraft-sounds-resolver.js'
 import { Result } from 'effect'
@@ -38,22 +43,22 @@ const WOLF_SOUND_FIELD_BY_BEHAVIOR: Readonly<Record<MinecraftWolfSoundBehavior, 
 
 export type MinecraftMobSoundVariantResolutionFailure = {
   readonly _tag: 'MinecraftMobSoundVariantResolutionFailure'
-  readonly behavior: string
-  readonly message: string
+  readonly behavior: MinecraftMobSoundBehavior | MinecraftWolfSoundBehavior
+  readonly message: AudioDiagnosticMessage
   readonly variantId?: MinecraftMobSoundVariantId
 }
 
 type ResolveFailure = MinecraftMobSoundVariantResolutionFailure | MinecraftSoundResolutionFailure
 
 const failure = (
-  behavior: string,
+  behavior: MinecraftMobSoundBehavior | MinecraftWolfSoundBehavior,
   message: string,
   variantId?: MinecraftMobSoundVariantId,
 ): Result.Result<never, MinecraftMobSoundVariantResolutionFailure> => {
   const baseFailure: MinecraftMobSoundVariantResolutionFailure = {
     _tag: 'MinecraftMobSoundVariantResolutionFailure',
     behavior,
-    message,
+    message: makeAudioDiagnosticMessage(message),
   }
   if (variantId !== globalThis.undefined) {
     return Result.fail({ ...baseFailure, variantId })
@@ -87,7 +92,7 @@ const wolfSoundSetFor = (
 const eventIdFromSoundSet = (
   soundSet: Readonly<Record<string, MinecraftSoundEventId>>,
   field: string,
-  behavior: string,
+  behavior: MinecraftMobSoundBehavior | MinecraftWolfSoundBehavior,
 ): Result.Result<MinecraftSoundEventId, MinecraftMobSoundVariantResolutionFailure> => {
   const eventId = soundSet[field]
   if (eventId === globalThis.undefined) {

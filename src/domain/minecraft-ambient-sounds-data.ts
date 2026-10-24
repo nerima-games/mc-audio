@@ -1,9 +1,13 @@
 import {
+  type AudioDiagnosticMessage,
+  type AudioDiagnosticPath,
   type AudioCount,
   type AudioDelayTicks,
   type AudioOffset,
   type AudioVolume,
   type MinecraftSoundEventId,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
   AudioCount as makeAudioCount,
   AudioDelayTicks as makeAudioDelayTicks,
   AudioOffset as makeAudioOffset,
@@ -23,12 +27,16 @@ type JsonObject = Record<string, unknown>
 
 export type MinecraftAmbientSoundsFailure = {
   readonly _tag: 'MinecraftAmbientSoundsFailure'
-  readonly path: string
-  readonly message: string
+  readonly path: AudioDiagnosticPath
+  readonly message: AudioDiagnosticMessage
 }
 
 const failure = (path: string, message: string): Result.Result<never, MinecraftAmbientSoundsFailure> =>
-  Result.fail({ _tag: 'MinecraftAmbientSoundsFailure', message, path })
+  Result.fail({
+    _tag: 'MinecraftAmbientSoundsFailure',
+    message: makeAudioDiagnosticMessage(message),
+    path: makeAudioDiagnosticPath(path),
+  })
 
 const isMissing = (value: unknown): value is undefined => Object.is(value, globalThis.undefined)
 
@@ -106,7 +114,7 @@ export type MinecraftAmbientAddition = {
 }
 
 export type MinecraftAmbientSoundsDefinition = {
-  readonly loop?: string
+  readonly loop?: unknown
   readonly mood?: unknown
   readonly additions?: unknown
 }

@@ -1,5 +1,6 @@
 import { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
 import { describe, expect, it } from 'vitest'
+import { AudioCaptionText, MinecraftSoundEventId } from '../src/domain/audio-brands'
 import {
   applyCaptionSettings,
   CAPTION_LIFETIME_SECS,
@@ -17,9 +18,9 @@ const DISABLED: CaptionSettings = { audioUnlocked: true, captionsEnabled: false 
 
 const caption = (cueId: string, atSecs: number): CaptionEvent => ({
   atSecs: MonotonicTimeSecs(atSecs),
-  cueId,
+  cueId: MinecraftSoundEventId(cueId),
   reason: 'audible',
-  text: cueId,
+  text: AudioCaptionText(cueId),
 })
 
 describe('caption queue', () => {

@@ -1,12 +1,14 @@
 import { BlockId } from '@nerima-games/mc-kernel/domain/block-registry'
 import { DeltaTimeSecs, EpochMillis, MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
 import { canPlayMinecraftFireflyBushIdleSounds } from '../src/domain/minecraft-audio'
+import { AudioCaptionText } from '../src/domain/audio-brands'
 import { type CaptionEvent, visibleCaptions } from '../src/domain/caption'
+import { SoundCueId } from '../src/domain/cue'
 
 const monotonicNow = MonotonicTimeSecs(0)
 const caption: CaptionEvent = {
-  cueId: 'footstepGrass',
-  text: 'Footsteps',
+  cueId: SoundCueId('footstepGrass'),
+  text: AudioCaptionText('Footsteps'),
   atSecs: monotonicNow,
   reason: 'audible',
 }

@@ -1,9 +1,12 @@
 import {
+  type AudioDelayTicks,
   type AudioTick,
   type AudioVolume,
   type MinecraftSoundEventId,
   AudioTick as makeAudioTick,
   AudioVolume as makeAudioVolume,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
 } from './audio-brands.js'
 import {
   MINECRAFT_MUSIC_GAIN_STEP,
@@ -47,23 +50,23 @@ export type MinecraftMusicPlannerInput = {
   readonly desired: MinecraftMusicDefinition | null
   readonly enabled: boolean
   readonly musicVolume: AudioVolume
-  readonly randomIntInclusive: (min: number, max: number) => number
+  readonly randomIntInclusive: (min: AudioDelayTicks, max: AudioDelayTicks) => unknown
   readonly state: MinecraftMusicState
 }
 
 const dataFailure = (path: string, message: string): MinecraftMusicDataFailure => ({
   _tag: 'MinecraftMusicDataFailure',
-  message,
-  path,
+  message: makeAudioDiagnosticMessage(message),
+  path: makeAudioDiagnosticPath(path),
 })
 
 const delayFor = (
   definition: NormalizedMinecraftMusicDefinition,
-  randomIntInclusive: (min: number, max: number) => number,
+  randomIntInclusive: (min: AudioDelayTicks, max: AudioDelayTicks) => unknown,
 ): Result.Result<AudioTick, MinecraftMusicDataFailure> => {
   const sample = randomIntInclusive(definition.min_delay, definition.max_delay)
   let bounded: number = definition.min_delay
-  if (Number.isFinite(sample)) {
+  if (typeof sample === 'number' && Number.isFinite(sample)) {
     bounded = Math.trunc(sample)
   }
   const delay = Math.min(definition.max_delay, Math.max(definition.min_delay, bounded))
@@ -112,7 +115,7 @@ const planDisabled = (state: MinecraftMusicState): MinecraftMusicPlan => {
 
 const planInactive = (
   desired: NormalizedMinecraftMusicDefinition,
-  randomIntInclusive: (min: number, max: number) => number,
+  randomIntInclusive: (min: AudioDelayTicks, max: AudioDelayTicks) => unknown,
 ): Result.Result<MinecraftMusicPlan, MinecraftMusicDataFailure> =>
   Result.map(delayFor(desired, randomIntInclusive), (delay) => ({
     commands: [],
@@ -122,7 +125,7 @@ const planInactive = (
 const planReplacement = (
   desired: NormalizedMinecraftMusicDefinition,
   targetGain: AudioVolume,
-  randomIntInclusive: (min: number, max: number) => number,
+  randomIntInclusive: (min: AudioDelayTicks, max: AudioDelayTicks) => unknown,
 ): Result.Result<MinecraftMusicPlan, MinecraftMusicDataFailure> =>
   Result.map(delayFor(desired, randomIntInclusive), (delay) => ({
     commands: [
@@ -148,7 +151,7 @@ const planDelay = (state: MinecraftMusicState): Result.Result<MinecraftMusicPlan
 const planStart = (
   desired: NormalizedMinecraftMusicDefinition,
   targetGain: AudioVolume,
-  randomIntInclusive: (min: number, max: number) => number,
+  randomIntInclusive: (min: AudioDelayTicks, max: AudioDelayTicks) => unknown,
 ): Result.Result<MinecraftMusicPlan, MinecraftMusicDataFailure> =>
   Result.map(delayFor(desired, randomIntInclusive), (delay) => ({
     commands: [{ definition: desired, gain: targetGain, kind: 'start' }],
@@ -170,7 +173,7 @@ const normalizeDesired = (
 
 type AvailableMusicPlanOptions = {
   readonly desired: NormalizedMinecraftMusicDefinition
-  readonly randomIntInclusive: (min: number, max: number) => number
+  readonly randomIntInclusive: (min: AudioDelayTicks, max: AudioDelayTicks) => unknown
   readonly state: MinecraftMusicState
   readonly targetGain: AudioVolume
 }

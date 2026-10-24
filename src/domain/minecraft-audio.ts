@@ -1,4 +1,11 @@
-import { type AudioVolume, AudioVolume as makeAudioVolume } from './audio-brands.js'
+import {
+  type AudioDiagnosticMessage,
+  type AudioDiagnosticPath,
+  type AudioVolume,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
+  AudioVolume as makeAudioVolume,
+} from './audio-brands.js'
 import {
   type BlockId,
   type BlockRegistryResolutionFailure,
@@ -34,7 +41,7 @@ export type MinecraftAudioComponent = {
   readonly 'minecraft:audio/ambient_sounds'?: MinecraftAmbientSoundsDefinition
   readonly 'minecraft:audio/background_music'?: MinecraftBackgroundMusicInput
   readonly 'minecraft:audio/firefly_bush_sounds'?: boolean
-  readonly 'minecraft:audio/music_volume'?: number
+  readonly 'minecraft:audio/music_volume'?: unknown
 }
 
 export type NormalizedMinecraftAudioComponent = {
@@ -46,8 +53,8 @@ export type NormalizedMinecraftAudioComponent = {
 
 export type MinecraftAudioComponentFailure = {
   readonly _tag: 'MinecraftAudioComponentFailure'
-  readonly path: string
-  readonly message: string
+  readonly path: AudioDiagnosticPath
+  readonly message: AudioDiagnosticMessage
 }
 
 export type MinecraftAudioFailure =
@@ -76,7 +83,11 @@ const ONE = 1
 type JsonObject = Record<string, unknown>
 
 const failure = (path: string, message: string): Result.Result<never, MinecraftAudioComponentFailure> =>
-  Result.fail({ _tag: 'MinecraftAudioComponentFailure', message, path })
+  Result.fail({
+    _tag: 'MinecraftAudioComponentFailure',
+    message: makeAudioDiagnosticMessage(message),
+    path: makeAudioDiagnosticPath(path),
+  })
 
 const emptyAudioComponent = (): NormalizedMinecraftAudioComponent => ({
   ambientSounds: null,

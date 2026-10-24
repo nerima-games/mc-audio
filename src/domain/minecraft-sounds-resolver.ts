@@ -1,8 +1,10 @@
 import {
+  type AudioDiagnosticMessage,
   type AudioSampleId,
   type AudioSampleUrl,
   type MinecraftSoundEventId,
   type MinecraftSoundResourceId,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
   AudioGain as makeAudioGain,
   AudioPlaybackRate as makeAudioPlaybackRate,
   AudioSampleId as makeAudioSampleId,
@@ -27,12 +29,12 @@ const RESOURCE_SEPARATOR = ':'
 export type MinecraftSoundResolutionFailure = {
   readonly _tag: 'MinecraftSoundResolutionFailure'
   readonly eventId: MinecraftSoundEventId
-  readonly message: string
+  readonly message: AudioDiagnosticMessage
 }
 
 type ResolveEventOptions = {
   readonly eventId: MinecraftSoundEventId
-  readonly random: number
+  readonly random: unknown
   readonly registry: MinecraftSoundRegistry
   readonly rootEventId: MinecraftSoundEventId
   readonly visited: ReadonlySet<MinecraftSoundEventId>
@@ -56,10 +58,10 @@ type CollectSoundSourcesOptions = {
 }
 
 const failure = (eventId: MinecraftSoundEventId, message: string): Result.Result<never, MinecraftSoundResolutionFailure> =>
-  Result.fail({ _tag: 'MinecraftSoundResolutionFailure', eventId, message })
+  Result.fail({ _tag: 'MinecraftSoundResolutionFailure', eventId, message: makeAudioDiagnosticMessage(message) })
 
-const normalizeRandom = (random: number): number => {
-  if (!Number.isFinite(random)) {
+const normalizeRandom = (random: unknown): number => {
+  if (typeof random !== 'number' || !Number.isFinite(random)) {
     return DEFAULT_RANDOM
   }
   return Math.min(MAX_RANDOM, Math.max(MIN_RANDOM, random))
@@ -85,7 +87,7 @@ const selectWeightedVariant = (
 
 const selectFromNonEmptyVariants = (
   variants: readonly [MinecraftSoundVariant, ...MinecraftSoundVariant[]],
-  random: number,
+  random: unknown,
 ): Result.Result<MinecraftSoundVariant, MinecraftSoundResolutionFailure> => {
   const totalWeight = variants.reduce((total, variant) => total + variant.weight, DEFAULT_RANDOM)
   const selected = selectWeightedVariant(variants, normalizeRandom(random) * totalWeight)
@@ -94,7 +96,7 @@ const selectFromNonEmptyVariants = (
 
 export const selectMinecraftSoundVariant = (
   event: MinecraftSoundEvent,
-  random: number = DEFAULT_RANDOM,
+  random: unknown = DEFAULT_RANDOM,
 ): Result.Result<MinecraftSoundVariant, MinecraftSoundResolutionFailure> => {
   const [firstVariant] = event.sounds
   if (firstVariant === globalThis.undefined) {
@@ -181,7 +183,7 @@ const resolveEvent = ({ eventId, random, registry, rootEventId, visited }: Resol
 export const resolveMinecraftSound = (
   registry: MinecraftSoundRegistry,
   eventId: MinecraftSoundEventId,
-  random: number = DEFAULT_RANDOM,
+  random: unknown = DEFAULT_RANDOM,
 ): Result.Result<ResolvedMinecraftSound, MinecraftSoundResolutionFailure> => resolveEvent({
   eventId,
   random,

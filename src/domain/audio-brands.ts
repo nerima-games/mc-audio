@@ -130,3 +130,17 @@ export type MinecraftSoundNamespace = string & Brand.Brand<'MinecraftSoundNamesp
 export const MinecraftSoundNamespace: Brand.Constructor<MinecraftSoundNamespace> = Brand.make<MinecraftSoundNamespace>(
   (value) => validationResult(/^[a-z0-9_.-]+$/u.test(value), 'Minecraft sound namespace must be lowercase resource text'),
 )
+
+export type AudioDiagnosticPath = string & Brand.Brand<'AudioDiagnosticPath'>
+export const AudioDiagnosticPath: Brand.Constructor<AudioDiagnosticPath> = Brand.nominal<AudioDiagnosticPath>()
+
+export type AudioDiagnosticMessage = string & Brand.Brand<'AudioDiagnosticMessage'>
+export const AudioDiagnosticMessage: Brand.Constructor<AudioDiagnosticMessage> = Brand.nominal<AudioDiagnosticMessage>()
+
+export type AudioCaptionText = string & Brand.Brand<'AudioCaptionText'>
+export const AudioCaptionText: Brand.Constructor<AudioCaptionText> = Brand.nominal<AudioCaptionText>()
+
+export type AudioRuntimeCaptionSignature = string & Brand.Brand<'AudioRuntimeCaptionSignature'>
+export const AudioRuntimeCaptionSignature: Brand.Constructor<AudioRuntimeCaptionSignature> =
+  Brand.nominal<AudioRuntimeCaptionSignature>()
+

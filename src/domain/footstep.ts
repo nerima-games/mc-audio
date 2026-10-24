@@ -37,7 +37,10 @@ export const cueForSurface = (surface: FootstepSurface): SoundCueId | undefined 
 /** Existing name retained for compatibility. */
 export const footstepCueFor: typeof cueForSurface = cueForSurface
 
-export const surfaceForBlockType = (blockType: string): FootstepSurface => {
+export const surfaceForBlockType = (blockType: unknown): FootstepSurface => {
+  if (typeof blockType !== 'string') {
+    return 'default'
+  }
   if (['dirt', 'grass_block', 'farmland'].includes(blockType)) {
     return 'grass'
   }

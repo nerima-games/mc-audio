@@ -70,13 +70,13 @@ export type MinecraftMusicPlayer = {
 }
 
 const randomIntInclusive = (
-  randomSource: () => number,
+  randomSource: () => unknown,
   min: number,
   max: number,
 ): number => {
   const sample = randomSource()
   let normalized = RANDOM_LOWER_BOUND
-  if (Number.isFinite(sample)) {
+  if (typeof sample === 'number' && Number.isFinite(sample)) {
     normalized = Math.min(RANDOM_UPPER_BOUND, Math.max(RANDOM_LOWER_BOUND, sample))
   }
   return Math.floor(min + normalized * (max - min + RANDOM_INTERVAL_STEP))
@@ -104,7 +104,7 @@ type BiomeMusicSelection = {
 }
 
 type MusicCommandApplierOptions = MusicPlayerResources & {
-  readonly randomSource: () => number
+  readonly randomSource: () => unknown
   readonly registry: MinecraftSoundRegistry
 }
 
@@ -322,7 +322,7 @@ type BiomeMusicSelectionOptions = {
   readonly currentActive: boolean
   readonly enabled: boolean
   readonly input: MinecraftMusicTickInput
-  readonly randomSource: () => number
+  readonly randomSource: () => unknown
   readonly selectionRef: Ref.Ref<BiomeMusicSelection | null>
   readonly state: MinecraftMusicState
 }
@@ -382,7 +382,7 @@ const stopMusicAndClearBiomeSelection = (
 
 export const makeMinecraftMusicPlayer = (
   registry: MinecraftSoundRegistry,
-  randomSource: () => number,
+  randomSource: () => unknown,
 ): Effect.Effect<MinecraftMusicPlayer, never, AudioBackendPort> =>
   Effect.gen(function* buildMinecraftMusicPlayer() {
     const backend = yield* AudioBackendPort

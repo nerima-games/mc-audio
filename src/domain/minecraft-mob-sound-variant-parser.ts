@@ -14,9 +14,13 @@ import {
   type MinecraftWolfSoundSet,
 } from './minecraft-mob-sound-variant-types.js'
 import {
+  type AudioDiagnosticMessage,
+  type AudioDiagnosticPath,
   type MinecraftMobSoundVariantId,
   type MinecraftSoundEventId,
   type MinecraftSoundNamespace,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
   MinecraftMobSoundVariantId as makeMinecraftMobSoundVariantId,
   MinecraftSoundEventId as makeMinecraftSoundEventId,
 } from './audio-brands.js'
@@ -48,12 +52,16 @@ const WOLF_SOUND_FIELDS: readonly SoundField[] = [
 
 export type MinecraftMobSoundVariantParseFailure = {
   readonly _tag: 'MinecraftMobSoundVariantParseFailure'
-  readonly path: string
-  readonly message: string
+  readonly path: AudioDiagnosticPath
+  readonly message: AudioDiagnosticMessage
 }
 
 const failure = (path: string, message: string): Result.Result<never, MinecraftMobSoundVariantParseFailure> =>
-  Result.fail({ _tag: 'MinecraftMobSoundVariantParseFailure', message, path })
+  Result.fail({
+    _tag: 'MinecraftMobSoundVariantParseFailure',
+    message: makeAudioDiagnosticMessage(message),
+    path: makeAudioDiagnosticPath(path),
+  })
 
 const isJsonObject = (value: unknown): value is JsonObject =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -88,7 +96,11 @@ const normalizeVariantId = (
 ): Result.Result<MinecraftMobSoundVariantId, MinecraftMobSoundVariantParseFailure> => Result.gen(function* normalizeVariantIdEffect() {
   const soundId = yield* Result.mapError(
     normalizeMinecraftSoundId(value, namespace, path),
-    (error) => ({ _tag: 'MinecraftMobSoundVariantParseFailure' as const, message: error.message, path }),
+    (error) => ({
+      _tag: 'MinecraftMobSoundVariantParseFailure' as const,
+      message: error.message,
+      path: makeAudioDiagnosticPath(path),
+    }),
   )
   return makeMinecraftMobSoundVariantId(soundId)
 })
@@ -109,7 +121,11 @@ const normalizeSoundSet = ({ fields, input, namespace, path }: NormalizeSoundSet
       const rawSound = object[jsonName]
       const normalized = yield* Result.mapError(
         normalizeMinecraftSoundId(rawSound, namespace, `${path}.${jsonName}`),
-        (error) => ({ _tag: 'MinecraftMobSoundVariantParseFailure' as const, message: error.message, path: `${path}.${jsonName}` }),
+        (error) => ({
+          _tag: 'MinecraftMobSoundVariantParseFailure' as const,
+          message: error.message,
+          path: makeAudioDiagnosticPath(`${path}.${jsonName}`),
+        }),
       )
       sounds[propertyName] = makeMinecraftSoundEventId(normalized)
     }

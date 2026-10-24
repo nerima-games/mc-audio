@@ -28,6 +28,9 @@
  */
 import { Context, Effect } from 'effect'
 import type { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
+import type { AudioCaptionText, AudioDurationSecs, AudioPan, MinecraftSoundEventId } from './audio-brands.js'
+import { AudioDurationSecs as makeAudioDurationSecs } from './audio-brands.js'
+import type { SoundCueId } from '../data/cue-definitions.js'
 
 const ZERO = 0
 const makeContextService = Context.Service
@@ -48,8 +51,8 @@ export const CAPTION_REASONS = ['audible', 'muted', 'gate-blocked', 'unavailable
 export type CaptionReason = (typeof CAPTION_REASONS)[number]
 
 export type CaptionEvent = {
-  readonly cueId: string
-  readonly text: string
+  readonly cueId: SoundCueId | MinecraftSoundEventId
+  readonly text: AudioCaptionText
   /**
    * Monotonic seconds, from the clock Port. Never a wall clock, and never
    * `performance.now()` — a caption list must be reproducible in a replay.
@@ -57,7 +60,7 @@ export type CaptionEvent = {
   readonly atSecs: MonotonicTimeSecs
   readonly reason: CaptionReason
   /** Present only for spatialised cues, so a UI can show a direction indicator. */
-  readonly pan?: number
+  readonly pan?: AudioPan
 }
 
 export type CaptionSink = {
@@ -77,7 +80,7 @@ export class CaptionStream extends CaptionStreamBase {}
  * `packages/presentation/hud/sound-captions.ts:6`, converted to seconds
  * because every duration in this project is seconds unless it says otherwise.
  */
-export const CAPTION_LIFETIME_SECS = 2.5
+export const CAPTION_LIFETIME_SECS: AudioDurationSecs = makeAudioDurationSecs(2.5)
 
 /** Kept as an alias for existing consumers. */
 export const CAPTION_DISPLAY_SECS: typeof CAPTION_LIFETIME_SECS = CAPTION_LIFETIME_SECS
@@ -98,7 +101,7 @@ export const MAX_VISIBLE_CAPTIONS = 5
 const isVisibleAt = (
   event: CaptionEvent,
   nowSecs: MonotonicTimeSecs,
-  lifetimeSecs: number,
+  lifetimeSecs: AudioDurationSecs,
 ): boolean => nowSecs - event.atSecs < lifetimeSecs && nowSecs >= event.atSecs
 
 export const visibleCaptions = (
@@ -161,7 +164,7 @@ export const applyCaptionSettings = (
 export const expireCaptions = (
   queue: CaptionQueue,
   nowSecs: MonotonicTimeSecs,
-  lifetimeSecs: number = CAPTION_LIFETIME_SECS,
+  lifetimeSecs: AudioDurationSecs = CAPTION_LIFETIME_SECS,
 ): CaptionQueue => {
   const visible = queue.visible.filter((event) => isVisibleAt(event, nowSecs, lifetimeSecs))
   if (visible.length === queue.visible.length) {

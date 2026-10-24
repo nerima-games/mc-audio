@@ -6,12 +6,15 @@ import {
   type ToneRequest,
 } from './backend-port.js'
 import {
+  type AudioCaptionText,
+  type AudioDiagnosticMessage,
   type AudioDurationSecs,
   type AudioFrequencyHz,
   type AudioGain,
   type AudioPan,
   type AudioVolume,
   type MinecraftSoundEventId,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
   AudioDurationSecs as makeAudioDurationSecs,
   AudioFrequencyHz as makeAudioFrequencyHz,
   AudioVolume as makeAudioVolume,
@@ -44,7 +47,7 @@ const DEFAULT_RANDOM = 0
 const MIN_POSITIVE_VALUE = 0
 
 export type MinecraftSoundPlayOptions = {
-  readonly random?: number
+  readonly random?: unknown
   readonly position?: Position
   readonly listener?: Position
   readonly camera?: CameraPoseSnapshot
@@ -59,7 +62,7 @@ export type MinecraftSoundPlayOptions = {
 
 export type MinecraftSoundPlaybackPlan = {
   readonly eventId: MinecraftSoundEventId
-  readonly subtitle: string | null
+  readonly subtitle: AudioCaptionText | null
   readonly sound: ResolvedMinecraftSound
   readonly request: ToneRequest
 }
@@ -88,7 +91,7 @@ const isMissing = (value: unknown): value is undefined => Object.is(value, globa
 export type MinecraftSoundPlayOptionsFailure = {
   readonly _tag: 'MinecraftSoundPlayOptionsFailure'
   readonly field: 'durationSecs' | 'frequency'
-  readonly message: string
+  readonly message: AudioDiagnosticMessage
 }
 
 const positiveFrequency = (value: unknown): Result.Result<AudioFrequencyHz, MinecraftSoundPlayOptionsFailure> => {
@@ -96,7 +99,11 @@ const positiveFrequency = (value: unknown): Result.Result<AudioFrequencyHz, Mine
     return Result.succeed(DEFAULT_FREQUENCY)
   }
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= MIN_POSITIVE_VALUE) {
-    return Result.fail({ _tag: 'MinecraftSoundPlayOptionsFailure', field: 'frequency', message: 'Frequency must be finite and positive' })
+    return Result.fail({
+      _tag: 'MinecraftSoundPlayOptionsFailure',
+      field: 'frequency',
+      message: makeAudioDiagnosticMessage('Frequency must be finite and positive'),
+    })
   }
   return Result.succeed(makeAudioFrequencyHz(value))
 }
@@ -106,7 +113,11 @@ const positiveDuration = (value: unknown): Result.Result<AudioDurationSecs, Mine
     return Result.succeed(DEFAULT_DURATION_SECS)
   }
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= MIN_POSITIVE_VALUE) {
-    return Result.fail({ _tag: 'MinecraftSoundPlayOptionsFailure', field: 'durationSecs', message: 'Duration must be finite and positive' })
+    return Result.fail({
+      _tag: 'MinecraftSoundPlayOptionsFailure',
+      field: 'durationSecs',
+      message: makeAudioDiagnosticMessage('Duration must be finite and positive'),
+    })
   }
   return Result.succeed(makeAudioDurationSecs(value))
 }
@@ -168,7 +179,7 @@ type CaptionForOptions = {
   readonly options: MinecraftSoundPlayOptions
   readonly pan: AudioPan
   readonly reason: CaptionReason
-  readonly text: string
+  readonly text: AudioCaptionText
 }
 
 type EmitCaptionInput = {
@@ -233,7 +244,7 @@ const playbackHandle = (playback: TonePlayback): ToneHandle | null => {
 
 export const makeMinecraftSoundPlayer = (
   registry: MinecraftSoundRegistry,
-  randomSource: () => number,
+  randomSource: () => unknown,
 ): Effect.Effect<MinecraftSoundPlayer, never, AudioBackendPort | CaptionStream | ClockPort> =>
   Effect.gen(function* buildMinecraftSoundPlayer() {
     const backend = yield* AudioBackendPort

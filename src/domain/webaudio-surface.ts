@@ -51,63 +51,27 @@
  * `AudioContextState` below.
  *
  * ---------------------------------------------------------------------------
- * WHERE THE STRUCTURAL APPROACH IS DEFEATED: `AudioNode.connect`
+ * Structural compatibility with browser nodes
  * ---------------------------------------------------------------------------
  *
- * This is the one member that cannot be spelled the way every other member here
- * is spelled, and pretending otherwise would be the dishonest part of the file.
+ * The browser methods accept concrete DOM node and number types, while this
+ * file describes only the narrow members the adapter uses. Method syntax keeps
+ * real DOM nodes assignable to these interfaces. Method parameters use
+ * `unknown` at this host boundary; the adapter supplies values created from
+ * validated domain types. `currentTime` and buffer duration are also read as
+ * `unknown` and validated before they become domain values.
  *
- * Everything else is a `readonly` PROPERTY holding a function, which under
- * `strictFunctionTypes` is checked CONTRAVARIANTLY in its parameters — the
- * strict direction, and the one mc-save's header explains at length. `connect`
- * cannot be. Spelled as a property:
- *
- *   readonly connect: (destination: AudioNodeSurface) => AudioNodeSurface
- *
- * a real `AudioNode` is rejected, and the compiler says exactly why (measured
- * against TypeScript 5.9's `lib.dom.d.ts`):
- *
- *   Type 'AudioNode' is not assignable to type 'AudioNodeSurface'.
- *     Types of property 'connect' are incompatible.
- *       Types of parameters 'destinationNode' and 'destination' are incompatible.
- *         Type 'AudioNodeSurface' is missing the following properties from type
- *         'AudioNode': channelCount, channelCountMode, channelInterpretation,
- *         context, and 5 more.
- *
- * Read what that demands. Contravariance requires OUR parameter type to be a
- * SUBTYPE of `AudioNode` — so to spell `connect` strictly, the surface would
- * have to describe `channelCount`, `channelCountMode`, `channelInterpretation`,
- * `context`, `numberOfInputs`, `numberOfOutputs` and the whole `EventTarget`
- * base. That is not a narrow surface; that is `lib.dom` with extra steps. The
- * only subtype of `AudioNode` writable without `lib.dom` is `never`, and a
- * `connect` that takes `never` cannot be called.
- *
- * So `connect` is declared with METHOD syntax, which TypeScript checks
- * BIVARIANTLY by design, and the fixture proves a real `AudioNode` satisfies
- * it. The honest question is what that bivariance costs, and the answer is
- * genuinely "nothing that `lib.dom` would have caught either":
- *
- *   - The hole bivariance opens is passing a NON-`AudioNode` that happens to
- *     match this shape to a real node's `connect`. The adapter never does: the
- *     only values it connects are the ones it just created from the same
- *     context, four lines above.
- *   - The failure this would guard against — connecting nodes that belong to
- *     DIFFERENT `AudioContext`s — is `InvalidAccessError` at runtime, and
- *     `lib.dom` accepts it too. `AudioNode.context` exists but nothing in the
- *     type system relates two nodes' contexts. A full-fidelity DOM lib is
- *     exactly as unable to catch it as this file is.
- *
- * `disconnect` is a property, because it takes no arguments and therefore has
- * no contravariant position to lose. The mixed style is deliberate: it marks,
- * visually, the one member that is checked loosely.
+ * `connect` is called only with nodes created by the same context. This surface
+ * intentionally does not model the full `AudioNode` or `EventTarget` APIs.
+ * The browser fixture checks that the real DOM declarations still satisfy the
+ * narrow interfaces without casts.
  */
 
 /**
  * `AudioParam`, reduced to the four members the adapter touches.
  *
- * `value` is NOT `readonly`: it is assigned to, which is how a gain is set
- * outside of a scheduled ramp. Every other member here is `readonly`, so the
- * mutability is visibly confined to the one slot that needs it.
+ * `value` is mutable because the adapter assigns gain and playback-rate values
+ * directly. It does not read this host value back.
  *
  * The three scheduling methods are the reason `domain/envelope.ts` exists.
  * The reference implementation set `gainNode.gain.value` flat and then called
@@ -122,10 +86,10 @@
  * chained call does not have to reopen this file.
  */
 export type AudioParamSurface = {
-  value: number
-  readonly setValueAtTime: (value: number, startTime: number) => AudioParamSurface
-  readonly linearRampToValueAtTime: (value: number, endTime: number) => AudioParamSurface
-  readonly cancelScheduledValues: (cancelTime: number) => AudioParamSurface
+  value: unknown
+  setValueAtTime(value: unknown, startTime: unknown): AudioParamSurface
+  linearRampToValueAtTime(value: unknown, endTime: unknown): AudioParamSurface
+  cancelScheduledValues(cancelTime: unknown): AudioParamSurface
 }
 
 /**
@@ -173,14 +137,17 @@ export type OscillatorWave = 'sine' | 'square' | 'sawtooth' | 'triangle' | 'cust
  * escape hatch (`docs/public-api.md` §7). The parameter stays optional because
  * the real signature has it optional and narrowing it to required would make a
  * real `OscillatorNode` unassignable in the `stop()` case.
+ *
+ * The host parameter is `unknown` so the real DOM method remains structurally
+ * assignable. The adapter supplies its branded scheduling time.
  */
 export type AudioScheduledSourceSurface = AudioNodeSurface & {
-  readonly start: (when?: number) => void
-  readonly stop: (when?: number) => void
+  start(when?: unknown): void
+  stop(when?: unknown): void
   onended: ((event: never) => void) | null
 }
 
-export type AudioBufferSurface = { readonly duration: number }
+export type AudioBufferSurface = { readonly duration: unknown }
 
 export type AudioBufferSourceSurface = AudioScheduledSourceSurface & {
   buffer: AudioBufferSurface | null
@@ -263,7 +230,7 @@ export type AudioContextStateSurface = 'suspended' | 'running' | 'closed' | 'int
  */
 export type AudioContextSurface = {
   readonly state: AudioContextStateSurface
-  readonly currentTime: number
+  readonly currentTime: unknown
   readonly destination: AudioNodeSurface
   /**
    * Ask the browser to start or resume playback.

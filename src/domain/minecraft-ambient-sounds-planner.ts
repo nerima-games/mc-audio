@@ -1,8 +1,10 @@
 import {
+  type AudioDiagnosticMessage,
   type AudioDelayTicks,
   type AudioOffset,
   type AudioTick,
   type MinecraftSoundEventId,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
   AudioDelayTicks as makeAudioDelayTicks,
   AudioTick as makeAudioTick,
 } from './audio-brands.js'
@@ -23,7 +25,7 @@ const MIN_MOOD_DELAY = 1
 
 export type MinecraftAmbientSoundsPlannerFailure = {
   readonly _tag: 'MinecraftAmbientSoundsPlannerFailure'
-  readonly message: string
+  readonly message: AudioDiagnosticMessage
 }
 
 export type MinecraftAmbientSoundsState = {
@@ -61,7 +63,7 @@ export type MinecraftAmbientMoodResolution = {
 export type MinecraftAmbientMoodResolverInput = {
   readonly cameraPosition: Position
   readonly mood: MinecraftAmbientMood
-  readonly randomSource: () => number
+  readonly randomSource: () => unknown
   readonly tick: AudioTick
 }
 
@@ -74,14 +76,14 @@ export type MinecraftAmbientSoundsPlannerInput = {
   readonly definition?: MinecraftAmbientSoundsDefinition | null
   readonly moodPosition: Position | null
   readonly moodResolver?: MinecraftAmbientMoodResolver
-  readonly randomSource: () => number
+  readonly randomSource: () => unknown
   readonly state: MinecraftAmbientSoundsState
   readonly tick: AudioTick
 }
 
-const randomUnit = (randomSource: () => number): number => {
+const randomUnit = (randomSource: () => unknown): number => {
   const value = randomSource()
-  if (!Number.isFinite(value)) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
     return ZERO
   }
   return Math.min(MAX_RANDOM, Math.max(ZERO, value))
@@ -90,7 +92,7 @@ const randomUnit = (randomSource: () => number): number => {
 const validTick = (tick: AudioTick): Result.Result<AudioTick, MinecraftAmbientSoundsPlannerFailure> =>
   Result.mapError(makeAudioTick.result(tick), (error) => ({
     _tag: 'MinecraftAmbientSoundsPlannerFailure',
-    message: error.message,
+    message: makeAudioDiagnosticMessage(error.message),
   }))
 
 const planLoopCommands = (
@@ -114,7 +116,7 @@ type MoodPlanInput = {
   readonly mood: MinecraftAmbientMood | null
   readonly moodPosition: Position | null
   readonly moodResolver: MinecraftAmbientMoodResolver | undefined
-  readonly randomSource: () => number
+  readonly randomSource: () => unknown
   readonly nextMoodTick: AudioTick
   readonly tick: AudioTick
 }
@@ -145,7 +147,10 @@ const moodCommand = (
 const moodDelay = (resolution: MinecraftAmbientMoodResolution): Result.Result<AudioDelayTicks, MinecraftAmbientSoundsPlannerFailure> => {
   const { delayTicks } = resolution
   if (!Number.isInteger(delayTicks) || delayTicks < MIN_MOOD_DELAY) {
-    return Result.fail({ _tag: 'MinecraftAmbientSoundsPlannerFailure', message: 'Minecraft ambient mood delayTicks must be a positive integer' })
+    return Result.fail({
+      _tag: 'MinecraftAmbientSoundsPlannerFailure',
+      message: makeAudioDiagnosticMessage('Minecraft ambient mood delayTicks must be a positive integer'),
+    })
   }
   return Result.succeed(makeAudioDelayTicks(delayTicks))
 }
@@ -174,7 +179,7 @@ const planMoodCommands = ({
     const delayTicks = yield* moodDelay(resolution)
     const nextTick = yield* Result.mapError(makeAudioTick.result(tick + delayTicks), (error) => ({
       _tag: 'MinecraftAmbientSoundsPlannerFailure' as const,
-      message: error.message,
+      message: makeAudioDiagnosticMessage(error.message),
     }))
     return { commands: moodCommand(mood, resolution), nextMoodTick: nextTick }
   })
@@ -182,7 +187,7 @@ const planMoodCommands = ({
 
 const shouldPlayAddition = (
   addition: MinecraftAmbientAddition,
-  randomSource: () => number,
+  randomSource: () => unknown,
 ): boolean => {
   if (addition.tick_chance === ONE) {
     return true
@@ -195,7 +200,7 @@ const shouldPlayAddition = (
 
 const planAdditionCommands = (input: {
   readonly additions: readonly MinecraftAmbientAddition[]
-  readonly randomSource: () => number
+  readonly randomSource: () => unknown
 }): readonly MinecraftAmbientSoundsCommand[] => {
   const commands: MinecraftAmbientSoundsCommand[] = []
   for (const addition of input.additions) {

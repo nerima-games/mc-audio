@@ -19,7 +19,7 @@ import {
   recordingCaptionLayer,
 } from '../src/domain/engine'
 import { SoundCueId } from '../src/domain/cue'
-import { AudioGain } from '../src/domain/audio-brands'
+import { AudioCaptionText, AudioGain } from '../src/domain/audio-brands'
 import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
 
 /**
@@ -220,9 +220,9 @@ describe('planCue', () => {
 
 describe('firstCaptionFor', () => {
   const CAPTIONS: ReadonlyArray<CaptionEvent> = [
-    { atSecs: MonotonicTimeSecs(1), cueId: 'blockBreak', reason: 'audible', text: 'Block breaks' },
-    { atSecs: MonotonicTimeSecs(2), cueId: 'levelUp', reason: 'audible', text: 'Level up!' },
-    { atSecs: MonotonicTimeSecs(3), cueId: 'blockBreak', reason: 'muted', text: 'Block breaks' },
+    { atSecs: MonotonicTimeSecs(1), cueId: SoundCueId('blockBreak'), reason: 'audible', text: AudioCaptionText('Block breaks') },
+    { atSecs: MonotonicTimeSecs(2), cueId: SoundCueId('levelUp'), reason: 'audible', text: AudioCaptionText('Level up!') },
+    { atSecs: MonotonicTimeSecs(3), cueId: SoundCueId('blockBreak'), reason: 'muted', text: AudioCaptionText('Block breaks') },
   ]
 
   it.effect('finds the first event matching a cue id, not the most recent one', () =>

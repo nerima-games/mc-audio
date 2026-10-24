@@ -112,7 +112,7 @@ export type MinecraftWolfSoundParserOptions = MinecraftMobSoundVariantRegistryOp
 
 export type MinecraftMobSoundResolutionOptions = {
   readonly isBaby?: boolean
-  readonly random?: number
+  readonly random?: unknown
 }
 
 export type MinecraftWolfSoundDefinition = {

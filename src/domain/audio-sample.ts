@@ -1,5 +1,13 @@
 /** Host-neutral sample data exchanged by resource loaders and audio backends. */
-import { AudioCount, AudioSampleId, AudioSampleUrl } from './audio-brands.js'
+import {
+  type AudioDiagnosticMessage,
+  type AudioDiagnosticPath,
+  AudioCount,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
+  AudioSampleId,
+  AudioSampleUrl,
+} from './audio-brands.js'
 import { Result } from 'effect'
 
 export type AudioSampleSource =
@@ -39,12 +47,16 @@ export type AudioSampleLoadReport = {
 
 export type AudioSampleManifestFailure = {
   readonly _tag: 'AudioSampleManifestFailure'
-  readonly path: string
-  readonly message: string
+  readonly path: AudioDiagnosticPath
+  readonly message: AudioDiagnosticMessage
 }
 
 const manifestFailure = (path: string, message: string): Result.Result<never, AudioSampleManifestFailure> =>
-  Result.fail({ _tag: 'AudioSampleManifestFailure', message, path })
+  Result.fail({
+    _tag: 'AudioSampleManifestFailure',
+    message: makeAudioDiagnosticMessage(message),
+    path: makeAudioDiagnosticPath(path),
+  })
 
 type AudioSampleFlags = {
   readonly preload?: boolean

@@ -1,4 +1,7 @@
 import {
+  type AudioCaptionText,
+  type AudioDiagnosticMessage,
+  type AudioDiagnosticPath,
   type AudioDistance,
   type AudioGain,
   type AudioPlaybackRate,
@@ -10,6 +13,9 @@ import {
   AudioGain as makeAudioGain,
   AudioPlaybackRate as makeAudioPlaybackRate,
   AudioWeight as makeAudioWeight,
+  AudioCaptionText as makeAudioCaptionText,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
   MinecraftSoundEventId as makeMinecraftSoundEventId,
   MinecraftSoundResourceId as makeMinecraftSoundResourceId,
 } from './audio-brands.js'
@@ -44,8 +50,8 @@ type JsonObject = Record<string, unknown>
 
 export type MinecraftSoundsParseFailure = {
   readonly _tag: 'MinecraftSoundsParseFailure'
-  readonly path: string
-  readonly message: string
+  readonly path: AudioDiagnosticPath
+  readonly message: AudioDiagnosticMessage
 }
 
 type NumberParserOptions = {
@@ -74,7 +80,11 @@ type ParseSoundVariantOptions = {
 }
 
 const failure = (path: string, message: string): Result.Result<never, MinecraftSoundsParseFailure> =>
-  Result.fail({ _tag: 'MinecraftSoundsParseFailure', message, path })
+  Result.fail({
+    _tag: 'MinecraftSoundsParseFailure',
+    message: makeAudioDiagnosticMessage(message),
+    path: makeAudioDiagnosticPath(path),
+  })
 
 const isMissing = (value: unknown): value is undefined => Object.is(value, globalThis.undefined)
 
@@ -199,11 +209,12 @@ const brandMinecraftSoundResourceId = (
 export const normalizeMinecraftSoundId = (
   value: unknown,
   defaultNamespace: MinecraftSoundNamespace,
-  path: string,
+  path: unknown,
 ): Result.Result<MinecraftSoundResourceId, MinecraftSoundsParseFailure> => Result.gen(function* normalizeMinecraftSoundIdEffect() {
-  const { namespace, path: rawPath } = yield* splitResourceId(value, defaultNamespace, path)
-  const soundPath = yield* normalizeSoundPath(rawPath, path)
-  return yield* brandMinecraftSoundResourceId(`${namespace}:${soundPath}`, path)
+  const pathLabel = typeof path === 'string' ? path : ''
+  const { namespace, path: rawPath } = yield* splitResourceId(value, defaultNamespace, pathLabel)
+  const soundPath = yield* normalizeSoundPath(rawPath, pathLabel)
+  return yield* brandMinecraftSoundResourceId(`${namespace}:${soundPath}`, pathLabel)
 })
 
 const parseReferenceType = (
@@ -315,12 +326,12 @@ const parseSoundVariant = ({
   })
 }
 
-const parseSubtitle = (value: unknown, path: string): Result.Result<string | null, MinecraftSoundsParseFailure> => {
+const parseSubtitle = (value: unknown, path: string): Result.Result<AudioCaptionText | null, MinecraftSoundsParseFailure> => {
   if (isMissing(value)) {
     return Result.succeed(null)
   }
   if (typeof value === 'string') {
-    return Result.succeed(value)
+    return Result.succeed(makeAudioCaptionText(value))
   }
   return failure(path, 'expected a string')
 }

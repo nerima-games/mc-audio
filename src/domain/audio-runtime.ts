@@ -1,6 +1,10 @@
 import { type AudioBackend, AudioBackendPort } from './backend-port.js'
 import { type AudioVolume, AudioVolume as audioVolume } from './audio-brands.js'
 import { CAPTION_DISPLAY_SECS, type CaptionEvent, visibleCaptions } from './caption.js'
+import {
+  type AudioRuntimeCaptionSignature,
+  AudioRuntimeCaptionSignature as makeAudioRuntimeCaptionSignature,
+} from './audio-brands.js'
 import { type CuePlayOptions, type SoundCueId } from './cue.js'
 import { Effect, Layer, Ref } from 'effect'
 import { type GameAudioHost, makeGameAudioHost } from './game-audio.js'
@@ -218,5 +222,7 @@ export const makeAudioRuntime = (input: {
     }
   })
 
-export const captionRenderSignature = (captions: ReadonlyArray<CaptionEvent>): string =>
-  JSON.stringify(captions.map(({ cueId, text, reason, atSecs }) => [cueId, text, reason, atSecs]))
+export const captionRenderSignature = (captions: ReadonlyArray<CaptionEvent>): AudioRuntimeCaptionSignature =>
+  makeAudioRuntimeCaptionSignature(
+    JSON.stringify(captions.map(({ cueId, text, reason, atSecs }) => [cueId, text, reason, atSecs])) ?? '[]',
+  )

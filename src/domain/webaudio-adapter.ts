@@ -169,13 +169,23 @@ const sampleDurationSecs = (
   fallbackDurationSecs: AudioDurationSecs,
 ): AudioDurationSecs => {
   const { duration } = buffer
-  if (Number.isFinite(duration) && duration >= 0) {
+  if (typeof duration === 'number' && Number.isFinite(duration) && duration >= 0) {
     const sampleDuration = AudioDurationSecs.option(duration / playbackRate)
     if (Option.isSome(sampleDuration)) {
       return sampleDuration.value
     }
   }
   return fallbackDurationSecs
+}
+
+const audioTime = (value: unknown): AudioDurationSecs => {
+  if (typeof value !== 'number') {
+    return AudioDurationSecs(0)
+  }
+  return Option.match(AudioDurationSecs.option(value), {
+    onNone: () => AudioDurationSecs(0),
+    onSome: (duration) => duration,
+  })
 }
 
 const resolveSampleBuffer = (
@@ -462,11 +472,7 @@ export const makeWebAudioBackend = (
                 durationSecs: sampleDurationSecs(sampleBuffer, playbackRate, request.durationSecs),
               }
             : request
-        const { currentTime } = context
-        const startSecs = Option.match(AudioDurationSecs.option(currentTime), {
-          onNone: () => AudioDurationSecs(0),
-          onSome: (value) => value,
-        })
+        const startSecs = audioTime(context.currentTime)
         const envelope = toneEnvelope(scheduledRequest, startSecs)
         if (envelope.peakGain === 0) {
           return refusedPlayback()
@@ -560,11 +566,7 @@ export const makeWebAudioBackend = (
         }
 
         const { context } = runtime.value
-        const { currentTime } = context
-        const now = Option.match(AudioDurationSecs.option(currentTime), {
-          onNone: () => AudioDurationSecs(0),
-          onSome: (value) => value,
-        })
+        const now = audioTime(context.currentTime)
 
         // Ramp down instead of stopping outright. `stopTone` is how a BGM track
         // Ends and how a looping cue is cancelled, and a loop cut mid-cycle at

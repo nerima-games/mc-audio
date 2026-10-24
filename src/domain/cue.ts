@@ -25,8 +25,8 @@ const getCueDefinition = <CueIdKey extends SoundCueId>(
   cueId: CueIdKey,
 ): CueDefinition => definitions[cueId]
 
-export const isSoundCueId = (value: string): value is SoundCueId =>
-  CUE_ID_SET.has(value)
+export const isSoundCueId = (value: unknown): value is SoundCueId =>
+  typeof value === 'string' && CUE_ID_SET.has(value)
 
 export const cueDefinition = (cueId: SoundCueId): CueDefinition => getCueDefinition(CUE_DEFINITIONS_BY_ID, cueId)
 

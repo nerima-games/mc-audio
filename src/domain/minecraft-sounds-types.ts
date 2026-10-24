@@ -1,4 +1,5 @@
 import type {
+  AudioCaptionText,
   AudioDistance,
   AudioGain,
   AudioPlaybackRate,
@@ -25,7 +26,7 @@ export type MinecraftSoundVariant = {
 export type MinecraftSoundEvent = {
   readonly id: MinecraftSoundEventId
   readonly replace: boolean
-  readonly subtitle: string | null
+  readonly subtitle: AudioCaptionText | null
   readonly sounds: readonly MinecraftSoundVariant[]
 }
 
