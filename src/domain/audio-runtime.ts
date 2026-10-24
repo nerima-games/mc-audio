@@ -2,8 +2,8 @@ import { type AudioBackend, AudioBackendPort } from './backend-port.js'
 import {
   type AudioRuntimeCaptionSignature,
   type AudioVolume,
-  AudioRuntimeCaptionSignature as makeAudioRuntimeCaptionSignature,
   AudioVolume as audioVolume,
+  AudioRuntimeCaptionSignature as makeAudioRuntimeCaptionSignature,
 } from './audio-brands.js'
 import { CAPTION_DISPLAY_SECS, type CaptionEvent, visibleCaptions } from './caption.js'
 import { type CuePlayOptions, type SoundCueId } from './cue.js'

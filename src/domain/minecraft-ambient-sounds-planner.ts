@@ -4,8 +4,8 @@ import {
   type AudioOffset,
   type AudioTick,
   type MinecraftSoundEventId,
-  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
   AudioDelayTicks as makeAudioDelayTicks,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
   AudioTick as makeAudioTick,
 } from './audio-brands.js'
 import {

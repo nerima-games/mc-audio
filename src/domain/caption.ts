@@ -26,8 +26,6 @@
  * `at`, expiry and dedupe become pure functions of the event list, and the DOM
  * layer goes back to being a renderer.
  */
-import { Context, Effect } from 'effect'
-import type { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
 import {
   type AudioCaptionText,
   type AudioDurationSecs,
@@ -35,6 +33,8 @@ import {
   type MinecraftSoundEventId,
   AudioDurationSecs as makeAudioDurationSecs,
 } from './audio-brands.js'
+import { Context, Effect } from 'effect'
+import type { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
 import type { SoundCueId } from '../data/cue-definitions.js'
 
 const ZERO = 0

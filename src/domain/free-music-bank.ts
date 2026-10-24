@@ -6,6 +6,7 @@ import {
   type AudioSampleId,
   type AudioSampleRate,
   type MinecraftSoundEventId,
+  MinecraftSoundResourceId,
   AudioDiagnosticMessage as makeAudioDiagnosticMessage,
   AudioDiagnosticPath as makeAudioDiagnosticPath,
   AudioDistance as makeAudioDistance,
@@ -13,7 +14,6 @@ import {
   AudioPlaybackRate as makeAudioPlaybackRate,
   AudioSampleId as makeAudioSampleId,
   AudioSampleRate as makeAudioSampleRate,
-  MinecraftSoundResourceId,
 } from './audio-brands.js'
 import type { AudioSampleManifest, AudioSampleManifestFailure, AudioSampleSource } from './audio-sample.js'
 import {
