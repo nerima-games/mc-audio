@@ -350,11 +350,12 @@ try {
     if (typeof rootModule.mergeAudioSampleManifests !== 'function') {
       throw new Error('The root export does not expose mergeAudioSampleManifests');
     }
+    const sharedSampleId = rootModule.AudioSampleId('shared');
     const mergedManifest = rootModule.mergeAudioSampleManifests(
-      { shared: { kind: 'url', url: 'https://example.invalid/base.wav' } },
-      { shared: { kind: 'url', url: 'https://example.invalid/additions.wav' } },
+      new Map([[sharedSampleId, { kind: 'url', url: rootModule.AudioSampleUrl('https://example.invalid/base.wav') }]]),
+      new Map([[sharedSampleId, { kind: 'url', url: rootModule.AudioSampleUrl('https://example.invalid/additions.wav') }]]),
     );
-    if (mergedManifest.shared.url !== 'https://example.invalid/base.wav') {
+    if (mergedManifest.get(sharedSampleId)?.url !== 'https://example.invalid/base.wav') {
       throw new Error('The root export returned an invalid manifest merge (base must win over additions)');
     }
     if (typeof rootModule.parseMinecraftSoundsJson !== 'function' || typeof rootModule.MINECRAFT_26_2_SOUNDS_JSON !== 'object') {
@@ -384,9 +385,12 @@ import {
   VOLUME_CATEGORIES,
   DEFAULT_VOLUME_SETTINGS,
   mergeAudioSampleManifests,
+  AudioSampleId,
+  AudioSampleUrl,
+  MinecraftSoundNamespace,
+  SoundCueId,
   parseMinecraftSoundsJson,
   MINECRAFT_26_2_SOUNDS_JSON,
-  type SoundCueId,
   type CueDefinition,
   type VolumeCategory,
   type VolumeSettings,
@@ -400,25 +404,26 @@ if (declaredPackageExports.length !== ${importSpecifiers.length}) {
   throw new Error('The TypeScript consumer did not load every declared package export')
 }
 
-const cueId: SoundCueId = 'blockBreak'
+const cueId: SoundCueId = SoundCueId('blockBreak')
 if (!isSoundCueId(cueId)) {
   throw new Error('Cue declaration consumer returned an invalid result')
 }
 const definition: CueDefinition = cueDefinition(cueId)
 const category: VolumeCategory = VOLUME_CATEGORIES[0]
 const settings: VolumeSettings = DEFAULT_VOLUME_SETTINGS
+const sampleId = AudioSampleId('a')
 const manifest: AudioSampleManifest = mergeAudioSampleManifests(
-  { a: { kind: 'url', url: 'https://example.invalid/a.wav' } },
-  {},
+  new Map([[sampleId, { kind: 'url', url: AudioSampleUrl('https://example.invalid/a.wav') }]]),
+  new Map(),
 )
-const parsed = parseMinecraftSoundsJson(MINECRAFT_26_2_SOUNDS_JSON, { namespace: 'minecraft' })
+const parsed = parseMinecraftSoundsJson(MINECRAFT_26_2_SOUNDS_JSON, { namespace: MinecraftSoundNamespace('minecraft') })
 if (
   typeof definition.baseGain !== 'number' ||
   typeof settings[category] !== 'number' ||
   clamp01(2) !== 1 ||
   clampNonNegative(-2) !== 0 ||
   clampPan(2) !== 1 ||
-  manifest.a === undefined ||
+  manifest.get(sampleId) === undefined ||
   parsed === undefined
 ) {
   throw new Error('Declaration consumer returned an invalid result')
@@ -438,6 +443,7 @@ if (
         compilerOptions: {
           strict: true,
           target: "ES2022",
+          lib: ["ESNext", "DOM"],
           module: "NodeNext",
           moduleResolution: "NodeNext",
           noEmit: true,
