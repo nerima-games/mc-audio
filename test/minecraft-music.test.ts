@@ -1,5 +1,7 @@
 /* oxlint-disable max-statements, no-magic-numbers */
 import { describe, expect, it } from 'vitest'
+import { Option, Result } from 'effect'
+import { AudioDelayTicks, AudioTick, AudioVolume, MinecraftSoundEventId } from '../src/domain/audio-brands.js'
 import {
   MINECRAFT_BACKGROUND_MUSIC,
   MINECRAFT_MUSIC_DEFAULT_MAX_DELAY_TICKS,
@@ -19,33 +21,61 @@ import {
   type MinecraftMusicState,
 } from '../src/domain/minecraft-music.js'
 
-const definition = (overrides: Partial<MinecraftMusicDefinition> = {}): MinecraftMusicDefinition => ({
-  max_delay: 0,
-  min_delay: 0,
-  sound: 'minecraft:music.game',
-  ...overrides,
+type DefinitionOverrides = {
+  readonly max_delay?: number
+  readonly min_delay?: number
+  readonly replace_current_music?: boolean
+  readonly sound?: string
+}
+
+const definition = (overrides: DefinitionOverrides = {}): MinecraftMusicDefinition => ({
+  max_delay: AudioDelayTicks(overrides.max_delay ?? 0),
+  min_delay: AudioDelayTicks(overrides.min_delay ?? 0),
+  sound: MinecraftSoundEventId(overrides.sound ?? 'minecraft:music.game'),
+  ...(overrides.replace_current_music === undefined ? {} : { replace_current_music: overrides.replace_current_music }),
 })
 
 const normalizeMusicUnknown = (value: unknown) => normalizeMinecraftMusicDefinition(value)
 const normalizeBiomeUnknown = (value: unknown) => normalizeMinecraftBiomeMusicDefinition(value)
 
-const state = (overrides: Partial<MinecraftMusicState> = {}): MinecraftMusicState => ({
-  currentGain: 0,
-  currentSound: null,
-  nextSongDelayTicks: 0,
-  ...overrides,
+type StateOverrides = {
+  readonly currentGain?: number
+  readonly currentSound?: string | null
+  readonly nextSongDelayTicks?: number
+}
+
+const state = (overrides: StateOverrides = {}): MinecraftMusicState => ({
+  currentGain: AudioVolume(overrides.currentGain ?? 0),
+  currentSound: overrides.currentSound === null || overrides.currentSound === undefined
+    ? null
+    : MinecraftSoundEventId(overrides.currentSound),
+  nextSongDelayTicks: AudioTick(overrides.nextSongDelayTicks ?? 0),
 })
 
-const plan = (overrides: Partial<MinecraftMusicPlannerInput> = {}) =>
-  planMinecraftMusic({
+type PlanOverrides = Omit<Partial<MinecraftMusicPlannerInput>, 'musicVolume' | 'state'> & {
+  readonly musicVolume?: number
+  readonly state?: StateOverrides
+}
+
+const success = <A, E>(result: Result.Result<A, E>): A => {
+  if (Result.isFailure(result)) {
+    throw new Error('expected a successful result')
+  }
+  return result.success
+}
+
+const plan = (overrides: PlanOverrides = {}) => {
+  const { musicVolume = 1, state: stateOverrides, ...input } = overrides
+  return success(planMinecraftMusic({
     currentActive: true,
     desired: definition(),
     enabled: true,
-    musicVolume: 1,
+    musicVolume: AudioVolume(musicVolume),
     randomIntInclusive: () => 0,
-    state: state(),
-    ...overrides,
-  })
+    state: state(stateOverrides),
+    ...input,
+  }))
+}
 
 describe('minecraft music definitions', () => {
   it('resolves the vanilla context priority', () => {
@@ -89,20 +119,20 @@ describe('minecraft music definitions', () => {
   })
 
   it('normalizes defaults and rejects invalid delays', () => {
-    expect(normalizeMinecraftMusicDefinition(definition())).toEqual({
+    expect(success(normalizeMinecraftMusicDefinition(definition()))).toEqual({
       max_delay: 0,
       min_delay: 0,
       replace_current_music: false,
       sound: 'minecraft:music.game',
     })
     expect(
-      normalizeMinecraftMusicDefinition(
+      success(normalizeMinecraftMusicDefinition(
         definition({
           max_delay: MINECRAFT_MUSIC_DEFAULT_MAX_DELAY_TICKS,
           min_delay: MINECRAFT_MUSIC_DEFAULT_MIN_DELAY_TICKS,
           replace_current_music: true,
         }),
-      ),
+      )),
     ).toEqual({
       max_delay: MINECRAFT_MUSIC_DEFAULT_MAX_DELAY_TICKS,
       min_delay: MINECRAFT_MUSIC_DEFAULT_MIN_DELAY_TICKS,
@@ -113,17 +143,17 @@ describe('minecraft music definitions', () => {
     for (const invalid of [
       null,
       [],
-      definition({ sound: '' }),
-      definition({ min_delay: -1 }),
-      definition({ min_delay: 0.5 }),
-      definition({ max_delay: -1 }),
-      definition({ max_delay: 0.5 }),
-      definition({ max_delay: -1, min_delay: 0 }),
-      definition({ max_delay: 1, min_delay: 2 }),
+      { ...definition(), sound: '' },
+      { ...definition(), min_delay: -1 },
+      { ...definition(), min_delay: 0.5 },
+      { ...definition(), max_delay: -1 },
+      { ...definition(), max_delay: 0.5 },
+      { ...definition(), max_delay: -1, min_delay: 0 },
+      { ...definition(), max_delay: 1, min_delay: 2 },
       { ...definition(), replace_current_music: 'true' },
       { ...definition(), unknown: true },
     ]) {
-      expect(() => normalizeMusicUnknown(invalid)).toThrow()
+      expect(Result.isFailure(normalizeMusicUnknown(invalid))).toBe(true)
     }
   })
 
@@ -132,15 +162,15 @@ describe('minecraft music definitions', () => {
       data: definition({ sound: 'minecraft:music.creative' }),
       weight: 3,
     }
-    expect(normalizeMinecraftBiomeMusicDefinition(weighted)).toEqual({
+    expect(success(normalizeMinecraftBiomeMusicDefinition(weighted))).toEqual({
       max_delay: 0,
       min_delay: 0,
       replace_current_music: false,
       sound: 'minecraft:music.creative',
       weight: 3,
     })
-    expect(normalizeMinecraftBiomeMusic([weighted])).toHaveLength(1)
-    expect(normalizeMinecraftBiomeMusic([])).toStrictEqual([])
+    expect(success(normalizeMinecraftBiomeMusic([weighted]))).toHaveLength(1)
+    expect(success(normalizeMinecraftBiomeMusic([]))).toStrictEqual([])
 
     for (const invalid of [
       null,
@@ -152,17 +182,14 @@ describe('minecraft music definitions', () => {
       Number.POSITIVE_INFINITY,
       '1',
     ]) {
-      expect(() => normalizeBiomeUnknown({ data: definition(), weight: invalid })).toThrow()
+      expect(Result.isFailure(normalizeBiomeUnknown({ data: definition(), weight: invalid }))).toBe(true)
     }
-    expect(
-      () =>
-        normalizeMinecraftBiomeMusicDefinition({
+    expect(Result.isFailure(normalizeMinecraftBiomeMusicDefinition({
           data: definition(),
           unknown: true,
           weight: 1,
-        }),
-    ).toThrow()
-    expect(() => normalizeBiomeUnknown({ ...definition(), weight: 1 })).toThrow()
+        }))).toBe(true)
+    expect(Result.isFailure(normalizeBiomeUnknown({ ...definition(), weight: 1 }))).toBe(true)
   })
 
   it('selects weighted biome music without exposing the internal weight', () => {
@@ -170,34 +197,34 @@ describe('minecraft music definitions', () => {
       { data: definition({ sound: 'minecraft:music.game' }), weight: 1 },
       { data: definition({ sound: 'minecraft:music.creative' }), weight: 3 },
     ]
-    expect(selectMinecraftBiomeMusicDefinition([], 0)).toBeNull()
-    expect(selectMinecraftBiomeMusicDefinition(music, 0)).toStrictEqual({
+    expect(success(selectMinecraftBiomeMusicDefinition([], 0))).toBeNull()
+    expect(success(selectMinecraftBiomeMusicDefinition(music, 0))).toStrictEqual({
       max_delay: 0,
       min_delay: 0,
       replace_current_music: false,
       sound: 'minecraft:music.game',
     })
-    expect(selectMinecraftBiomeMusicDefinition(music, 0.5)?.sound).toBe('minecraft:music.creative')
-    expect(selectMinecraftBiomeMusicDefinition(music, -1)?.sound).toBe('minecraft:music.game')
-    expect(selectMinecraftBiomeMusicDefinition(music, 2)?.sound).toBe('minecraft:music.creative')
-    expect(selectMinecraftBiomeMusicDefinition(music, Number.NaN)?.sound).toBe('minecraft:music.game')
+    expect(success(selectMinecraftBiomeMusicDefinition(music, 0.5))?.sound).toBe('minecraft:music.creative')
+    expect(success(selectMinecraftBiomeMusicDefinition(music, -1))?.sound).toBe('minecraft:music.game')
+    expect(success(selectMinecraftBiomeMusicDefinition(music, 2))?.sound).toBe('minecraft:music.creative')
+    expect(success(selectMinecraftBiomeMusicDefinition(music, Number.NaN))?.sound).toBe('minecraft:music.game')
     expect(
-      selectMinecraftBiomeMusicDefinition(
+      success(selectMinecraftBiomeMusicDefinition(
         [
           { data: definition({ sound: 'minecraft:music.game' }), weight: Number.MAX_VALUE },
           { data: definition({ sound: 'minecraft:music.creative' }), weight: Number.MAX_VALUE },
         ],
         0.5,
-      )?.sound,
+      ))?.sound,
     ).toBe('minecraft:music.creative')
     expect(
-      selectMinecraftBiomeMusicDefinition(
+      success(selectMinecraftBiomeMusicDefinition(
         [
           { data: definition({ sound: 'minecraft:music.game' }), weight: Number.MAX_VALUE },
           { data: definition({ sound: 'minecraft:music.creative' }), weight: Number.MAX_VALUE },
         ],
         Number.MAX_VALUE,
-      )?.sound,
+      ))?.sound,
     ).toBe('minecraft:music.creative')
   })
 })
@@ -371,5 +398,53 @@ describe('minecraft music planning', () => {
       ],
       state: state({ currentGain: 1, currentSound: 'minecraft:music.game', nextSongDelayTicks: 2 }),
     })
+  })
+
+  it('returns typed failures when caller-supplied planner state violates its brands', () => {
+    const invalidGain = planMinecraftMusic({
+      currentActive: true,
+      desired: definition(),
+      enabled: true,
+      musicVolume: AudioVolume(1),
+      randomIntInclusive: () => 0,
+      state: {
+        // @ts-expect-error Simulate a corrupt branded state supplied at runtime.
+        currentGain: Number.NaN,
+        currentSound: MinecraftSoundEventId('minecraft:music.game'),
+        nextSongDelayTicks: AudioTick(0),
+      },
+    })
+
+    expect(Option.isNone(AudioVolume.option(Number.NaN))).toBe(true)
+    expect(Result.isFailure(invalidGain)).toBe(true)
+    if (Result.isFailure(invalidGain)) {
+      expect(invalidGain.failure).toMatchObject({
+        _tag: 'MinecraftMusicDataFailure',
+        path: 'currentGain',
+      })
+    }
+
+    const invalidDelay = planMinecraftMusic({
+      currentActive: true,
+      desired: definition(),
+      enabled: true,
+      musicVolume: AudioVolume(1),
+      randomIntInclusive: () => 0,
+      state: {
+        currentGain: AudioVolume(0),
+        currentSound: null,
+        // @ts-expect-error Simulate a corrupt branded state supplied at runtime.
+        nextSongDelayTicks: 0.5,
+      },
+    })
+
+    expect(Option.isNone(AudioTick.option(0.5))).toBe(true)
+    expect(Result.isFailure(invalidDelay)).toBe(true)
+    if (Result.isFailure(invalidDelay)) {
+      expect(invalidDelay.failure).toMatchObject({
+        _tag: 'MinecraftMusicDataFailure',
+        path: 'nextSongDelayTicks',
+      })
+    }
   })
 })

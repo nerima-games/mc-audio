@@ -1,4 +1,10 @@
 export type {
+  MinecraftSoundsParseFailure,
+} from './minecraft-sounds-parser.js'
+export type {
+  MinecraftSoundResolutionFailure,
+} from './minecraft-sounds-resolver.js'
+export type {
   MinecraftSoundEvent,
   MinecraftSoundReferenceType,
   MinecraftSoundRegistry,

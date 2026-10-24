@@ -1,8 +1,10 @@
 /* oxlint-disable no-magic-numbers, sort-imports -- Assertions validate the binary WAV format offsets and authored seeds. */
 import { describe, expect, it } from 'vitest'
+import { Option } from 'effect'
+import { AudioSampleId, AudioSampleRate, AudioSeed } from '../src/domain/audio-brands'
+import { SoundCueId } from '../src/domain/cue'
 import {
   END_AUDIO_EVENT_KINDS,
-  ORIGINAL_SAMPLE_RATE,
   ORIGINAL_SAMPLE_SOUND_IDS,
   SOUND_CUE_IDS,
   createOriginalSampleManifest,
@@ -19,12 +21,14 @@ const pcmPeak = (buffer: ArrayBuffer): number => {
 }
 
 describe('original PCM sample bank', () => {
+  const blockBreak = SoundCueId('blockBreak')
+
   it('covers every gameplay cue and the End/portal sound vocabulary', () => {
     const manifest = createOriginalSampleManifest()
-    expect(Object.keys(manifest).sort()).toStrictEqual([...ORIGINAL_SAMPLE_SOUND_IDS].sort())
-    expect(SOUND_CUE_IDS.every((id) => manifest[id]?.kind === 'array-buffer')).toBe(true)
-    expect(END_AUDIO_EVENT_KINDS.every((id) => manifest[id]?.kind === 'array-buffer')).toBe(true)
-    expect(manifest['endAmbience']?.kind).toBe('array-buffer')
+    expect([...manifest.keys()].sort()).toStrictEqual([...ORIGINAL_SAMPLE_SOUND_IDS].map(AudioSampleId).sort())
+    expect(SOUND_CUE_IDS.every((id) => manifest.get(AudioSampleId(id))?.kind === 'array-buffer')).toBe(true)
+    expect(END_AUDIO_EVENT_KINDS.every((id) => manifest.get(AudioSampleId(id))?.kind === 'array-buffer')).toBe(true)
+    expect(manifest.get(AudioSampleId('endAmbience'))?.kind).toBe('array-buffer')
   })
 
   it.each(ORIGINAL_SAMPLE_SOUND_IDS)('%s is a valid, non-silent PCM WAV', (soundId) => {
@@ -39,19 +43,21 @@ describe('original PCM sample bank', () => {
   })
 
   it('is byte-for-byte deterministic for a seed and varies across seeds', () => {
-    const first = new Uint8Array(generateOriginalSampleWav('blockBreak', { seed: 7 }))
-    const second = new Uint8Array(generateOriginalSampleWav('blockBreak', { seed: 7 }))
-    const other = new Uint8Array(generateOriginalSampleWav('blockBreak', { seed: 8 }))
+    const first = new Uint8Array(generateOriginalSampleWav(blockBreak, { seed: AudioSeed(7) }))
+    const second = new Uint8Array(generateOriginalSampleWav(blockBreak, { seed: AudioSeed(7) }))
+    const other = new Uint8Array(generateOriginalSampleWav(blockBreak, { seed: AudioSeed(8) }))
     expect(first).toStrictEqual(second)
     expect(first).not.toStrictEqual(other)
   })
 
-  it('floors a non-finite requested sample rate to ORIGINAL_SAMPLE_RATE', () => {
-    for (const sampleRate of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
-      const wav = generateOriginalSampleWav('blockBreak', { sampleRate })
-      const view = new DataView(wav)
-      expect(view.getUint32(24, true)).toBe(ORIGINAL_SAMPLE_RATE)
-    }
+  it('requires a finite positive sample rate and clamps valid rates to the supported range', () => {
+    expect(Option.isNone(AudioSampleRate.option(Number.NaN))).toBe(true)
+    expect(Option.isNone(AudioSampleRate.option(Number.POSITIVE_INFINITY))).toBe(true)
+    expect(Option.isNone(AudioSampleRate.option(Number.NEGATIVE_INFINITY))).toBe(true)
+    const below = generateOriginalSampleWav(blockBreak, { sampleRate: AudioSampleRate(1) })
+    const above = generateOriginalSampleWav(blockBreak, { sampleRate: AudioSampleRate(100_000) })
+    expect(new DataView(below).getUint32(24, true)).toBe(8_000)
+    expect(new DataView(above).getUint32(24, true)).toBe(48_000)
   })
 
   it('never seeds the noise generator with zero, even for a seed chosen to hash to it', () => {
@@ -60,7 +66,7 @@ describe('original PCM sample bank', () => {
     // chain lands on exactly 0 before the `|| 1` fallback — found by
     // inverting the hash arithmetic, not by guessing. A zero-seeded xorshift
     // generator never leaves zero, which would make the sample silent.
-    const wav = generateOriginalSampleWav('blockBreak', { seed: -498_090_764 })
+    const wav = generateOriginalSampleWav(blockBreak, { seed: AudioSeed(-498_090_764) })
     expect(pcmPeak(wav)).toBeGreaterThan(500)
   })
 })

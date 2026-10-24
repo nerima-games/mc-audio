@@ -22,6 +22,7 @@ export {
   parseMinecraftMobSoundVariantRegistry,
   parseMinecraftWolfSoundDefinition,
 } from './minecraft-mob-sound-variant-parser.js'
+export type { MinecraftMobSoundVariantParseFailure } from './minecraft-mob-sound-variant-parser.js'
 export {
   resolveMinecraftMobSound,
   resolveMinecraftMobSoundEventId,
@@ -29,4 +30,5 @@ export {
   resolveMinecraftWolfSound,
   resolveMinecraftWolfSoundEventId,
 } from './minecraft-mob-sound-variant-resolver.js'
+export type { MinecraftMobSoundVariantResolutionFailure } from './minecraft-mob-sound-variant-resolver.js'
 

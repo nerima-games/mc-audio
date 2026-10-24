@@ -1,22 +1,30 @@
 /* oxlint-disable max-statements, no-magic-numbers */
 import { describe, expect, it } from '@effect/vitest'
+import { Result } from 'effect'
 import { normalizeMinecraftAmbientSoundsDefinition } from '../src/domain/minecraft-ambient-sounds.js'
 import { asDefinition } from './minecraft-ambient-sounds-support.js'
 
+const success = (result: ReturnType<typeof normalizeMinecraftAmbientSoundsDefinition>) => {
+  if (Result.isFailure(result)) {
+    throw result.failure
+  }
+  return result.success
+}
+
 describe('Minecraft ambient sound definitions', () => {
   it('normalizes the official defaults and fields', () => {
-    expect(normalizeMinecraftAmbientSoundsDefinition()).toStrictEqual({
+    expect(success(normalizeMinecraftAmbientSoundsDefinition())).toStrictEqual({
       additions: [],
       loop: null,
       mood: null,
     })
-    expect(normalizeMinecraftAmbientSoundsDefinition(null)).toStrictEqual({
+    expect(success(normalizeMinecraftAmbientSoundsDefinition(null))).toStrictEqual({
       additions: [],
       loop: null,
       mood: null,
     })
     expect(
-      normalizeMinecraftAmbientSoundsDefinition(
+      success(normalizeMinecraftAmbientSoundsDefinition(
         asDefinition({
           additions: [],
           loop: 'minecraft:ambient.loop',
@@ -27,7 +35,7 @@ describe('Minecraft ambient sound definitions', () => {
             tick_delay: 80,
           },
         }),
-      ),
+      )),
     ).toStrictEqual({
       additions: [],
       loop: 'minecraft:ambient.loop',
@@ -39,10 +47,39 @@ describe('Minecraft ambient sound definitions', () => {
       },
     })
     expect(
-      normalizeMinecraftAmbientSoundsDefinition(
+      success(normalizeMinecraftAmbientSoundsDefinition(
         asDefinition({ additions: null, loop: null, mood: null }),
-      ),
+      )),
     ).toStrictEqual({ additions: [], loop: null, mood: null })
+  })
+
+  it('accepts the boundary values supported by ambient sound brands', () => {
+    expect(success(normalizeMinecraftAmbientSoundsDefinition(
+      asDefinition({
+        additions: [
+          { sound: 'minecraft:ambient.silent', tick_chance: 0 },
+          { sound: 'minecraft:ambient.certain', tick_chance: 1 },
+        ],
+        mood: {
+          block_search_extent: 0,
+          offset: -1.5,
+          sound: 'minecraft:ambient.mood',
+          tick_delay: 1,
+        },
+      }),
+    ))).toStrictEqual({
+      additions: [
+        { sound: 'minecraft:ambient.silent', tick_chance: 0 },
+        { sound: 'minecraft:ambient.certain', tick_chance: 1 },
+      ],
+      loop: null,
+      mood: {
+        block_search_extent: 0,
+        offset: -1.5,
+        sound: 'minecraft:ambient.mood',
+        tick_delay: 1,
+      },
+    })
   })
 
   it('rejects malformed loop, mood, addition, and probability fields', () => {
@@ -81,7 +118,7 @@ describe('Minecraft ambient sound definitions', () => {
       asDefinition({ additions: [{ sound: 'addition', tick_chance: -0.1 }] }),
       asDefinition({ additions: [{ sound: 'addition', tick_chance: 1.1 }] }),
     ]) {
-      expect(() => normalizeMinecraftAmbientSoundsDefinition(invalid)).toThrow()
+      expect(Result.isFailure(normalizeMinecraftAmbientSoundsDefinition(invalid))).toBe(true)
     }
   })
 })

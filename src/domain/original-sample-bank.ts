@@ -1,9 +1,22 @@
 /* oxlint-disable max-statements, no-bitwise, no-magic-numbers, no-nested-ternary, no-ternary, prefer-destructuring -- PCM/WAV synthesis is intentionally numeric and stateful. */
-import { CUE_DEFINITIONS, SOUND_CUE_IDS, type SoundCueId } from './cue.js'
+import {
+  type AudioCount,
+  type AudioDurationSecs,
+  type AudioFrequencyHz,
+  type AudioSampleId,
+  type AudioSampleRate,
+  type AudioSeed,
+  AudioCount as makeAudioCount,
+  AudioDurationSecs as makeAudioDurationSecs,
+  AudioFrequencyHz as makeAudioFrequencyHz,
+  AudioSampleId as makeAudioSampleId,
+  AudioSampleRate as makeAudioSampleRate,
+} from './audio-brands.js'
+import type { AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
 import { END_AUDIO_EVENT_KINDS, END_SOUND_DEFINITIONS, type EndAudioEventKind } from './end-audio.js'
-import type { AudioSampleManifest } from './audio-sample.js'
+import { SOUND_CUE_IDS, type SoundCueId, cueDefinition } from './cue.js'
 
-export const ORIGINAL_SAMPLE_RATE = 16_000
+export const ORIGINAL_SAMPLE_RATE: AudioSampleRate = makeAudioSampleRate(16_000)
 
 export const ORIGINAL_SAMPLE_SOUND_IDS: readonly (SoundCueId | EndAudioEventKind | 'endAmbience')[] = [
   ...SOUND_CUE_IDS,
@@ -15,14 +28,14 @@ export type OriginalSampleSoundId = (typeof ORIGINAL_SAMPLE_SOUND_IDS)[number]
 
 export type OriginalSampleBankOptions = {
   /** Samples per second. Defaults to 16 kHz; values outside 8-48 kHz are clamped. */
-  readonly sampleRate?: number
+  readonly sampleRate?: AudioSampleRate
   /** Changes the generated performance while remaining deterministic. */
-  readonly seed?: number
+  readonly seed?: AudioSeed
 }
 
 type SampleSpec = {
-  readonly durationSecs: number
-  readonly frequency: number
+  readonly durationSecs: AudioDurationSecs
+  readonly frequency: AudioFrequencyHz
   readonly noise: number
   readonly sweep: number
 }
@@ -30,7 +43,7 @@ type SampleSpec = {
 const endSpec = (id: EndAudioEventKind): SampleSpec => {
   const value = END_SOUND_DEFINITIONS[id]
   return {
-    durationSecs: Math.min(value.durationSecs, 1.5),
+    durationSecs: makeAudioDurationSecs(Math.min(value.durationSecs, 1.5)),
     frequency: value.fallbackFrequency,
     noise: id.startsWith('dragon') ? 0.52 : 0.18,
     sweep: id === 'portalActivate' || id === 'exitPortal' ? 1.8 : 0.62,
@@ -38,7 +51,7 @@ const endSpec = (id: EndAudioEventKind): SampleSpec => {
 }
 
 const cueSpec = (id: SoundCueId): SampleSpec => {
-  const value = CUE_DEFINITIONS[id]
+  const value = cueDefinition(id)
   const noisy = id.startsWith('footstep') || id.startsWith('block') || id.includes('Hurt') || id.includes('Death')
   return {
     durationSecs: value.durationSecs,
@@ -53,7 +66,7 @@ const isSoundCueId = (id: OriginalSampleSoundId): id is SoundCueId =>
 
 const specFor = (id: OriginalSampleSoundId): SampleSpec => {
   if (id === 'endAmbience') {
-    return { durationSecs: 1.5, frequency: 46, noise: 0.16, sweep: 1.04 }
+    return { durationSecs: makeAudioDurationSecs(1.5), frequency: makeAudioFrequencyHz(46), noise: 0.16, sweep: 1.04 }
   }
   if (isSoundCueId(id)) {
     return cueSpec(id)
@@ -78,7 +91,7 @@ const nextNoise = (state: { value: number }): number => {
   return (value >>> 0) / 2_147_483_648 - 1
 }
 
-const writeHeader = (view: DataView, sampleRate: number, sampleCount: number): void => {
+const writeHeader = (view: DataView, sampleRate: AudioSampleRate, sampleCount: AudioCount): void => {
   const ascii = (offset: number, value: string): void => {
     for (let index = 0; index < value.length; index += 1) {
       view.setUint8(offset + index, value.charCodeAt(index))
@@ -104,11 +117,9 @@ export const generateOriginalSampleWav = (
   options: OriginalSampleBankOptions = {},
 ): ArrayBuffer => {
   const requestedSampleRate = options.sampleRate ?? ORIGINAL_SAMPLE_RATE
-  const sampleRate = Number.isFinite(requestedSampleRate)
-    ? Math.round(Math.min(48_000, Math.max(8_000, requestedSampleRate)))
-    : ORIGINAL_SAMPLE_RATE
+  const sampleRate = makeAudioSampleRate(Math.round(Math.min(48_000, Math.max(8_000, requestedSampleRate))))
   const spec = specFor(soundId)
-  const sampleCount = Math.max(1, Math.round(spec.durationSecs * sampleRate))
+  const sampleCount = makeAudioCount(Math.max(1, Math.round(spec.durationSecs * sampleRate)))
   const buffer = new ArrayBuffer(44 + sampleCount * 2)
   const view = new DataView(buffer)
   const random = { value: hash(soundId, options.seed ?? 0x4d_43_41) }
@@ -132,9 +143,9 @@ export const generateOriginalSampleWav = (
 /** A complete built-in manifest accepted directly by `makeWebAudioBackend`. */
 export const createOriginalSampleManifest = (
   options: OriginalSampleBankOptions = {},
-): AudioSampleManifest => Object.fromEntries(
+): AudioSampleManifest => new Map<AudioSampleId, AudioSampleSource>(
   ORIGINAL_SAMPLE_SOUND_IDS.map((soundId) => [
-    soundId,
-    { data: generateOriginalSampleWav(soundId, options), kind: 'array-buffer' as const },
-  ]),
+    makeAudioSampleId(soundId),
+    { data: generateOriginalSampleWav(soundId, options), kind: 'array-buffer' },
+  ] as const),
 )

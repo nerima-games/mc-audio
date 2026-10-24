@@ -1,4 +1,4 @@
-/* oxlint-disable new-cap, no-ternary, no-undefined, sort-imports -- Effect.Tag is callable; optional WebAudio inputs require explicit undefined checks and compact conditional object construction. */
+/* oxlint-disable new-cap, no-ternary, no-undefined, sort-imports -- Context.Service is callable; optional WebAudio inputs require explicit undefined checks and compact conditional object construction. */
 /**
  * `SoundCuePort` — and the ordering that this whole repository exists to protect.
  *
@@ -44,7 +44,8 @@
  * `test/caption-gate.test.ts` covers all three. That is the single most
  * important test in this repository.
  */
-import { ClockPort, type Position } from '@nerima-games/mc-kernel'
+import { ClockPort } from '@nerima-games/mc-kernel/domain/clock'
+import type { Position } from '@nerima-games/mc-kernel/domain/coordinates'
 import { Context, Effect, Layer, Option } from 'effect'
 import { type AudioAvailability, AudioBackendPort, type ToneRequest } from './backend-port.js'
 import { type CaptionEvent, type CaptionReason, CaptionStream } from './caption.js'
@@ -147,13 +148,13 @@ export type SoundCueService = {
   readonly play: (cueId: SoundCueId, options?: CuePlayOptions) => Effect.Effect<void>
 }
 
-const SoundCuePortBase: Context.TagClass<
+const SoundCuePortService: Context.ServiceClass<
   SoundCuePort,
   '@nerima-games/mc-audio/SoundCuePort',
   SoundCueService
-> = Context.Tag('@nerima-games/mc-audio/SoundCuePort')<SoundCuePort, SoundCueService>()
+> = Context.Service<SoundCuePort, SoundCueService>()('@nerima-games/mc-audio/SoundCuePort')
 
-export class SoundCuePort extends SoundCuePortBase {}
+export class SoundCuePort extends SoundCuePortService {}
 
 /**
  * Build the cue service.
@@ -219,4 +220,4 @@ export const recordingCaptionLayer = (
 export const firstCaptionFor = (
   events: ReadonlyArray<CaptionEvent>,
   cueId: SoundCueId,
-): Option.Option<CaptionEvent> => Option.fromNullable(events.find((event) => event.cueId === cueId))
+): Option.Option<CaptionEvent> => Option.fromNullishOr(events.find((event) => event.cueId === cueId))

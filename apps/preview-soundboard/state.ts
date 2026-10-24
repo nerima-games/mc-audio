@@ -15,10 +15,12 @@
  * recomputed the answer it was previewing would be able to draw a graph the
  * adapter never built.
  */
-import { MonotonicTimeSecs, type Position } from '@nerima-games/mc-kernel'
+import { PositionAxis, type Position } from '@nerima-games/mc-kernel/domain/coordinates'
+import { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
 import { Option } from 'effect'
+import { AudioVolume } from '../../src/domain/audio-brands'
 import type { CaptionEvent } from '../../src/domain/caption'
-import { SOUND_CUE_IDS, type SoundCueId } from '../../src/domain/cue'
+import { SOUND_CUE_IDS, SoundCueId } from '../../src/domain/cue'
 import type { CueContext } from '../../src/domain/engine'
 import {
   DEFAULT_CAVE_THRESHOLD_Y,
@@ -72,8 +74,8 @@ export const INITIAL_STATE: PreviewState = {
   cueIndex: 0,
   settings: DEFAULT_VOLUME_SETTINGS,
   enabled: true,
-  listener: { x: 0, y: 64, z: 0 },
-  source: { x: 4, y: 64, z: 0 },
+  listener: { x: PositionAxis(0), y: PositionAxis(64), z: PositionAxis(0) },
+  source: { x: PositionAxis(4), y: PositionAxis(64), z: PositionAxis(0) },
   nowSecs: MonotonicTimeSecs(0),
   playerY: 64,
   isNight: false,
@@ -91,7 +93,7 @@ export const note = (state: PreviewState, text: string): PreviewState => ({
 })
 
 export const selectedCue = (state: PreviewState): SoundCueId =>
-  SOUND_CUE_IDS[state.cueIndex] ?? SOUND_CUE_IDS[0]
+  SOUND_CUE_IDS[state.cueIndex] ?? SOUND_CUE_IDS[0]!
 
 export const moveCursor = (state: PreviewState, delta: number): PreviewState => {
   const count = SOUND_CUE_IDS.length
@@ -132,7 +134,7 @@ export const adjustVolume = (
   const next = Math.min(1, Math.max(0, Number((state.settings[category] + delta).toFixed(2))))
   return {
     ...state,
-    settings: { ...state.settings, [category]: next },
+    settings: { ...state.settings, [category]: AudioVolume(next) },
   }
 }
 
@@ -144,7 +146,7 @@ export const toggleEnabled = (state: PreviewState): PreviewState => ({
 /** Move the sound source on the X axis, which is the axis pan is derived from. */
 export const moveSource = (state: PreviewState, deltaX: number): PreviewState => ({
   ...state,
-  source: { ...state.source, x: Number((state.source.x + deltaX).toFixed(2)) },
+  source: { ...state.source, x: PositionAxis(Number((state.source.x + deltaX).toFixed(2))) },
 })
 
 export const advanceCaptionClock = (state: PreviewState, seconds: number): PreviewState => ({
@@ -169,7 +171,7 @@ export const toggleNight = (state: PreviewState): PreviewState => ({
 
 export const desiredMusic = (state: PreviewState): MusicEnvironment =>
   resolveMusicEnvironment({
-    playerPosition: { x: 0, y: state.playerY, z: 0 },
+    playerPosition: { x: PositionAxis(0), y: PositionAxis(state.playerY), z: PositionAxis(0) },
     isNight: state.isNight,
     caveThresholdY: DEFAULT_CAVE_THRESHOLD_Y,
   })

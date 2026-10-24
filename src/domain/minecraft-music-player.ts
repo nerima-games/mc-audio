@@ -4,11 +4,20 @@ import {
   type ToneHandle,
   type TonePlayback,
 } from './backend-port.js'
+import {
+  type AudioGain,
+  type AudioVolume,
+  type MinecraftSoundEventId,
+  type MinecraftSoundResourceId,
+  AudioGain as makeAudioGain,
+  AudioVolume as makeAudioVolume,
+} from './audio-brands.js'
 import { Effect, Ref } from 'effect'
 import {
   type MinecraftBackgroundMusic,
   type MinecraftBiomeMusic,
   type MinecraftMusicContext,
+  type MinecraftMusicDataFailure,
   type MinecraftMusicDefinition,
   type MinecraftMusicPlan,
   type MinecraftMusicState,
@@ -19,9 +28,11 @@ import {
   selectMinecraftBiomeMusicDefinition,
 } from './minecraft-music.js'
 import { type MinecraftSoundRegistry, resolveMinecraftSound } from './minecraft-sounds.js'
+import type { ResolvedMinecraftSound } from './minecraft-sounds-types.js'
 import { clampNonNegative } from './volume.js'
 
-const DEFAULT_MUSIC_VOLUME = 1
+const DEFAULT_MUSIC_VOLUME_VALUE = 1
+const DEFAULT_MUSIC_VOLUME = makeAudioVolume(DEFAULT_MUSIC_VOLUME_VALUE)
 const RANDOM_UPPER_BOUND = DEFAULT_MUSIC_VOLUME - Number.EPSILON
 const RANDOM_LOWER_BOUND = 0
 const RANDOM_INTERVAL_STEP = Math.ceil(RANDOM_UPPER_BOUND - RANDOM_LOWER_BOUND)
@@ -33,7 +44,7 @@ const isMissing = (value: unknown): value is undefined => Object.is(value, globa
 export type MinecraftMusicTickInput = {
   readonly context: MinecraftMusicContext
   readonly enabled?: boolean
-  readonly musicVolume?: number
+  readonly musicVolume?: AudioVolume
   readonly backgroundMusic?: MinecraftBackgroundMusic | null
   readonly biomeMusic?: MinecraftBiomeMusic
   readonly definition?: MinecraftMusicDefinition | null
@@ -42,13 +53,13 @@ export type MinecraftMusicTickInput = {
 export type MinecraftMusicTickResult = {
   readonly plan: MinecraftMusicPlan
   readonly played: boolean
-  readonly soundId: string | null
+  readonly soundId: MinecraftSoundEventId | null
 }
 
 export type MinecraftMusicPlaybackError = {
   readonly _tag: 'MinecraftMusicPlaybackError'
   readonly cause: unknown
-  readonly soundId: string
+  readonly soundId: MinecraftSoundEventId | MinecraftSoundResourceId | null
 }
 
 export type MinecraftMusicPlayer = {
@@ -71,7 +82,10 @@ const randomIntInclusive = (
   return Math.floor(min + normalized * (max - min + RANDOM_INTERVAL_STEP))
 }
 
-const playbackError = (soundId: string, cause: unknown): MinecraftMusicPlaybackError => ({
+const playbackError = (
+  soundId: MinecraftSoundEventId | MinecraftSoundResourceId | null,
+  cause: unknown,
+): MinecraftMusicPlaybackError => ({
   _tag: 'MinecraftMusicPlaybackError',
   cause,
   soundId,
@@ -95,7 +109,7 @@ type MusicCommandApplierOptions = MusicPlayerResources & {
 }
 
 type StartMusicCommandWithResolution = StartMusicCommand & {
-  readonly resolved: ReturnType<typeof resolveMinecraftSound>
+  readonly resolved: ResolvedMinecraftSound
 }
 
 type ResolvedMusicCommand = Exclude<MinecraftMusicPlan['commands'][number], StartMusicCommand> | StartMusicCommandWithResolution
@@ -145,25 +159,24 @@ const makeMusicCommandApplier = ({
 }: MusicCommandApplierOptions): (
   plan: MinecraftMusicPlan,
 ) => Effect.Effect<AppliedMusicPlan, MinecraftMusicPlaybackError> => {
-  const applyGainCommand = (gain: number): Effect.Effect<void> =>
+  const applyGainCommand = (gain: AudioVolume): Effect.Effect<void> =>
     Effect.gen(function* applyGainCommandEffect() {
       // Never null here: a 'gain' command is only planned when
       // `state.currentSound !== null`, and this player only ever sets that
       // Non-null in the same step it sets `handleRef` non-null; a refused or
       // Failed start resets both together (applyMusicCommands, applyMusicPlan).
       const currentHandle = yield* Ref.get(handleRef)
-      const handle = yield* Effect.fromNullable(currentHandle).pipe(Effect.orDie)
+      const handle = yield* Effect.fromNullishOr(currentHandle).pipe(Effect.orDie)
       const scale = yield* Ref.get(gainScaleRef)
       yield* backend.setToneGain(handle, clampNonNegative(gain * scale))
     })
 
   const resolveStartCommand = (
     definition: StartMusicCommand,
-  ): Effect.Effect<ReturnType<typeof resolveMinecraftSound>, MinecraftMusicPlaybackError> =>
-    Effect.try({
-      catch: (cause) => playbackError(definition.definition.sound, cause),
-      try: () => resolveMinecraftSound(registry, definition.definition.sound, randomSource()),
-    })
+  ): Effect.Effect<ResolvedMinecraftSound, MinecraftMusicPlaybackError> =>
+    Effect.fromResult(resolveMinecraftSound(registry, definition.definition.sound, randomSource())).pipe(
+      Effect.mapError((cause) => playbackError(definition.definition.sound, cause)),
+    )
 
   const resolveStartCommands = (
     plan: MinecraftMusicPlan,
@@ -183,23 +196,32 @@ const makeMusicCommandApplier = ({
       return resolvedCommands
     })
 
-  const applyStartCommand = (
+  const createStartMusicPlayback = (
     definition: StartMusicCommand,
-    resolved: ReturnType<typeof resolveMinecraftSound>,
-  ): Effect.Effect<boolean, MinecraftMusicPlaybackError> =>
-    Effect.gen(function* applyStartCommandEffect() {
+    resolved: ResolvedMinecraftSound,
+  ): Effect.Effect<{ readonly playback: TonePlayback; readonly resolvedVolume: AudioGain }, MinecraftMusicPlaybackError> =>
+    Effect.gen(function* createStartMusicPlaybackEffect() {
       const resolvedVolume = clampNonNegative(resolved.volume)
+      const gain = makeAudioGain(definition.gain * resolvedVolume)
       const playbackEffect = yield* Effect.try({
         catch: (cause): MinecraftMusicPlaybackError => playbackError(resolved.soundId, cause),
-        try: () =>
-          backend.playMusic({
-            gain: clampNonNegative(definition.gain * resolvedVolume),
-            playbackRate: resolved.pitch,
-            soundId: resolved.soundId,
-            stream: resolved.stream,
-          }),
+        try: () => backend.playMusic({
+          gain,
+          playbackRate: resolved.pitch,
+          soundId: resolved.soundId,
+          stream: resolved.stream,
+        }),
       })
       const playback: TonePlayback = yield* playbackEffect
+      return { playback, resolvedVolume }
+    })
+
+  const applyStartCommand = (
+    definition: StartMusicCommand,
+    resolved: ResolvedMinecraftSound,
+  ): Effect.Effect<boolean, MinecraftMusicPlaybackError> =>
+    Effect.gen(function* applyStartCommandEffect() {
+      const { playback, resolvedVolume } = yield* createStartMusicPlayback(definition, resolved)
       if (!playback.accepted) {
         yield* clearMusicPlaybackState({ gainScaleRef, handleRef })
         return false
@@ -312,7 +334,7 @@ const selectBiomeMusicForTick = ({
   randomSource,
   selectionRef,
   state,
-}: BiomeMusicSelectionOptions): Effect.Effect<MinecraftMusicDefinition | null> =>
+}: BiomeMusicSelectionOptions): Effect.Effect<MinecraftMusicDefinition | null, MinecraftMusicPlaybackError> =>
   Effect.gen(function* selectBiomeMusicForTickEffect() {
     if (
       !enabled ||
@@ -331,7 +353,9 @@ const selectBiomeMusicForTick = ({
     if (canReuseSelection) {
       return previousSelection.definition
     }
-    const selected = selectMinecraftBiomeMusicDefinition(input.biomeMusic, randomSource())
+    const selected = yield* Effect.fromResult(
+      selectMinecraftBiomeMusicDefinition(input.biomeMusic, randomSource()),
+    ).pipe(Effect.mapError((cause) => playbackError(null, cause)))
     yield* Ref.set(selectionRef, { definition: selected, source: input.biomeMusic })
     return selected
   })
@@ -374,7 +398,7 @@ export const makeMinecraftMusicPlayer = (
       readonly desired: MinecraftMusicDefinition | null
       readonly enabled: boolean
       readonly plan: MinecraftMusicPlan
-    }> =>
+    }, MinecraftMusicPlaybackError> =>
       Effect.gen(function* prepareMinecraftMusicTick() {
         const state = yield* Ref.get(stateRef)
         const handle = yield* Ref.get(handleRef)
@@ -389,14 +413,14 @@ export const makeMinecraftMusicPlayer = (
           state,
         })
         const desired = resolveDesiredDefinition(input, selectedBiomeMusic)
-        const plan = planMinecraftMusic({
+        const plan = yield* Effect.fromResult(planMinecraftMusic({
           currentActive,
           desired,
           enabled,
           musicVolume: input.musicVolume ?? DEFAULT_MUSIC_VOLUME,
           randomIntInclusive: (min, max) => randomIntInclusive(randomSource, min, max),
           state,
-        })
+        })).pipe(Effect.mapError((cause: MinecraftMusicDataFailure) => playbackError(desired?.sound ?? null, cause)))
         return { desired, enabled, plan }
       })
 

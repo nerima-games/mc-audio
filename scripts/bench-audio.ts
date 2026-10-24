@@ -8,6 +8,7 @@
  * This is a diagnostic benchmark, not part of the package API or CI.
  */
 import { Effect } from 'effect'
+import { AudioCount, AudioPan } from '../src/domain/audio-brands.js'
 import { cueDefinition, isSoundCueId, makeWebAudioBackend } from '../src/index.js'
 import { makeFakeWebAudio } from '../test/fake-webaudio.js'
 import { CUE_LOOKUP_IDS, REGISTERED_CUE_DEFINITIONS } from './bench-fixtures.js'
@@ -51,7 +52,7 @@ const makeMixerBench = async (): Promise<MixerBench> => {
   const fake = makeFakeWebAudio()
   const backend = Effect.runSync(makeWebAudioBackend({
     global: fake.global,
-    maxConcurrentTones: 100_000,
+    maxConcurrentTones: AudioCount(100_000),
   }))
   await Effect.runPromise(backend.unlock)
   let index = 0
@@ -67,7 +68,7 @@ const makeMixerBench = async (): Promise<MixerBench> => {
         frequency: definition.frequency,
         gain: definition.baseGain,
         loop: false,
-        pan: definition.spatial ? -0.25 : 0,
+        pan: AudioPan(definition.spatial ? -0.25 : 0),
         wave: definition.wave,
       } as const
       const playback = await Effect.runPromise(backend.playTone(request))

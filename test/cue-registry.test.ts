@@ -1,9 +1,11 @@
 import { describe, expect, it } from '@effect/vitest'
-import { Effect, Layer } from 'effect'
-import { EpochMillis, FixedClockLayer, MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { Effect, Layer, Result } from 'effect'
+import { FixedClockLayer } from '@nerima-games/mc-kernel/domain/clock'
+import { EpochMillis, MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
+import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import { AudioBackendPort, makeRecordingBackend } from '../src/domain/backend-port'
 import { CaptionStream } from '../src/domain/caption'
-import { CUE_DEFINITIONS, SOUND_CUE_IDS, isSoundCueId } from '../src/domain/cue'
+import { SOUND_CUE_IDS, SoundCueId, cueDefinition, isSoundCueId } from '../src/domain/cue'
 import { makeSoundCueService } from '../src/domain/engine'
 import { footstepCueFor } from '../src/domain/footstep'
 import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
@@ -43,6 +45,14 @@ describe('sound cue contract', () => {
     expect(isSoundCueId('BlockBreak')).toBe(false)
   })
 
+  it('rejects an unknown id through the branded constructor', () => {
+    // JavaScript callers can bypass the literal TypeScript union.
+    const unknownId = JSON.parse('"unknownCue"')
+    const result = SoundCueId.result(unknownId)
+
+    expect(Result.isFailure(result)).toBe(true)
+  })
+
   it.effect('routes every registered cue through the sound service to the backend', () =>
     Effect.gen(function* () {
       const recorded = yield* makeRecordingBackend('ready')
@@ -54,7 +64,7 @@ describe('sound cue contract', () => {
         context: Effect.succeed({
           availability: 'ready' as const,
           enabled: true,
-          listener: { x: 0, y: 64, z: 0 },
+          listener: { x: PositionAxis(0), y: PositionAxis(64), z: PositionAxis(0) },
           settings: DEFAULT_VOLUME_SETTINGS,
         }),
       }).pipe(
@@ -70,14 +80,16 @@ describe('sound cue contract', () => {
       )
 
       for (const cueId of SOUND_CUE_IDS) {
-        yield* service.play(cueId, { position: { x: 1, y: 64, z: 0 } })
+        yield* service.play(cueId, {
+          position: { x: PositionAxis(1), y: PositionAxis(64), z: PositionAxis(0) },
+        })
       }
 
       const played = yield* recorded.played
       expect(played).toHaveLength(SOUND_CUE_IDS.length)
       for (const [index, cueId] of SOUND_CUE_IDS.entries()) {
         const request = played[index]
-        const definition = CUE_DEFINITIONS[cueId]
+        const definition = cueDefinition(cueId)
         expect(request).toMatchObject({
           durationSecs: definition.durationSecs,
           frequency: definition.frequency,

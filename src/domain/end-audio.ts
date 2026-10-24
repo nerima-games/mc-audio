@@ -1,6 +1,24 @@
 /* oxlint-disable no-magic-numbers -- End sound timing, mix, priority, and fallback oscillator values are authored constants. */
-import { clamp01, spatialise } from './volume.js'
-import type { Position } from '@nerima-games/mc-kernel'
+import {
+  type AudioCount,
+  type AudioDurationSecs,
+  type AudioEventId,
+  type AudioFrequencyHz,
+  type AudioGain,
+  type AudioPan,
+  type AudioWeight,
+  AudioCount as audioCount,
+  AudioDurationSecs as audioDurationSecs,
+  AudioFrequencyHz as audioFrequencyHz,
+  AudioGain as audioGain,
+  AudioWeight as audioWeight,
+} from './audio-brands.js'
+import {
+  type MonotonicTimeSecs,
+  MonotonicTimeSecs as monotonicTimeSecs,
+} from '@nerima-games/mc-kernel/domain/quantities'
+import { clampNonNegative, spatialise } from './volume.js'
+import type { Position } from '@nerima-games/mc-kernel/domain/coordinates'
 
 export const END_AUDIO_DIMENSIONS = ['overworld', 'nether', 'end'] as const
 export type EndAudioDimension = (typeof END_AUDIO_DIMENSIONS)[number]
@@ -25,7 +43,7 @@ export type EndAudioEventKind = (typeof END_AUDIO_EVENT_KINDS)[number]
 export type EndAudioLoopKind = 'endAmbience'
 
 export type EndAudioEvent = {
-  readonly id: string
+  readonly id: AudioEventId
   readonly kind: EndAudioEventKind
   readonly position: Position
 }
@@ -33,39 +51,39 @@ export type EndAudioEvent = {
 export type EndAudioSnapshot = {
   readonly dimension: EndAudioDimension
   readonly phase: DragonBattlePhase
-  readonly nowSecs: number
+  readonly nowSecs: MonotonicTimeSecs
   readonly listener: Position
   readonly listenerForward?: Position
   readonly events: ReadonlyArray<EndAudioEvent>
-  readonly maxSimultaneousSounds?: number
+  readonly maxSimultaneousSounds?: AudioCount
 }
 
 export type EndAudioFallbackPlan = {
-  readonly durationSecs: number
-  readonly frequency: number
-  readonly gain: number
-  readonly pan: number
+  readonly durationSecs: AudioDurationSecs
+  readonly frequency: AudioFrequencyHz
+  readonly gain: AudioGain
+  readonly pan: AudioPan
   readonly wave: 'sine' | 'square' | 'sawtooth' | 'triangle'
 }
 
 export type EndAudioEventPlan = {
-  readonly eventId: string
+  readonly eventId: AudioEventId
   readonly fallback: EndAudioFallbackPlan
-  readonly gain: number
+  readonly gain: AudioGain
   readonly kind: EndAudioEventKind
-  readonly pan: number
+  readonly pan: AudioPan
 }
 
 export type EndAudioLoopPlan = {
-  readonly fadeSecs: number
-  readonly gain: number
+  readonly fadeSecs: AudioDurationSecs
+  readonly gain: AudioGain
   readonly kind: EndAudioLoopKind
 }
 
 export type EndAudioState = {
-  readonly activeUntilSecs: ReadonlyArray<number>
-  readonly lastPlayedAtSecs: Readonly<Partial<Record<EndAudioEventKind, number>>>
-  readonly recentEventIds: ReadonlyArray<string>
+  readonly activeUntilSecs: ReadonlyArray<MonotonicTimeSecs>
+  readonly lastPlayedAtSecs: Readonly<Partial<Record<EndAudioEventKind, MonotonicTimeSecs>>>
+  readonly recentEventIds: ReadonlyArray<AudioEventId>
 }
 
 export type EndAudioPlan = {
@@ -75,25 +93,41 @@ export type EndAudioPlan = {
 }
 
 type EndSoundDefinition = {
+  readonly baseGain: AudioGain
+  readonly cooldownSecs: AudioDurationSecs
+  readonly durationSecs: AudioDurationSecs
+  readonly fallbackFrequency: AudioFrequencyHz
+  readonly fallbackWave: EndAudioFallbackPlan['wave']
+  readonly priority: AudioWeight
+}
+
+const soundDefinition = (input: {
   readonly baseGain: number
   readonly cooldownSecs: number
   readonly durationSecs: number
   readonly fallbackFrequency: number
   readonly fallbackWave: EndAudioFallbackPlan['wave']
   readonly priority: number
-}
+}): EndSoundDefinition => ({
+  baseGain: audioGain(input.baseGain),
+  cooldownSecs: audioDurationSecs(input.cooldownSecs),
+  durationSecs: audioDurationSecs(input.durationSecs),
+  fallbackFrequency: audioFrequencyHz(input.fallbackFrequency),
+  fallbackWave: input.fallbackWave,
+  priority: audioWeight(input.priority),
+})
 
 export const END_SOUND_DEFINITIONS: Readonly<Record<EndAudioEventKind, EndSoundDefinition>> = {
-  dragonDeath: { baseGain: 0.95, cooldownSecs: 8, durationSecs: 4, fallbackFrequency: 48, fallbackWave: 'sawtooth', priority: 100 },
-  dragonFlap: { baseGain: 0.58, cooldownSecs: 0.22, durationSecs: 0.38, fallbackFrequency: 72, fallbackWave: 'triangle', priority: 40 },
-  dragonHurt: { baseGain: 0.76, cooldownSecs: 0.3, durationSecs: 0.45, fallbackFrequency: 95, fallbackWave: 'sawtooth', priority: 65 },
-  dragonReward: { baseGain: 0.8, cooldownSecs: 5, durationSecs: 1.4, fallbackFrequency: 880, fallbackWave: 'triangle', priority: 90 },
-  dragonRoar: { baseGain: 0.9, cooldownSecs: 2.5, durationSecs: 1.8, fallbackFrequency: 58, fallbackWave: 'sawtooth', priority: 70 },
-  exitPortal: { baseGain: 0.72, cooldownSecs: 2, durationSecs: 1.2, fallbackFrequency: 660, fallbackWave: 'triangle', priority: 80 },
-  eyeThrow: { baseGain: 0.48, cooldownSecs: 0.2, durationSecs: 0.35, fallbackFrequency: 740, fallbackWave: 'sine', priority: 45 },
-  frameInsert: { baseGain: 0.55, cooldownSecs: 0.12, durationSecs: 0.3, fallbackFrequency: 520, fallbackWave: 'triangle', priority: 50 },
-  playerHit: { baseGain: 0.78, cooldownSecs: 0.18, durationSecs: 0.16, fallbackFrequency: 130, fallbackWave: 'sawtooth', priority: 75 },
-  portalActivate: { baseGain: 0.85, cooldownSecs: 3, durationSecs: 1.5, fallbackFrequency: 220, fallbackWave: 'sine', priority: 85 },
+  dragonDeath: soundDefinition({ baseGain: 0.95, cooldownSecs: 8, durationSecs: 4, fallbackFrequency: 48, fallbackWave: 'sawtooth', priority: 100 }),
+  dragonFlap: soundDefinition({ baseGain: 0.58, cooldownSecs: 0.22, durationSecs: 0.38, fallbackFrequency: 72, fallbackWave: 'triangle', priority: 40 }),
+  dragonHurt: soundDefinition({ baseGain: 0.76, cooldownSecs: 0.3, durationSecs: 0.45, fallbackFrequency: 95, fallbackWave: 'sawtooth', priority: 65 }),
+  dragonReward: soundDefinition({ baseGain: 0.8, cooldownSecs: 5, durationSecs: 1.4, fallbackFrequency: 880, fallbackWave: 'triangle', priority: 90 }),
+  dragonRoar: soundDefinition({ baseGain: 0.9, cooldownSecs: 2.5, durationSecs: 1.8, fallbackFrequency: 58, fallbackWave: 'sawtooth', priority: 70 }),
+  exitPortal: soundDefinition({ baseGain: 0.72, cooldownSecs: 2, durationSecs: 1.2, fallbackFrequency: 660, fallbackWave: 'triangle', priority: 80 }),
+  eyeThrow: soundDefinition({ baseGain: 0.48, cooldownSecs: 0.2, durationSecs: 0.35, fallbackFrequency: 740, fallbackWave: 'sine', priority: 45 }),
+  frameInsert: soundDefinition({ baseGain: 0.55, cooldownSecs: 0.12, durationSecs: 0.3, fallbackFrequency: 520, fallbackWave: 'triangle', priority: 50 }),
+  playerHit: soundDefinition({ baseGain: 0.78, cooldownSecs: 0.18, durationSecs: 0.16, fallbackFrequency: 130, fallbackWave: 'sawtooth', priority: 75 }),
+  portalActivate: soundDefinition({ baseGain: 0.85, cooldownSecs: 3, durationSecs: 1.5, fallbackFrequency: 220, fallbackWave: 'sine', priority: 85 }),
 }
 
 export const INITIAL_END_AUDIO_STATE: EndAudioState = {
@@ -102,10 +136,10 @@ export const INITIAL_END_AUDIO_STATE: EndAudioState = {
   recentEventIds: [],
 }
 
-export const DEFAULT_MAX_SIMULTANEOUS_END_SOUNDS = 6
-export const END_AMBIENCE_FADE_SECS = 1.25
-export const END_AMBIENCE_GAIN = 0.18
-export const END_EVENT_HISTORY_LIMIT = 64
+export const DEFAULT_MAX_SIMULTANEOUS_END_SOUNDS: AudioCount = audioCount(6)
+export const END_AMBIENCE_FADE_SECS: AudioDurationSecs = audioDurationSecs(1.25)
+export const END_AMBIENCE_GAIN: AudioGain = audioGain(0.18)
+export const END_EVENT_HISTORY_LIMIT: AudioCount = audioCount(64)
 
 const isEventAllowed = (
   kind: EndAudioEventKind,
@@ -145,7 +179,7 @@ const isEventAllowed = (
   }
 }
 
-const boundedSoundLimit = (value: number | undefined): number => {
+const boundedSoundLimit = (value: AudioCount | undefined): number => {
   const requested = value ?? DEFAULT_MAX_SIMULTANEOUS_END_SOUNDS
   if (!Number.isFinite(requested)) {
     return 0
@@ -154,9 +188,9 @@ const boundedSoundLimit = (value: number | undefined): number => {
 }
 
 const rememberEventIds = (
-  previous: ReadonlyArray<string>,
+  previous: ReadonlyArray<AudioEventId>,
   events: ReadonlyArray<EndAudioEvent>,
-): ReadonlyArray<string> => {
+): ReadonlyArray<AudioEventId> => {
   const known = new Set(previous)
   const incoming = events.filter((event) => {
     const shouldRemember = event.id.length > 0 && !known.has(event.id)
@@ -167,11 +201,11 @@ const rememberEventIds = (
   return remembered.slice(-END_EVENT_HISTORY_LIMIT)
 }
 
-const sanitizedTime = (value: number): number => {
+const sanitizedTime = (value: MonotonicTimeSecs): MonotonicTimeSecs => {
   if (!Number.isFinite(value)) {
-    return 0
+    return monotonicTimeSecs(0)
   }
-  return Math.max(0, value)
+  return monotonicTimeSecs(Math.max(0, value))
 }
 
 const planEndLoops = (
@@ -186,7 +220,7 @@ const planEndLoops = (
 
 const eventCandidates = (
   snapshot: EndAudioSnapshot,
-  previousIds: ReadonlySet<string>,
+  previousIds: ReadonlySet<AudioEventId>,
 ): ReadonlyArray<EndAudioEvent> => snapshot.events
   .map((event, index) => ({ event, index }))
   .filter(({ event }) =>
@@ -207,8 +241,8 @@ const eventCandidates = (
 
 const isOutsideCooldown = (
   kind: EndAudioEventKind,
-  nowSecs: number,
-  lastPlayedAtSecs: Readonly<Partial<Record<EndAudioEventKind, number>>>,
+  nowSecs: MonotonicTimeSecs,
+  lastPlayedAtSecs: Readonly<Partial<Record<EndAudioEventKind, MonotonicTimeSecs>>>,
 ): boolean => {
   const lastPlayed = lastPlayedAtSecs[kind]
   return typeof lastPlayed !== 'number' || nowSecs - lastPlayed >= END_SOUND_DEFINITIONS[kind].cooldownSecs
@@ -219,7 +253,7 @@ const eventPlan = (event: EndAudioEvent, snapshot: EndAudioSnapshot): EndAudioEv
   const spatial = spatialise(snapshot.listener, event.position, {
     listenerForward: snapshot.listenerForward,
   })
-  const gain = clamp01(definition.baseGain * spatial.gain)
+  const gain = clampNonNegative(definition.baseGain * spatial.gain)
   return {
     eventId: event.id,
     fallback: {
@@ -238,9 +272,9 @@ const eventPlan = (event: EndAudioEvent, snapshot: EndAudioSnapshot): EndAudioEv
 const selectEventPlans = (
   candidates: ReadonlyArray<EndAudioEvent>,
   context: {
-    readonly activeUntilSecs: number[]
+    readonly activeUntilSecs: MonotonicTimeSecs[]
     readonly availableSlots: number
-    readonly lastPlayedAtSecs: Partial<Record<EndAudioEventKind, number>>
+    readonly lastPlayedAtSecs: Partial<Record<EndAudioEventKind, MonotonicTimeSecs>>
     readonly snapshot: EndAudioSnapshot
   },
 ): ReadonlyArray<EndAudioEventPlan> => {
@@ -252,7 +286,8 @@ const selectEventPlans = (
     ) {
       const plan = eventPlan(event, context.snapshot)
       selected.push(plan)
-      context.activeUntilSecs.push(context.snapshot.nowSecs + plan.fallback.durationSecs)
+      const endSecs = Math.min(Number.MAX_VALUE, context.snapshot.nowSecs + plan.fallback.durationSecs)
+      context.activeUntilSecs.push(monotonicTimeSecs(endSecs))
       context.lastPlayedAtSecs[event.kind] = context.snapshot.nowSecs
     }
   }
@@ -271,7 +306,7 @@ export const planEndAudio = (
     (endsAtSecs) => Number.isFinite(endsAtSecs) && endsAtSecs > nowSecs,
   )
   const availableEventSlots = Math.max(0, maxSounds - loops.length - activeUntilSecs.length)
-  const nextLastPlayedAtSecs: Partial<Record<EndAudioEventKind, number>> = {
+  const nextLastPlayedAtSecs: Partial<Record<EndAudioEventKind, MonotonicTimeSecs>> = {
     ...previous.lastPlayedAtSecs,
   }
   const candidates = eventCandidates(normalizedSnapshot, new Set(previous.recentEventIds))

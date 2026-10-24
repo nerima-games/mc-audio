@@ -1,6 +1,8 @@
 /* oxlint-disable max-statements, no-magic-numbers */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer } from 'effect'
+import { AudioDelayTicks, AudioHandleId, AudioTick, AudioVolume } from '../src/domain/audio-brands.js'
+import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import {
   type AudioBackend,
   AudioBackendPort,
@@ -16,6 +18,9 @@ import {
   MOOD_POSITION,
   REGISTRY,
 } from './minecraft-ambient-sounds-support.js'
+
+const tick = (value: number): AudioTick => AudioTick(value)
+const handle = (id: number) => ({ id: AudioHandleId(id) })
 
 describe('Minecraft ambient sound player', () => {
   it.effect('plays loop, mood, and addition events through the sound registry', () =>
@@ -33,13 +38,13 @@ describe('Minecraft ambient sound player', () => {
       }
 
       const first = yield* player.tick({
-        ambientVolume: 0.5,
+        ambientVolume: AudioVolume(0.5),
         camera: CAMERA,
         definition,
-        listener: { x: 100, y: 64, z: 0 },
+        listener: { x: PositionAxis(100), y: PositionAxis(64), z: PositionAxis(0) },
         listenerForward: LISTENER_FORWARD,
-        moodResolver: () => ({ delayTicks: 4, position: MOOD_POSITION }),
-        tick: 0,
+        moodResolver: () => ({ delayTicks: AudioDelayTicks(4), position: MOOD_POSITION }),
+        tick: tick(0),
       })
       expect(first.playedSoundIds).toStrictEqual([
         'minecraft:ambient/loop',
@@ -73,7 +78,7 @@ describe('Minecraft ambient sound player', () => {
       ])
       expect(played[1]?.gain).toBeCloseTo(0.265625, 10)
 
-      const second = yield* player.tick({ definition, listener: LISTENER, tick: 1 })
+      const second = yield* player.tick({ definition, listener: LISTENER, tick: tick(1) })
       expect(second.plan.commands).toStrictEqual([
         { category: 'addition', kind: 'play', sound: 'minecraft:ambient.addition' },
       ])
@@ -87,7 +92,7 @@ describe('Minecraft ambient sound player', () => {
       const result = yield* player.tick({
         definition: { additions: [{ sound: 'minecraft:ambient.loud', tick_chance: 1 }] },
         listener: LISTENER,
-        tick: 0,
+        tick: tick(0),
       })
 
       expect(result.playedSoundIds).toStrictEqual(['minecraft:ambient/loud'])
@@ -99,29 +104,29 @@ describe('Minecraft ambient sound player', () => {
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness()
       yield* player.stop
-      yield* player.tick({ definition: { loop: 'minecraft:ambient.loop' }, listener: LISTENER, tick: 0 })
-      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(true)
+      yield* player.tick({ definition: { loop: 'minecraft:ambient.loop' }, listener: LISTENER, tick: tick(0) })
+      expect(yield* recorded.backend.isToneActive(handle(1))).toBe(true)
 
       const changed = yield* player.tick({
         definition: { loop: 'minecraft:ambient.loop.other' },
         listener: LISTENER,
-        tick: 1,
+        tick: tick(1),
       })
       expect(changed.plan.commands).toStrictEqual([
         { kind: 'stop-loop' },
         { kind: 'start-loop', sound: 'minecraft:ambient.loop.other' },
       ])
-      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(false)
-      expect(yield* recorded.backend.isToneActive({ id: 2 })).toBe(true)
+      expect(yield* recorded.backend.isToneActive(handle(1))).toBe(false)
+      expect(yield* recorded.backend.isToneActive(handle(2))).toBe(true)
 
       const disabled = yield* player.tick({
         definition: { loop: 'minecraft:ambient.loop.other' },
         enabled: false,
         listener: LISTENER,
-        tick: 2,
+        tick: tick(2),
       })
       expect(disabled.plan.commands).toStrictEqual([{ kind: 'stop-loop' }])
-      expect(yield* recorded.backend.isToneActive({ id: 2 })).toBe(false)
+      expect(yield* recorded.backend.isToneActive(handle(2))).toBe(false)
       yield* player.stop
     }),
   )
@@ -133,7 +138,7 @@ describe('Minecraft ambient sound player', () => {
         const result = yield* player.tick({
           definition: { loop: 'minecraft:ambient.loop' },
           listener: LISTENER,
-          tick: 0,
+          tick: tick(0),
         })
         expect(result).toStrictEqual({
           plan: { commands: [], state: initialMinecraftAmbientSoundsState() },
@@ -150,7 +155,7 @@ describe('Minecraft ambient sound player', () => {
       const recorded = yield* makeRecordingBackend('ready')
       const refusingBackend: AudioBackend = {
         ...recorded.backend,
-        playTone: () => Effect.succeed({ accepted: false, id: 1 }),
+        playTone: () => Effect.succeed({ accepted: false, id: AudioHandleId(1) }),
       }
       const player = yield* makeMinecraftAmbientSoundsPlayer(REGISTRY, () => 0).pipe(
         Effect.provide(Layer.succeed(AudioBackendPort, refusingBackend)),
@@ -159,7 +164,7 @@ describe('Minecraft ambient sound player', () => {
       const result = yield* player.tick({
         definition: { loop: 'minecraft:ambient.loop' },
         listener: LISTENER,
-        tick: 0,
+        tick: tick(0),
       })
 
       expect(result.plan.commands).toStrictEqual([{ kind: 'start-loop', sound: 'minecraft:ambient.loop' }])
@@ -172,16 +177,41 @@ describe('Minecraft ambient sound player', () => {
   it.effect('returns a typed error for an unknown sound event', () =>
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness()
-      const result = yield* Effect.either(
-        player.tick({ definition: { loop: 'minecraft:ambient.missing' }, listener: LISTENER, tick: 0 }),
-      )
+      const result = yield* player.tick({ definition: { loop: 'minecraft:ambient.missing' }, listener: LISTENER, tick: tick(0) })
+        .pipe(Effect.catch((error) => Effect.succeed(error)))
 
       expect(result).toMatchObject({
-        _tag: 'Left',
-        left: {
-          _tag: 'MinecraftAmbientSoundsPlaybackError',
-          soundId: 'minecraft:ambient.missing',
+        _tag: 'MinecraftAmbientSoundsPlaybackError',
+        soundId: 'minecraft:ambient.missing',
+      })
+      expect(yield* recorded.played).toHaveLength(0)
+    }),
+  )
+
+  it.effect('maps an invalid resolver delay to a planner playback error before playing', () =>
+    Effect.gen(function* () {
+      const { player, recorded } = yield* makeHarness()
+      const result = yield* player.tick({
+        definition: {
+          mood: {
+            block_search_extent: 8,
+            offset: 0,
+            sound: 'minecraft:ambient.mood',
+            tick_delay: 1,
+          },
         },
+        listener: LISTENER,
+        moodResolver: () => ({ delayTicks: AudioDelayTicks(0), position: MOOD_POSITION }),
+        tick: tick(0),
+      }).pipe(Effect.catch((error) => Effect.succeed(error)))
+
+      expect(result).toMatchObject({
+        _tag: 'MinecraftAmbientSoundsPlaybackError',
+        cause: {
+          _tag: 'MinecraftAmbientSoundsPlannerFailure',
+          message: 'Minecraft ambient mood delayTicks must be a positive integer',
+        },
+        soundId: null,
       })
       expect(yield* recorded.played).toHaveLength(0)
     }),
@@ -200,8 +230,8 @@ describe('Minecraft ambient sound player', () => {
           },
         },
         listener: LISTENER,
-        moodResolver: () => ({ delayTicks: 1, position: MOOD_POSITION }),
-        tick: 0,
+        moodResolver: () => ({ delayTicks: AudioDelayTicks(1), position: MOOD_POSITION }),
+        tick: tick(0),
       })
 
       expect(yield* recorded.played).toMatchObject([{ soundId: 'minecraft:ambient/mood' }])
@@ -214,13 +244,13 @@ describe('Minecraft ambient sound player', () => {
       const result = yield* player.tick({
         definition: { additions: [{ sound: 'minecraft:ambient.addition', tick_chance: 1 }] },
         listener: LISTENER,
-        tick: 0,
+        tick: tick(0),
       })
 
       expect(result.playedSoundIds).toStrictEqual(['minecraft:ambient/addition'])
       expect(yield* recorded.played).toMatchObject([{ gain: 1, soundId: 'minecraft:ambient/addition' }])
 
-      const empty = yield* player.tick({ listener: LISTENER, tick: 1 })
+      const empty = yield* player.tick({ listener: LISTENER, tick: tick(1) })
       expect(empty.plan.commands).toStrictEqual([])
     }),
   )
@@ -228,8 +258,7 @@ describe('Minecraft ambient sound player', () => {
   it.effect('rolls back started loops when a later ambient command fails', () =>
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness()
-      const result = yield* Effect.either(
-        player.tick({
+      const result = yield* player.tick({
           definition: {
             loop: 'minecraft:ambient.loop',
             mood: {
@@ -240,28 +269,24 @@ describe('Minecraft ambient sound player', () => {
             },
           },
           listener: LISTENER,
-          moodResolver: () => ({ delayTicks: 1, position: MOOD_POSITION }),
-          tick: 0,
-        }),
-      )
+          moodResolver: () => ({ delayTicks: AudioDelayTicks(1), position: MOOD_POSITION }),
+          tick: tick(0),
+        }).pipe(Effect.catch((error) => Effect.succeed(error)))
 
       expect(result).toMatchObject({
-        _tag: 'Left',
-        left: {
-          _tag: 'MinecraftAmbientSoundsPlaybackError',
-          soundId: 'minecraft:ambient.missing',
-        },
+        _tag: 'MinecraftAmbientSoundsPlaybackError',
+        soundId: 'minecraft:ambient.missing',
       })
-      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(false)
+      expect(yield* recorded.backend.isToneActive(handle(1))).toBe(false)
 
       yield* player.tick({
         definition: { loop: 'minecraft:ambient.loop' },
         listener: LISTENER,
-        tick: 0,
+        tick: tick(0),
       })
-      expect(yield* recorded.backend.isToneActive({ id: 2 })).toBe(true)
+      expect(yield* recorded.backend.isToneActive(handle(2))).toBe(true)
       yield* player.stop
-      expect(yield* recorded.backend.isToneActive({ id: 2 })).toBe(false)
+      expect(yield* recorded.backend.isToneActive(handle(2))).toBe(false)
     }),
   )
 
@@ -271,11 +296,10 @@ describe('Minecraft ambient sound player', () => {
       yield* player.tick({
         definition: { loop: 'minecraft:ambient.loop' },
         listener: LISTENER,
-        tick: 0,
+        tick: tick(0),
       })
 
-      const result = yield* Effect.either(
-        player.tick({
+      const result = yield* player.tick({
           definition: {
             loop: 'minecraft:ambient.loop.other',
             mood: {
@@ -286,20 +310,16 @@ describe('Minecraft ambient sound player', () => {
             },
           },
           listener: LISTENER,
-          moodResolver: () => ({ delayTicks: 1, position: MOOD_POSITION }),
-          tick: 1,
-        }),
-      )
+          moodResolver: () => ({ delayTicks: AudioDelayTicks(1), position: MOOD_POSITION }),
+          tick: tick(1),
+        }).pipe(Effect.catch((error) => Effect.succeed(error)))
 
       expect(result).toMatchObject({
-        _tag: 'Left',
-        left: {
-          _tag: 'MinecraftAmbientSoundsPlaybackError',
-          soundId: 'minecraft:ambient.missing',
-        },
+        _tag: 'MinecraftAmbientSoundsPlaybackError',
+        soundId: 'minecraft:ambient.missing',
       })
-      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(false)
-      expect(yield* recorded.backend.isToneActive({ id: 2 })).toBe(false)
+      expect(yield* recorded.backend.isToneActive(handle(1))).toBe(false)
+      expect(yield* recorded.backend.isToneActive(handle(2))).toBe(false)
       yield* player.stop
     }),
   )

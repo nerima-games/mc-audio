@@ -1,6 +1,15 @@
 import { describe, expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
 import {
+  AudioDurationSecs,
+  AudioFrequencyHz,
+  AudioGain,
+  AudioPlaybackRate,
+  AudioPan,
+  AudioVolume,
+  MinecraftSoundResourceId,
+} from '../src/domain/audio-brands'
+import {
   AudioBackendPort,
   UnavailableBackendLayer,
   makeRecordingBackend,
@@ -8,19 +17,19 @@ import {
 } from '../src/domain/backend-port'
 
 const CUE: ToneRequest = {
-  durationSecs: 0.07,
-  frequency: 220,
-  gain: 0.4,
+  durationSecs: AudioDurationSecs(0.07),
+  frequency: AudioFrequencyHz(220),
+  gain: AudioGain(0.4),
   loop: false,
-  pan: 0,
+  pan: AudioPan(0),
 }
 
 describe('makeRecordingBackend', () => {
   it.effect('records every master gain change in order', () =>
     Effect.gen(function* () {
       const recorded = yield* makeRecordingBackend('ready')
-      yield* recorded.backend.setMasterGain(0.5)
-      yield* recorded.backend.setMasterGain(0.8)
+      yield* recorded.backend.setMasterGain(AudioVolume(0.5))
+      yield* recorded.backend.setMasterGain(AudioVolume(0.8))
       expect(yield* recorded.masterGains).toStrictEqual([0.5, 0.8])
     }),
   )
@@ -46,9 +55,9 @@ describe('makeRecordingBackend', () => {
       expect(yield* recorded.backend.isToneActive(toneHandle)).toBe(false)
 
       const musicHandle = yield* recorded.backend.playMusic({
-        gain: 0.75,
-        playbackRate: 1,
-        soundId: 'minecraft:music/free_game',
+        gain: AudioGain(0.75),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('minecraft:music/free_game'),
         stream: false,
       })
       expect(musicHandle.accepted).toBe(false)
@@ -60,9 +69,9 @@ describe('makeRecordingBackend', () => {
     Effect.gen(function* () {
       const recorded = yield* makeRecordingBackend('ready')
       const handle = yield* recorded.backend.playMusic({
-        gain: 0.75,
-        playbackRate: 1,
-        soundId: 'minecraft:music/free_game',
+        gain: AudioGain(0.75),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('minecraft:music/free_game'),
         stream: false,
       })
 
@@ -72,7 +81,7 @@ describe('makeRecordingBackend', () => {
       expect(handle.accepted).toBe(true)
       expect(yield* recorded.backend.isToneActive(handle)).toBe(true)
 
-      yield* recorded.backend.setToneGain(handle, 0.25)
+      yield* recorded.backend.setToneGain(handle, AudioGain(0.25))
       expect(yield* recorded.toneGains).toStrictEqual([{ gain: 0.25, handle }])
 
       yield* recorded.backend.stopTone(handle)
@@ -94,13 +103,13 @@ describe('UnavailableBackendLayer', () => {
       // Neither call has an observable effect on this backend; the explicit
       // admission flag makes the no-op observable without making stopTone
       // unsafe for callers that still retain the diagnostic handle.
-      yield* backend.setMasterGain(0.5)
-      yield* backend.setToneGain(handle, 0.25)
+      yield* backend.setMasterGain(AudioVolume(0.5))
+      yield* backend.setToneGain(handle, AudioGain(0.25))
       expect(yield* backend.isToneActive(handle)).toBe(false)
       expect(yield* backend.playMusic({
-        gain: 1,
-        playbackRate: 1,
-        soundId: 'minecraft:music/free_game',
+        gain: AudioGain(1),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('minecraft:music/free_game'),
         stream: false,
       })).toStrictEqual({ accepted: false, id: 0 })
       yield* backend.stopTone(handle)

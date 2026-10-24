@@ -1,44 +1,54 @@
+import {
+  type AudioDurationSecs,
+  type AudioEventId,
+  type AudioGain,
+  type AudioPan,
+  type AudioVolume,
+  AudioDurationSecs as audioDurationSecs,
+  AudioGain as audioGain,
+} from './audio-brands.js'
 import { clamp01, spatialise } from './volume.js'
-import type { Position } from '@nerima-games/mc-kernel'
+import type { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
+import type { Position } from '@nerima-games/mc-kernel/domain/coordinates'
 
-export const WEATHER_MODES = ['clear', 'rain', 'thunder', 'snow'] as const
+export const WEATHER_MODES = ['clear', 'rain', 'thunder'] as const
 
 export type WeatherMode = (typeof WEATHER_MODES)[number]
 
 export type ThunderEvent = {
-  readonly id: string
-  readonly occurredAtSecs: number
+  readonly id: AudioEventId
+  readonly occurredAtSecs: MonotonicTimeSecs
   readonly position: Position
 }
 
 export type WeatherAudioSnapshot = {
   readonly mode: WeatherMode
-  readonly intensity: number
+  readonly intensity: AudioVolume
   readonly listener: Position
   readonly listenerForward?: Position
   /** Zero is outdoors, one is completely enclosed. */
-  readonly occlusion: number
+  readonly occlusion: AudioVolume
   readonly thunder?: ThunderEvent
 }
 
-export type WeatherLoopKind = 'rain' | 'wind'
+export type WeatherLoopKind = 'rain'
 
 export type WeatherLoopPlan = {
   readonly kind: WeatherLoopKind
-  readonly gain: number
-  readonly fadeSecs: number
+  readonly gain: AudioGain
+  readonly fadeSecs: AudioDurationSecs
 }
 
 export type ThunderPlan = {
-  readonly eventId: string
-  readonly delaySecs: number
-  readonly gain: number
-  readonly pan: number
+  readonly eventId: AudioEventId
+  readonly delaySecs: AudioDurationSecs
+  readonly gain: AudioGain
+  readonly pan: AudioPan
 }
 
 export type WeatherAmbienceState = {
   readonly mode: WeatherMode
-  readonly lastThunderEventId: string | null
+  readonly lastThunderEventId: AudioEventId | null
 }
 
 export type WeatherAmbiencePlan = {
@@ -52,8 +62,9 @@ export const INITIAL_WEATHER_AMBIENCE_STATE: WeatherAmbienceState = {
   mode: 'clear',
 }
 
-export const WEATHER_FADE_SECS = 0.75
-export const SOUND_SPEED_BLOCKS_PER_SEC = 343
+const WEATHER_FADE_SECS_VALUE = 0.75
+export const WEATHER_FADE_SECS: AudioDurationSecs = audioDurationSecs(WEATHER_FADE_SECS_VALUE)
+export const SOUND_SPEED_BLOCKS_PER_SEC: number = 343
 
 /** A fully open, unattenuated multiplier — the top of every `1 - k * clamp01(...)` attenuation curve below. */
 const FULL = 1
@@ -61,15 +72,10 @@ const FULL = 1
 const FADE_HALVED = 2
 
 const RAIN_OCCLUSION_ATTENUATION = 0.8
-const WIND_BASE_GAIN = 0.22
-const WIND_OCCLUSION_ATTENUATION = 0.55
 const THUNDER_OCCLUSION_ATTENUATION = 0.65
 
-const rainGain = (intensity: number, occlusion: number): number =>
-  clamp01(intensity) * (FULL - RAIN_OCCLUSION_ATTENUATION * clamp01(occlusion))
-
-const windGain = (intensity: number, occlusion: number): number =>
-  WIND_BASE_GAIN * clamp01(intensity) * (FULL - WIND_OCCLUSION_ATTENUATION * clamp01(occlusion))
+const rainGain = (intensity: AudioVolume, occlusion: AudioVolume): AudioGain =>
+  audioGain(clamp01(intensity) * (FULL - RAIN_OCCLUSION_ATTENUATION * clamp01(occlusion)))
 
 /**
  * The thunder half of the plan: whether this snapshot carries a *new* thunder
@@ -79,7 +85,7 @@ const windGain = (intensity: number, occlusion: number): number =>
 const resolveThunder = (
   snapshot: WeatherAudioSnapshot,
   previous: WeatherAmbienceState,
-): { readonly plan: ThunderPlan | null; readonly lastThunderEventId: string | null } => {
+): { readonly plan: ThunderPlan | null; readonly lastThunderEventId: AudioEventId | null } => {
   if (snapshot.mode !== 'thunder' || !snapshot.thunder) {
     return { lastThunderEventId: previous.lastThunderEventId, plan: null }
   }
@@ -101,9 +107,9 @@ const resolveThunder = (
   return {
     lastThunderEventId: event.id,
     plan: {
-      delaySecs: distance / SOUND_SPEED_BLOCKS_PER_SEC,
+      delaySecs: audioDurationSecs(distance / SOUND_SPEED_BLOCKS_PER_SEC),
       eventId: event.id,
-      gain: clamp01(spatial.gain * (FULL - THUNDER_OCCLUSION_ATTENUATION * clamp01(snapshot.occlusion))),
+      gain: audioGain(clamp01(spatial.gain * (FULL - THUNDER_OCCLUSION_ATTENUATION * clamp01(snapshot.occlusion)))),
       pan: spatial.pan,
     },
   }
@@ -114,7 +120,7 @@ export const planWeatherAmbience = (
   previous: WeatherAmbienceState = INITIAL_WEATHER_AMBIENCE_STATE,
 ): WeatherAmbiencePlan => {
   const modeChanged = snapshot.mode !== previous.mode
-  let fadeSecs = WEATHER_FADE_SECS / FADE_HALVED
+  let fadeSecs = audioDurationSecs(WEATHER_FADE_SECS / FADE_HALVED)
   if (modeChanged) {
     fadeSecs = WEATHER_FADE_SECS
   }
@@ -122,8 +128,6 @@ export const planWeatherAmbience = (
   let loops: ReadonlyArray<WeatherLoopPlan> = []
   if (snapshot.mode === 'rain' || snapshot.mode === 'thunder') {
     loops = [{ fadeSecs, gain: rainGain(snapshot.intensity, snapshot.occlusion), kind: 'rain' }]
-  } else if (snapshot.mode === 'snow') {
-    loops = [{ fadeSecs, gain: windGain(snapshot.intensity, snapshot.occlusion), kind: 'wind' }]
   }
 
   const { lastThunderEventId, plan: thunder } = resolveThunder(snapshot, previous)
