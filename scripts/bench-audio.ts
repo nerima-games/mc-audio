@@ -7,9 +7,9 @@
  * the measured graph is this repository's production `buildToneGraph`.
  * This is a diagnostic benchmark, not part of the package API or CI.
  */
-import { Effect } from 'effect'
-import { AudioCount, AudioPan } from '../src/domain/audio-brands.js'
-import { cueDefinition, isSoundCueId, makeWebAudioBackend } from '../src/index.js'
+import { AudioCount } from '../src/domain/audio-brands.js'
+import { cueDefinition, isSoundCueId } from '../src/index.js'
+import { makeAudioBenchmark } from '../src/entrypoints/audio-benchmark.js'
 import { makeFakeWebAudio } from '../test/fake-webaudio.js'
 import { CUE_LOOKUP_IDS, REGISTERED_CUE_DEFINITIONS } from './bench-fixtures.js'
 import {
@@ -42,43 +42,20 @@ const lookupArm = (): void => {
   sink += hits
 }
 
-type MixerBench = {
-  readonly run: () => Promise<void>
-  readonly allocations: () => number
-  readonly connections: () => number
-}
-
-const makeMixerBench = async (): Promise<MixerBench> => {
+const makeMixerBench = async () => {
   const fake = makeFakeWebAudio()
-  const backend = Effect.runSync(makeWebAudioBackend({
+  return makeAudioBenchmark({
+    cues: REGISTERED_CUE_DEFINITIONS,
     global: fake.global,
     maxConcurrentTones: AudioCount(100_000),
-  }))
-  await Effect.runPromise(backend.unlock)
-  let index = 0
-  return {
-    run: async () => {
-      const definition = REGISTERED_CUE_DEFINITIONS[index % REGISTERED_CUE_DEFINITIONS.length]
-      if (definition === undefined) {
-        throw new Error('Benchmark cue definitions are empty')
-      }
-      index += 1
-      const request = {
-        durationSecs: definition.durationSecs,
-        frequency: definition.frequency,
-        gain: definition.baseGain,
-        loop: false,
-        pan: AudioPan(definition.spatial ? -0.25 : 0),
-        wave: definition.wave,
-      } as const
-      const playback = await Effect.runPromise(backend.playTone(request))
-      if (playback.accepted) {
-        sink += playback.id
+    metrics: () => {
+      const log = fake.context()?.log
+      return {
+        allocations: AudioCount(log?.created.length ?? 0),
+        connections: AudioCount(log?.edges.length ?? 0),
       }
     },
-    allocations: () => fake.context()?.log.created.length ?? 0,
-    connections: () => fake.context()?.log.edges.length ?? 0,
-  }
+  })
 }
 
 const main = async (): Promise<number> => {
@@ -115,7 +92,7 @@ const main = async (): Promise<number> => {
       workloads: Object.fromEntries(workloads.map((workload) => [workload.name, Number((workload.msPerUnit / yardstickMs).toPrecision(4))])),
     }
     await writeBaseline(BASELINE_PATH, baseline)
-    console.log(`baseline written to scripts/bench-baseline.json (sink ${String(sink)})`)
+    console.log(`baseline written to scripts/bench-baseline.json (sink ${String(sink + mixer.checksum())})`)
     return 0
   }
 
@@ -125,7 +102,7 @@ const main = async (): Promise<number> => {
     console.log(formatCheck(result))
   }
   const regressed = results.filter((result) => result.status === 'regressed')
-  console.log(regressed.length === 0 ? `no regressions (sink ${String(sink)})` : `${String(regressed.length)} regression(s)`)
+  console.log(regressed.length === 0 ? `no regressions (sink ${String(sink + mixer.checksum())})` : `${String(regressed.length)} regression(s)`)
   return regressed.length === 0 ? 0 : 1
 }
 
