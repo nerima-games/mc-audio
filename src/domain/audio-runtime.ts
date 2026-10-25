@@ -128,6 +128,23 @@ export const makeAudioRuntime = (input: {
         return [visibleCaptions(retained, nowSecs), retained]
       })
 
+    const play: AudioRuntime['play'] = (cueId, options) =>
+      Effect.flatMap(
+        Ref.modify(state, (current): readonly [boolean, AudioRuntimeState] => {
+          if (current.closed) {
+            return [false, current]
+          }
+          return [true, { ...current, cueIds: [...current.cueIds, cueId] }]
+        }),
+        (accepted) => {
+          if (accepted) {
+            return service.play(cueId, options)
+          }
+          return Effect.void
+        },
+      )
+    const game = makeGameAudioHost({ play })
+
     return {
       close: () =>
         Effect.flatMap(
@@ -163,22 +180,8 @@ export const makeAudioRuntime = (input: {
             return Effect.void
           },
         ),
-      game: makeGameAudioHost(service),
-      play: (cueId, options) =>
-        Effect.flatMap(
-          Ref.modify(state, (current): readonly [boolean, AudioRuntimeState] => {
-            if (current.closed) {
-              return [false, current]
-            }
-            return [true, { ...current, cueIds: [...current.cueIds, cueId] }]
-          }),
-          (accepted) => {
-            if (accepted) {
-              return service.play(cueId, options)
-            }
-            return Effect.void
-          },
-        ),
+      game,
+      play,
       snapshot: (nowSecs) =>
         Effect.gen(function* createSnapshot() {
           const current = yield* Ref.get(state)

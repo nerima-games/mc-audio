@@ -135,6 +135,24 @@ describe('audio runtime', () => {
     }),
   )
 
+  it.effect('ignores game emissions after close', () =>
+    Effect.gen(function* () {
+      const setup = yield* makeBackend('ready')
+      const runtime = yield* makeAudioRuntime({
+        backend: setup.backend,
+        clockLayer: fixedClockLayer(12),
+        listener: () => testPosition,
+      })
+
+      yield* runtime.close()
+      yield* runtime.game.emit({ cueId: SoundCueId('playerHurt') })
+      const snapshot = yield* runtime.snapshot(MonotonicTimeSecs(12))
+
+      expect(snapshot).toMatchObject({ captions: [], closed: true, cueIds: [] })
+      expect(yield* setup.recording.played).toEqual([])
+    }),
+  )
+
   it.effect('unlocks, preloads, closes once, and ignores operations after close', () =>
     Effect.gen(function* () {
       const setup = yield* makeBackend('locked', ['locked', 'ready'])
