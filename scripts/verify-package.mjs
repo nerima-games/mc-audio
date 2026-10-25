@@ -380,7 +380,6 @@ try {
         eventId.length === 0 ||
         event.id !== eventId ||
         !Array.isArray(event.sounds) ||
-        event.sounds.length === 0 ||
         event.sounds.some(
           (variant) =>
             typeof variant.name !== 'string' ||
@@ -453,7 +452,7 @@ if (
   manifest.get(sampleId) === undefined ||
   !Result.isSuccess(parsed) ||
   parsed.success.events.size === 0 ||
-  [...parsed.success.events].some(([eventId, event]) => event.id !== eventId || event.sounds.length === 0)
+  [...parsed.success.events].some(([eventId, event]) => event.id !== eventId || !Array.isArray(event.sounds))
 ) {
   throw new Error('Declaration consumer returned an invalid result')
 }
