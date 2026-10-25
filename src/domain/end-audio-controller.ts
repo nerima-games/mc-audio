@@ -1,4 +1,3 @@
-import { Option } from 'effect'
 import type { AudioDurationSecs, AudioGain, AudioHandleId } from './audio-brands.js'
 import {
   END_AMBIENCE_FADE_SECS,
@@ -15,6 +14,7 @@ import {
   type MonotonicTimeSecs,
   MonotonicTimeSecs as monotonicTimeSecs,
 } from '@nerima-games/mc-kernel/domain/quantities'
+import { Option } from 'effect'
 
 export type EndAudioHandle = { readonly id: AudioHandleId }
 
@@ -33,6 +33,8 @@ export type EndAudioController = {
   readonly dispose: () => void
   readonly state: () => EndAudioState
 }
+
+const ZERO_SECS = 0
 
 const releaseCompleted = (
   port: EndAudioPort,
@@ -129,8 +131,8 @@ export const makeEndAudioController = (port: EndAudioPort): EndAudioController =
   const update = (snapshot: EndAudioSnapshot): void => {
     if (!disposed) {
       const nowSecs = Option.match(monotonicTimeSecs.option(snapshot.nowSecs), {
-        onNone: () => monotonicTimeSecs(0),
-        onSome: (value) => monotonicTimeSecs(Math.max(0, value)),
+        onNone: () => monotonicTimeSecs(ZERO_SECS),
+        onSome: (value) => monotonicTimeSecs(Math.max(ZERO_SECS, value)),
       })
       releaseCompleted(port, transient, nowSecs)
       const plan = planEndAudio({ ...snapshot, nowSecs }, currentState)

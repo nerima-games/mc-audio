@@ -74,8 +74,36 @@ const FADE_HALVED = 2
 const RAIN_OCCLUSION_ATTENUATION = 0.8
 const THUNDER_OCCLUSION_ATTENUATION = 0.65
 
+const finitePosition = ({ x, y, z }: Position): boolean => [x, y, z].every(Number.isFinite)
+
+const thunderDelaySecs = (listener: Position, source: Position): AudioDurationSecs => {
+  const dx = source.x - listener.x
+  const dy = source.y - listener.y
+  const dz = source.z - listener.z
+  const distance = Math.hypot(dx, dy, dz)
+  if (!Number.isFinite(distance)) {
+    return audioDurationSecs(Number.MAX_VALUE)
+  }
+  return audioDurationSecs(distance / SOUND_SPEED_BLOCKS_PER_SEC)
+}
+
 const rainGain = (intensity: AudioVolume, occlusion: AudioVolume): AudioGain =>
   audioGain(clamp01(intensity) * (FULL - RAIN_OCCLUSION_ATTENUATION * clamp01(occlusion)))
+
+const planThunderEvent = (snapshot: WeatherAudioSnapshot, event: ThunderEvent): ThunderPlan | null => {
+  const { listener } = snapshot
+  const { position: source } = event
+  if (!finitePosition(listener) || !finitePosition(source)) {
+    return null
+  }
+  const spatial = spatialise(listener, source, { listenerForward: snapshot.listenerForward })
+  return {
+    delaySecs: thunderDelaySecs(listener, source),
+    eventId: event.id,
+    gain: audioGain(clamp01(spatial.gain * (FULL - THUNDER_OCCLUSION_ATTENUATION * clamp01(snapshot.occlusion)))),
+    pan: spatial.pan,
+  }
+}
 
 /**
  * The thunder half of the plan: whether this snapshot carries a *new* thunder
@@ -94,38 +122,14 @@ const resolveThunder = (
   if (event.id === previous.lastThunderEventId) {
     return { lastThunderEventId: event.id, plan: null }
   }
-
-  const listener = {
-    x: snapshot.listener.x,
-    y: snapshot.listener.y,
-    z: snapshot.listener.z,
-  }
-  const source = {
-    x: event.position.x,
-    y: event.position.y,
-    z: event.position.z,
-  }
-  if (![listener.x, listener.y, listener.z, source.x, source.y, source.z].every(Number.isFinite)) {
+  const plan = planThunderEvent(snapshot, event)
+  if (plan === null) {
     return { lastThunderEventId: previous.lastThunderEventId, plan: null }
   }
 
-  const dx = source.x - listener.x
-  const dy = source.y - listener.y
-  const dz = source.z - listener.z
-  const distance = Math.hypot(dx, dy, dz)
-  const delaySecs = Number.isFinite(distance) ? distance / SOUND_SPEED_BLOCKS_PER_SEC : Number.MAX_VALUE
-  const spatial = spatialise(listener, source, {
-    listenerForward: snapshot.listenerForward,
-  })
-
   return {
     lastThunderEventId: event.id,
-    plan: {
-      delaySecs: audioDurationSecs(delaySecs),
-      eventId: event.id,
-      gain: audioGain(clamp01(spatial.gain * (FULL - THUNDER_OCCLUSION_ATTENUATION * clamp01(snapshot.occlusion)))),
-      pan: spatial.pan,
-    },
+    plan,
   }
 }
 
