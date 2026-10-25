@@ -16,7 +16,7 @@ import {
 import type { AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
 import { END_AUDIO_EVENT_KINDS, END_SOUND_DEFINITIONS, type EndAudioEventKind } from './end-audio.js'
 import { SOUND_CUE_IDS, type SoundCueId, cueDefinition } from './cue.js'
-import { Option } from 'effect'
+import { Result } from 'effect'
 
 export const ORIGINAL_SAMPLE_RATE: AudioSampleRate = makeAudioSampleRate(16_000)
 
@@ -34,6 +34,25 @@ export type OriginalSampleBankOptions = {
   /** Changes the generated performance while remaining deterministic. */
   readonly seed?: AudioSeed
 }
+
+export type OriginalSampleBankFailure = {
+  readonly _tag: 'OriginalSampleBankFailure'
+  readonly field: 'options' | 'sampleRate' | 'seed' | 'soundId'
+  readonly message: string
+}
+
+const ORIGINAL_SAMPLE_BANK_FAILURE_MESSAGES = {
+  options: 'Original sample options must be an object',
+  sampleRate: 'Original sample rate must be a positive integer',
+  seed: 'Original sample seed must be a safe integer',
+  soundId: 'Original sample sound id is not supported',
+} satisfies Record<OriginalSampleBankFailure['field'], string>
+
+const originalSampleBankFailure = (field: OriginalSampleBankFailure['field']): OriginalSampleBankFailure => ({
+  _tag: 'OriginalSampleBankFailure',
+  field,
+  message: ORIGINAL_SAMPLE_BANK_FAILURE_MESSAGES[field],
+})
 
 type SampleSpec = {
   readonly durationSecs: AudioDurationSecs
@@ -117,27 +136,39 @@ const writeHeader = (view: DataView, sampleRate: AudioSampleRate, sampleCount: A
 export const generateOriginalSampleWav = (
   soundId: OriginalSampleSoundId,
   options: OriginalSampleBankOptions = {},
-): ArrayBuffer => {
-  const {
-    sampleRate: requestedSampleRate = ORIGINAL_SAMPLE_RATE,
-    seed: requestedSeed = 0x4d_43_41,
-  } = options
-  const validSampleRate = makeAudioSampleRate.option(requestedSampleRate)
-  if (Option.isNone(validSampleRate)) {
-    throw new TypeError('Original sample rate must be a positive integer')
+): Result.Result<ArrayBuffer, OriginalSampleBankFailure> => {
+  if (!ORIGINAL_SAMPLE_SOUND_IDS.some((supportedId) => supportedId === soundId)) {
+    return Result.fail(originalSampleBankFailure('soundId'))
+  }
+  if (typeof options !== 'object' || options === null || Array.isArray(options)) {
+    return Result.fail(originalSampleBankFailure('options'))
+  }
+  const requestedSampleRate: unknown = Object.hasOwn(options, 'sampleRate')
+    ? options.sampleRate
+    : ORIGINAL_SAMPLE_RATE
+  if (typeof requestedSampleRate !== 'number') {
+    return Result.fail(originalSampleBankFailure('sampleRate'))
+  }
+  const validSampleRate = makeAudioSampleRate.result(requestedSampleRate)
+  if (Result.isFailure(validSampleRate)) {
+    return Result.fail(originalSampleBankFailure('sampleRate'))
   }
   const sampleRate = makeAudioSampleRate(
-    Math.round(Math.min(48_000, Math.max(8_000, validSampleRate.value))),
+    Math.round(Math.min(48_000, Math.max(8_000, validSampleRate.success))),
   )
-  const validSeed = makeAudioSeed.option(requestedSeed)
-  if (Option.isNone(validSeed)) {
-    throw new TypeError('Original sample seed must be a safe integer')
+  const requestedSeed: unknown = Object.hasOwn(options, 'seed') ? options.seed : 0x4d_43_41
+  if (typeof requestedSeed !== 'number') {
+    return Result.fail(originalSampleBankFailure('seed'))
+  }
+  const validSeed = makeAudioSeed.result(requestedSeed)
+  if (Result.isFailure(validSeed)) {
+    return Result.fail(originalSampleBankFailure('seed'))
   }
   const spec = specFor(soundId)
   const sampleCount = makeAudioCount(Math.max(1, Math.round(spec.durationSecs * sampleRate)))
   const buffer = new ArrayBuffer(44 + sampleCount * 2)
   const view = new DataView(buffer)
-  const random = { value: hash(soundId, validSeed.value) }
+  const random = { value: hash(soundId, validSeed.success) }
   writeHeader(view, sampleRate, sampleCount)
 
   let filteredNoise = 0
@@ -152,15 +183,20 @@ export const generateOriginalSampleWav = (
     const sample = envelope * (tonal * (1 - spec.noise) + filteredNoise * spec.noise) * 0.72
     view.setInt16(44 + index * 2, Math.round(Math.max(-1, Math.min(1, sample)) * 32_767), true)
   }
-  return buffer
+  return Result.succeed(buffer)
 }
 
 /** A complete built-in manifest accepted directly by `makeWebAudioBackend`. */
 export const createOriginalSampleManifest = (
   options: OriginalSampleBankOptions = {},
-): AudioSampleManifest => new Map<AudioSampleId, AudioSampleSource>(
-  ORIGINAL_SAMPLE_SOUND_IDS.map((soundId) => [
-    makeAudioSampleId(soundId),
-    { data: generateOriginalSampleWav(soundId, options), kind: 'array-buffer' },
-  ] as const),
-)
+): Result.Result<AudioSampleManifest, OriginalSampleBankFailure> => {
+  const manifest = new Map<AudioSampleId, AudioSampleSource>()
+  for (const soundId of ORIGINAL_SAMPLE_SOUND_IDS) {
+    const sample = generateOriginalSampleWav(soundId, options)
+    if (Result.isFailure(sample)) {
+      return Result.fail(sample.failure)
+    }
+    manifest.set(makeAudioSampleId(soundId), { data: sample.success, kind: 'array-buffer' })
+  }
+  return Result.succeed(manifest)
+}
