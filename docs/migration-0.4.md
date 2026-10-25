@@ -69,6 +69,11 @@ to the synchronous QA API at an allowed package entrypoint.
 This inventory compares the public call signatures in the generated declarations
 for `origin/main` and this release. No existing public exports were removed.
 `SoundCueId` was already exported as a type and now also exports a constructor.
+Each declaration tree was emitted with that revision's release TypeScript config.
+A TypeScript compiler-API walk follows the package-root re-exports and compares
+call and construct signatures. It normalizes workspace-specific paths and maps
+Effect and mc-kernel declaration paths to their public entrypoints before
+classifying a difference as a signature change.
 
 The following exports now return `Result`; callers must handle the failure
 branch before using the success value:
