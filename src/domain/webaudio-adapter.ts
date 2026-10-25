@@ -180,15 +180,8 @@ const sampleDurationSecs = (
   return fallbackDurationSecs
 }
 
-const audioTime = (value: unknown): AudioDurationSecs => {
-  if (typeof value !== 'number') {
-    return AudioDurationSecs(0)
-  }
-  return Option.match(AudioDurationSecs.option(value), {
-    onNone: () => AudioDurationSecs(0),
-    onSome: (duration) => duration,
-  })
-}
+const audioTime = (value: unknown): Option.Option<AudioDurationSecs> =>
+  typeof value === 'number' ? AudioDurationSecs.option(value) : Option.none<AudioDurationSecs>()
 
 const resolveSampleBuffer = (
   request: ToneRequest,
@@ -489,7 +482,11 @@ export const makeWebAudioBackend = (
               }
             : playbackRequest
         const startSecs = audioTime(context.currentTime)
-        const envelope = toneEnvelope(scheduledRequest, startSecs)
+        if (Option.isNone(startSecs)) {
+          yield* Ref.update(refusedTonesRef, (count) => count + 1)
+          return refusedPlayback()
+        }
+        const envelope = toneEnvelope(scheduledRequest, startSecs.value)
         if (envelope.peakGain === 0) {
           return refusedPlayback()
         }
@@ -583,20 +580,25 @@ export const makeWebAudioBackend = (
 
         const { context } = runtime.value
         const now = audioTime(context.currentTime)
+        if (Option.isNone(now)) {
+          yield* discardTone(handle.id, tone)
+          return
+        }
 
         // Ramp down instead of stopping outright. `stopTone` is how a BGM track
         // Ends and how a looping cue is cancelled, and a loop cut mid-cycle at
         // Full amplitude is the loudest click this adapter could produce — a
         // Sustained tone is at full gain by definition, unlike a short cue
         // Which is usually already in its release when it ends.
+        const nowSecs = now.value
         const stopped = yield* attempt(() => {
           // `cancelScheduledValues` first, or the tone's own release — already
           // On the automation timeline from `playTone` — competes with this
           // One and the parameter jumps between the two curves.
-          tone.gain.gain.cancelScheduledValues(now)
-          tone.gain.gain.setValueAtTime(gainAt(tone.envelope, now), now)
-          tone.gain.gain.linearRampToValueAtTime(0, now + RELEASE_SECS)
-          tone.source.stop(now + RELEASE_SECS)
+          tone.gain.gain.cancelScheduledValues(nowSecs)
+          tone.gain.gain.setValueAtTime(gainAt(tone.envelope, nowSecs), nowSecs)
+          tone.gain.gain.linearRampToValueAtTime(0, nowSecs + RELEASE_SECS)
+          tone.source.stop(nowSecs + RELEASE_SECS)
         })
         if (!stopped) {
           yield* discardTone(handle.id, tone)

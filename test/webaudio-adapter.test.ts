@@ -1634,7 +1634,7 @@ describe('resource limits and lifecycle', () => {
 // ---------------------------------------------------------------------------
 
 describe('stopping a tone', () => {
-  it.effect('uses zero when the host audio clock is not numeric', () =>
+  it.effect('refuses playback when the host audio clock is not numeric', () =>
     Effect.gen(function* () {
       const { fake, backend } = withFake()
       const audio = yield* backend
@@ -1645,12 +1645,15 @@ describe('stopping a tone', () => {
       }
       Object.defineProperty(context, 'currentTime', { value: 'invalid' })
 
-      yield* audio.playTone(CUE)
-      expect(context.log.started).toStrictEqual([{ atSecs: 0, node: 'osc#2' }])
+      const playback = yield* audio.playTone(CUE)
+
+      expect(playback.accepted).toBe(false)
+      expect(context.log.started).toStrictEqual([])
+      expect(yield* audio.report).toMatchObject({ refusedTones: 1 })
     }),
   )
 
-  it.effect('uses zero when the host audio clock is invalid', () =>
+  it.effect('refuses playback when the host audio clock is invalid', () =>
     Effect.gen(function* () {
       const { fake, backend } = withFake()
       const audio = yield* backend
@@ -1661,14 +1664,33 @@ describe('stopping a tone', () => {
       }
       Object.defineProperty(context, 'currentTime', { value: Number.NaN })
 
-      const handle = yield* audio.playTone(CUE)
-      expect(context.log.started).toStrictEqual([{ atSecs: 0, node: 'osc#2' }])
+      const playback = yield* audio.playTone(CUE)
+
+      expect(playback.accepted).toBe(false)
+      expect(context.log.started).toStrictEqual([])
+      expect(yield* audio.report).toMatchObject({ refusedTones: 1 })
+    }),
+  )
+
+  it.effect('stops immediately when the host audio clock becomes invalid', () =>
+    Effect.gen(function* () {
+      const { fake, backend } = withFake()
+      const audio = yield* backend
+      yield* audio.unlock
+      const context = fake.context()
+      if (context === null) {
+        throw new Error('fake audio context was not created')
+      }
+
+      const handle = yield* audio.playTone({ ...CUE, loop: true })
+      const paramsBefore = context.log.params.slice()
+      Object.defineProperty(context, 'currentTime', { value: Number.NaN })
+
       yield* audio.stopTone(handle)
 
-      expect(context.log.stopped).toStrictEqual([
-        { atSecs: 0.07, node: 'osc#2' },
-        { atSecs: RELEASE_SECS, node: 'osc#2' },
-      ])
+      expect(context.log.params).toStrictEqual(paramsBefore)
+      expect(context.log.stopped).toStrictEqual([{ atSecs: 0, node: 'osc#2' }])
+      expect(yield* audio.isToneActive(handle)).toBe(false)
     }),
   )
 
