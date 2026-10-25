@@ -762,6 +762,25 @@ describe('decoded sample playback', () => {
     }),
   )
 
+  it.effect('refuses a sample resolver result outside its nullable return contract', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        // @ts-expect-error An explicit undefined is outside the callback's return contract.
+        resolveAudioBuffer: () => globalThis.undefined,
+      })
+
+      yield* audio.unlock
+      const playback = yield* audio.playTone({ ...CUE, soundId: sampleId('sample') })
+
+      expect(playback.accepted).toBe(false)
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+      expect(yield* audio.report).toMatchObject({ refusedTones: 1 })
+    }),
+  )
+
   it.effect('refuses playback when sample duration overflows at its playback rate', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()

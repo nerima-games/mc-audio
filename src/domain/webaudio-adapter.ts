@@ -220,22 +220,34 @@ const sampleDurationSecs = (
 const audioTime = (value: unknown): Option.Option<AudioDurationSecs> =>
   typeof value === 'number' ? AudioDurationSecs.option(value) : Option.none<AudioDurationSecs>()
 
+type SampleBufferResolution =
+  | { readonly kind: 'invalid' }
+  | { readonly buffer: AudioBufferSurface | null; readonly kind: 'resolved' }
+
 const resolveSampleBuffer = (
   request: AdmittedToneRequest,
   options: WebAudioOptions,
   sampleCache: ReadonlyMap<AudioSampleId, AudioBufferSurface>,
-): Effect.Effect<AudioBufferSurface | null> => {
+): Effect.Effect<SampleBufferResolution> => {
   const { soundId } = request
   if (soundId === undefined) {
-    return Effect.succeed(null)
+    return Effect.succeed({ buffer: null, kind: 'resolved' })
   }
   return Effect.try({
     catch: (cause) => cause,
-    try: () => {
+    try: (): SampleBufferResolution => {
       const cached = sampleCache.get(soundId)
-      return options.resolveAudioBuffer?.(soundId) ?? cached ?? null
+      const resolver = options.resolveAudioBuffer
+      if (resolver === undefined) {
+        return { buffer: cached ?? null, kind: 'resolved' }
+      }
+      const resolved = resolver(soundId)
+      if (resolved === globalThis.undefined) {
+        return { kind: 'invalid' }
+      }
+      return { buffer: resolved ?? cached ?? null, kind: 'resolved' }
     },
-  }).pipe(Effect.catch(() => Effect.succeed(null)))
+  }).pipe(Effect.catch(() => Effect.succeed({ buffer: null, kind: 'resolved' as const })))
 }
 
 type StreamSourceRequestOptions = {
@@ -293,9 +305,10 @@ export const makeWebAudioBackend = (
   options: WebAudioOptions,
 ): Effect.Effect<WebAudioBackend> =>
   Effect.gen(function* buildWebAudioBackend() {
+    const { initialMasterGain = 0.8, sampleManifest: configuredManifest = new Map() } = options
     const runtimeRef = yield* Ref.make<Option.Option<ContextRuntime>>(Option.none())
     const attemptedRef = yield* Ref.make(false)
-    const masterGainValueRef = yield* Ref.make(clamp01(options.initialMasterGain ?? 0.8))
+    const masterGainValueRef = yield* Ref.make(clamp01(initialMasterGain))
     const mutedRef = yield* Ref.make(false)
     const disposedRef = yield* Ref.make(false)
     const maxConcurrentTones = resolveMaxConcurrentTones(options.maxConcurrentTones)
@@ -309,7 +322,7 @@ export const makeWebAudioBackend = (
     const sampleCache = new Map<AudioSampleId, AudioBufferSurface>()
     const sampleLoads = new Map<AudioSampleId, Deferred.Deferred<boolean>>()
     const preloadedStreams = new Set<AudioSampleId>()
-    const sampleManifest = options.sampleManifest ?? new Map()
+    const sampleManifest = configuredManifest
     const autoPreloadStartedRef = yield* Ref.make(false)
     const autoPreloadEffectRef = yield* Ref.make<Effect.Effect<void>>(Effect.void)
     const hasConfiguredPreloads = [...sampleManifest.values()].some((source) => source.preload === true)
@@ -494,7 +507,12 @@ export const makeWebAudioBackend = (
           return refusedPlayback()
         }
 
-        const sampleBuffer = yield* resolveSampleBuffer(playbackRequest, options, sampleCache)
+        const sampleResolution = yield* resolveSampleBuffer(playbackRequest, options, sampleCache)
+        if (sampleResolution.kind === 'invalid') {
+          yield* Ref.update(refusedTonesRef, (count) => count + 1)
+          return refusedPlayback()
+        }
+        const { buffer: sampleBuffer } = sampleResolution
         const canUseSample = sampleBuffer !== null && context.createBufferSource !== undefined
         const sampleDuration =
           canUseSample && sampleBuffer !== null && !playbackRequest.loop
