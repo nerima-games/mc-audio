@@ -307,6 +307,7 @@ try {
   // published surface — cue lookup, volume gain arithmetic, and audio-sample
   // manifest merging — must behave exactly as the domain implements it.
   const probe = `
+    const { Result } = await import('effect');
     const packageName = ${JSON.stringify(packageName)};
     const specifiers = ${JSON.stringify(importSpecifiers)};
     const typeOnlySpecifiers = ${JSON.stringify([...typeOnlySpecifiers])};
@@ -358,12 +359,37 @@ try {
     if (mergedManifest.get(sharedSampleId)?.url !== 'https://example.invalid/base.wav') {
       throw new Error('The root export returned an invalid manifest merge (base must win over additions)');
     }
-    if (typeof rootModule.parseMinecraftSoundsJson !== 'function' || typeof rootModule.MINECRAFT_26_2_SOUNDS_JSON !== 'object') {
+    if (
+      typeof rootModule.parseMinecraftSoundsJson !== 'function' ||
+      typeof rootModule.MinecraftSoundNamespace !== 'function' ||
+      typeof rootModule.MINECRAFT_26_2_SOUNDS_JSON !== 'object'
+    ) {
       throw new Error('The root export does not expose the Minecraft sounds.json parser');
     }
-    const parsedRegistry = rootModule.parseMinecraftSoundsJson(rootModule.MINECRAFT_26_2_SOUNDS_JSON, { namespace: 'minecraft' })
-    if (typeof parsedRegistry !== 'object' || parsedRegistry === null) {
-      throw new Error('The root export returned an invalid parsed sounds registry');
+    const parsedRegistry = rootModule.parseMinecraftSoundsJson(rootModule.MINECRAFT_26_2_SOUNDS_JSON, {
+      namespace: rootModule.MinecraftSoundNamespace('minecraft'),
+    });
+    if (!Result.isSuccess(parsedRegistry)) {
+      throw new Error('The root export failed to parse the Minecraft sounds registry');
+    }
+    const events = [...parsedRegistry.success.events];
+    if (
+      events.length === 0 ||
+      events.some(([eventId, event]) =>
+        typeof eventId !== 'string' ||
+        eventId.length === 0 ||
+        event.id !== eventId ||
+        !Array.isArray(event.sounds) ||
+        event.sounds.length === 0 ||
+        event.sounds.some(
+          (variant) =>
+            typeof variant.name !== 'string' ||
+            variant.name.length === 0 ||
+            (variant.type !== 'sound' && variant.type !== 'event'),
+        )
+      )
+    ) {
+      throw new Error('The root export returned invalid parsed sounds registry events');
     }
     console.log('verified ' + packageName + ' exports: ' + specifiers.join(', '));
   `;
@@ -375,6 +401,7 @@ try {
   const typeConsumerSource = `
 ${typeConsumerSubpathImports}
 
+import { Result } from "effect"
 import {
   isSoundCueId,
   cueDefinition,
@@ -424,7 +451,9 @@ if (
   clampNonNegative(-2) !== 0 ||
   clampPan(2) !== 1 ||
   manifest.get(sampleId) === undefined ||
-  parsed === undefined
+  !Result.isSuccess(parsed) ||
+  parsed.success.events.size === 0 ||
+  [...parsed.success.events].some(([eventId, event]) => event.id !== eventId || event.sounds.length === 0)
 ) {
   throw new Error('Declaration consumer returned an invalid result')
 }
