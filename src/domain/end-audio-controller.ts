@@ -1,3 +1,4 @@
+import { Option } from 'effect'
 import type { AudioDurationSecs, AudioGain, AudioHandleId } from './audio-brands.js'
 import {
   END_AMBIENCE_FADE_SECS,
@@ -127,7 +128,10 @@ export const makeEndAudioController = (port: EndAudioPort): EndAudioController =
 
   const update = (snapshot: EndAudioSnapshot): void => {
     if (!disposed) {
-      const { nowSecs } = snapshot
+      const nowSecs = Option.match(monotonicTimeSecs.option(snapshot.nowSecs), {
+        onNone: () => monotonicTimeSecs(0),
+        onSome: (value) => monotonicTimeSecs(Math.max(0, value)),
+      })
       releaseCompleted(port, transient, nowSecs)
       const plan = planEndAudio({ ...snapshot, nowSecs }, currentState)
       syncLoops(port, loops, plan.loops)

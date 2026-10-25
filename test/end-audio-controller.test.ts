@@ -160,6 +160,19 @@ describe('End audio controller', () => {
     expect(stopped).toStrictEqual([2, 1])
   })
 
+  it('normalizes an untyped NaN clock before playback and state updates', () => {
+    const record = recorder(true)
+    const controller = makeEndAudioController(record.port)
+    const snapshot = endSnapshot({
+      events: [{ id: AudioEventId('roar'), kind: 'dragonRoar', position: position() }],
+    })
+    expect(Reflect.set(snapshot, 'nowSecs', Number.NaN)).toBe(true)
+
+    expect(() => controller.update(snapshot)).not.toThrow()
+    expect(record.primary).toHaveLength(1)
+    expect(controller.state().lastPlayedAtSecs.dragonRoar).toBe(0)
+  })
+
   it('tracks an event at the branded start of the clock', () => {
     const record = recorder(true)
     const controller = makeEndAudioController(record.port)
