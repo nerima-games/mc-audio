@@ -5,7 +5,17 @@ import {
   type TonePlayback,
   type ToneRequest,
 } from './backend-port.js'
-import { type CameraPoseSnapshot, type Position } from '@nerima-games/mc-kernel'
+import {
+  type AudioGain,
+  type AudioOffset,
+  type AudioTick,
+  type AudioVolume,
+  type MinecraftSoundEventId,
+  type MinecraftSoundResourceId,
+  AudioDurationSecs as makeAudioDurationSecs,
+  AudioFrequencyHz as makeAudioFrequencyHz,
+  AudioVolume as makeAudioVolume,
+} from './audio-brands.js'
 import { Effect, Ref } from 'effect'
 import {
   type MinecraftAmbientMoodResolver,
@@ -29,10 +39,15 @@ import {
   minecraftSpatialise,
   spatialise,
 } from './volume.js'
+import type { CameraPoseSnapshot } from '@nerima-games/mc-kernel/domain/camera'
+import type { Position } from '@nerima-games/mc-kernel/domain/coordinates'
 
-const AMBIENT_DURATION_SECS = 1
-const AMBIENT_FREQUENCY = 20
-const DEFAULT_AMBIENT_VOLUME = 1
+const AMBIENT_DURATION_VALUE_SECS = 1
+const AMBIENT_DURATION_SECS = makeAudioDurationSecs(AMBIENT_DURATION_VALUE_SECS)
+const AMBIENT_FREQUENCY_HZ = 20
+const AMBIENT_FREQUENCY = makeAudioFrequencyHz(AMBIENT_FREQUENCY_HZ)
+const DEFAULT_AMBIENT_VOLUME_VALUE = 1
+const DEFAULT_AMBIENT_VOLUME = makeAudioVolume(DEFAULT_AMBIENT_VOLUME_VALUE)
 
 const isMissing = (value: unknown): value is undefined => Object.is(value, globalThis.undefined)
 
@@ -50,22 +65,26 @@ const plannerInputForTick = (
   randomSource: MinecraftAmbientSoundsPlannerInput['randomSource'],
   state: MinecraftAmbientSoundsPlannerInput['state'],
 ): MinecraftAmbientSoundsPlannerInput => {
+  let cameraPosition = options.listener
+  if (!isMissing(options.camera)) {
+    cameraPosition = options.camera.position
+  }
   const input = {
-    cameraPosition: options.camera?.position ?? options.listener,
+    cameraPosition,
     definition: definitionForTick(options),
     moodPosition: options.moodPosition ?? null,
     randomSource,
     state,
     tick: options.tick,
   }
-  if (options.moodResolver) {
+  if (!isMissing(options.moodResolver)) {
     return { ...input, moodResolver: options.moodResolver }
   }
   return input
 }
 
 export type MinecraftAmbientSoundsTickOptions = {
-  readonly ambientVolume?: number
+  readonly ambientVolume?: AudioVolume
   readonly definition?: MinecraftAmbientSoundsDefinition | null
   readonly enabled?: boolean
   readonly listener: Position
@@ -73,18 +92,18 @@ export type MinecraftAmbientSoundsTickOptions = {
   readonly listenerForward?: Position
   readonly moodPosition?: Position | null
   readonly moodResolver?: MinecraftAmbientMoodResolver
-  readonly tick: number
+  readonly tick: AudioTick
 }
 
 export type MinecraftAmbientSoundsPlayback = {
   readonly plan: MinecraftAmbientSoundsPlan
-  readonly playedSoundIds: readonly string[]
+  readonly playedSoundIds: readonly MinecraftSoundResourceId[]
 }
 
 export type MinecraftAmbientSoundsPlaybackError = {
   readonly _tag: 'MinecraftAmbientSoundsPlaybackError'
   readonly cause: unknown
-  readonly soundId: string
+  readonly soundId: MinecraftSoundEventId | null
 }
 
 export type MinecraftAmbientSoundsPlayer = {
@@ -94,14 +113,14 @@ export type MinecraftAmbientSoundsPlayer = {
   readonly stop: Effect.Effect<void>
 }
 
-const ambientGain = (sound: ResolvedMinecraftSound, spatial: Spatialisation, volume: number): number =>
+const ambientGain = (sound: ResolvedMinecraftSound, spatial: Spatialisation, volume: AudioVolume): AudioGain =>
   clampNonNegative(clamp01(volume) * sound.volume * spatial.gain)
 
 const ambientRequest = (input: {
   readonly loop: boolean
   readonly sound: ResolvedMinecraftSound
   readonly spatial: Spatialisation
-  readonly volume: number
+  readonly volume: AudioVolume
 }): ToneRequest => ({
   durationSecs: AMBIENT_DURATION_SECS,
   frequency: AMBIENT_FREQUENCY,
@@ -115,7 +134,7 @@ const ambientRequest = (input: {
   stream: input.sound.stream,
 })
 
-const playbackError = (soundId: string, cause: unknown): MinecraftAmbientSoundsPlaybackError => ({
+const playbackError = (soundId: MinecraftSoundEventId, cause: unknown): MinecraftAmbientSoundsPlaybackError => ({
   _tag: 'MinecraftAmbientSoundsPlaybackError',
   cause,
   soundId,
@@ -123,12 +142,12 @@ const playbackError = (soundId: string, cause: unknown): MinecraftAmbientSoundsP
 
 type AppliedAmbientCommand = {
   readonly handle: ToneHandle | null
-  readonly soundId: string | null
+  readonly soundId: MinecraftSoundResourceId | null
 }
 
 type AppliedAmbientPlan = {
-  readonly loopSound: string | null
-  readonly playedSoundIds: readonly string[]
+  readonly loopSound: MinecraftSoundEventId | null
+  readonly playedSoundIds: readonly MinecraftSoundResourceId[]
 }
 
 type AmbientPlayCommand = Exclude<MinecraftAmbientSoundsCommand, { readonly kind: 'stop-loop' }>
@@ -151,7 +170,7 @@ const stopAmbientLoop = ({
 const recordAmbientPlayback = (
   applied: AppliedAmbientCommand,
   startedHandles: ToneHandle[],
-  playedSoundIds: string[],
+  playedSoundIds: MinecraftSoundResourceId[],
 ): void => {
   if (applied.handle !== null) {
     startedHandles.push(applied.handle)
@@ -164,8 +183,8 @@ const recordAmbientPlayback = (
 const loopSoundForCommand = (
   command: MinecraftAmbientSoundsCommand,
   applied: AppliedAmbientCommand,
-  currentLoopSound: string | null,
-): string | null => {
+  currentLoopSound: MinecraftSoundEventId | null,
+): MinecraftSoundEventId | null => {
   if (command.kind !== 'start-loop') {
     return currentLoopSound
   }
@@ -178,7 +197,7 @@ const loopSoundForCommand = (
 const spatialForMood = (input: {
   readonly listener: Position
   readonly listenerForward: Position | undefined
-  readonly offset: number
+  readonly offset: AudioOffset
   readonly position: Position
   readonly sound: ResolvedMinecraftSound
   readonly useMinecraftAttenuation: boolean
@@ -211,8 +230,14 @@ const spatialForCommand = (
   if (command.category !== 'mood') {
     return NO_SPATIALISATION
   }
+  const { camera, listener: providedListener } = options
+  let listener = providedListener
+  if (!isMissing(camera)) {
+    const { position: cameraPosition } = camera
+    listener = cameraPosition
+  }
   return spatialForMood({
-    listener: options.camera?.position ?? options.listener,
+    listener,
     listenerForward: options.listenerForward,
     offset: command.offset,
     position: command.position,
@@ -223,7 +248,7 @@ const spatialForCommand = (
 
 export const makeMinecraftAmbientSoundsPlayer = (
   registry: MinecraftSoundRegistry,
-  randomSource: () => number,
+  randomSource: () => unknown,
 ): Effect.Effect<MinecraftAmbientSoundsPlayer, never, AudioBackendPort> =>
   Effect.gen(function* buildMinecraftAmbientSoundsPlayer() {
     const backend = yield* AudioBackendPort
@@ -233,15 +258,14 @@ export const makeMinecraftAmbientSoundsPlayer = (
     const resolveAmbientCommandSound = (
       command: AmbientPlayCommand,
     ): Effect.Effect<ResolvedMinecraftSound, MinecraftAmbientSoundsPlaybackError> =>
-      Effect.try({
-        catch: (cause): MinecraftAmbientSoundsPlaybackError => playbackError(command.sound, cause),
-        try: () => resolveMinecraftSound(registry, command.sound, randomSource()),
-      })
+      Effect.fromResult(resolveMinecraftSound(registry, command.sound, randomSource())).pipe(
+        Effect.mapError((cause) => playbackError(command.sound, cause)),
+      )
 
     const applyAmbientPlayCommand = (
       command: AmbientPlayCommand,
       options: MinecraftAmbientSoundsTickOptions,
-      volume: number,
+      volume: AudioVolume,
     ): Effect.Effect<AppliedAmbientCommand, MinecraftAmbientSoundsPlaybackError> =>
       Effect.gen(function* applyMinecraftAmbientPlayCommand() {
         const sound = yield* resolveAmbientCommandSound(command)
@@ -266,7 +290,7 @@ export const makeMinecraftAmbientSoundsPlayer = (
     const applyAmbientCommand = (
       command: MinecraftAmbientSoundsCommand,
       options: MinecraftAmbientSoundsTickOptions,
-      volume: number,
+      volume: AudioVolume,
     ): Effect.Effect<AppliedAmbientCommand, MinecraftAmbientSoundsPlaybackError> =>
       Effect.gen(function* applyMinecraftAmbientCommand() {
         if (command.kind === 'stop-loop') {
@@ -286,8 +310,9 @@ export const makeMinecraftAmbientSoundsPlayer = (
         let loopWasStopped = false
         const { loopSound: plannedLoopSound } = plan.state
         let loopSound = plannedLoopSound
-        const playedSoundIds: string[] = []
-        const volume = options.ambientVolume ?? DEFAULT_AMBIENT_VOLUME
+        const playedSoundIds: MinecraftSoundResourceId[] = []
+        const { ambientVolume = DEFAULT_AMBIENT_VOLUME } = options
+        const volume = ambientVolume
         return yield* Effect.gen(function* applyMinecraftAmbientCommands() {
           for (const command of plan.commands) {
             if (command.kind === 'stop-loop') {
@@ -300,7 +325,7 @@ export const makeMinecraftAmbientSoundsPlayer = (
           }
           return { loopSound, playedSoundIds }
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             Effect.gen(function* rollbackMinecraftAmbientCommands() {
               for (const handle of startedHandles) {
                 yield* backend.stopTone(handle)
@@ -327,7 +352,13 @@ export const makeMinecraftAmbientSoundsPlayer = (
     ): Effect.Effect<MinecraftAmbientSoundsPlayback, MinecraftAmbientSoundsPlaybackError> =>
       Effect.gen(function* tickReadyMinecraftAmbientSounds() {
         const state = yield* Ref.get(stateRef)
-        const plan = planMinecraftAmbientSounds(plannerInputForTick(options, randomSource, state))
+        const plan = yield* Effect.fromResult(planMinecraftAmbientSounds(plannerInputForTick(options, randomSource, state))).pipe(
+          Effect.mapError((cause): MinecraftAmbientSoundsPlaybackError => ({
+            _tag: 'MinecraftAmbientSoundsPlaybackError',
+            cause,
+            soundId: null,
+          })),
+        )
         const applied = yield* applyPlan(plan, options)
         const appliedPlan = { ...plan, state: { ...plan.state, loopSound: applied.loopSound } }
         yield* Ref.set(stateRef, appliedPlan.state)

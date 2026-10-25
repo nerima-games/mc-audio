@@ -1,3 +1,24 @@
+import {
+  type AudioCaptionText,
+  type AudioDiagnosticMessage,
+  type AudioDiagnosticPath,
+  type AudioDistance,
+  type AudioGain,
+  type AudioPlaybackRate,
+  type AudioWeight,
+  type MinecraftSoundEventId,
+  type MinecraftSoundNamespace,
+  type MinecraftSoundResourceId,
+  AudioCaptionText as makeAudioCaptionText,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
+  AudioDistance as makeAudioDistance,
+  AudioGain as makeAudioGain,
+  AudioPlaybackRate as makeAudioPlaybackRate,
+  AudioWeight as makeAudioWeight,
+  MinecraftSoundEventId as makeMinecraftSoundEventId,
+  MinecraftSoundResourceId as makeMinecraftSoundResourceId,
+} from './audio-brands.js'
 import type {
   MinecraftSoundEvent,
   MinecraftSoundReferenceType,
@@ -5,6 +26,7 @@ import type {
   MinecraftSoundRegistryOptions,
   MinecraftSoundVariant,
 } from './minecraft-sounds-types.js'
+import { Result } from 'effect'
 
 const RESOURCE_NAMESPACE_PATTERN = /^[a-z0-9_.-]+$/u
 const SOUND_PATH_PATTERN = /^[a-z0-9/._-]+$/u
@@ -26,6 +48,12 @@ const PARENT_SEGMENT = '..'
 
 type JsonObject = Record<string, unknown>
 
+export type MinecraftSoundsParseFailure = {
+  readonly _tag: 'MinecraftSoundsParseFailure'
+  readonly path: AudioDiagnosticPath
+  readonly message: AudioDiagnosticMessage
+}
+
 type NumberParserOptions = {
   readonly fallback: number
   readonly path: string
@@ -39,108 +67,126 @@ type ResourceIdParts = {
 }
 
 type ParseSoundEventOptions = {
-  readonly defaultNamespace: string
-  readonly id: string
+  readonly defaultNamespace: MinecraftSoundNamespace
+  readonly id: MinecraftSoundEventId
   readonly path: string
   readonly value: unknown
 }
 
 type ParseSoundVariantOptions = {
-  readonly defaultNamespace: string
+  readonly defaultNamespace: MinecraftSoundNamespace
   readonly path: string
   readonly value: unknown
 }
+
+const failure = (path: string, message: string): Result.Result<never, MinecraftSoundsParseFailure> =>
+  Result.fail({
+    _tag: 'MinecraftSoundsParseFailure',
+    message: makeAudioDiagnosticMessage(message),
+    path: makeAudioDiagnosticPath(path),
+  })
 
 const isMissing = (value: unknown): value is undefined => Object.is(value, globalThis.undefined)
 
 const isJsonObject = (value: unknown): value is JsonObject =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const invalidSoundsJson = (path: string, message: string): never => {
-  throw new TypeError(`Invalid sounds.json at ${path}: ${message}`)
-}
-
-const assertJsonObject: (
-  value: unknown,
-  path: string,
-  message: string,
-) => asserts value is JsonObject = (value, path, message) => {
-  if (!isJsonObject(value)) {
-    invalidSoundsJson(path, message)
+const jsonObject = (value: unknown, path: string, message: string): Result.Result<JsonObject, MinecraftSoundsParseFailure> => {
+  if (isJsonObject(value)) {
+    return Result.succeed(value)
   }
+  return failure(path, message)
 }
 
-const assertKnownKeys = (value: JsonObject, allowed: readonly string[], path: string): void => {
+const knownKeys = (value: JsonObject, allowed: readonly string[], path: string): Result.Result<void, MinecraftSoundsParseFailure> => {
   for (const key of Object.keys(value)) {
     if (!allowed.includes(key)) {
-      invalidSoundsJson(`${path}.${key}`, 'unknown property')
+      return failure(`${path}.${key}`, 'unknown property')
     }
   }
+  return Result.succeed(globalThis.undefined)
 }
 
-const parseBoolean = (value: unknown, fallback: boolean, path: string): boolean => {
+const parseBoolean = (value: unknown, fallback: boolean, path: string): Result.Result<boolean, MinecraftSoundsParseFailure> => {
   if (isMissing(value)) {
-    return fallback
+    return Result.succeed(fallback)
   }
-  if (typeof value !== 'boolean') {
-    return invalidSoundsJson(path, 'expected a boolean')
+  if (typeof value === 'boolean') {
+    return Result.succeed(value)
   }
-  return value
+  return failure(path, 'expected a boolean')
 }
 
-const parseString = (value: unknown, path: string): string => {
-  if (typeof value !== 'string' || value.length === EMPTY_LENGTH) {
-    return invalidSoundsJson(path, 'expected a non-empty string')
+const parseString = (value: unknown, path: string): Result.Result<string, MinecraftSoundsParseFailure> => {
+  if (typeof value === 'string' && value.length > EMPTY_LENGTH) {
+    return Result.succeed(value)
   }
-  return value
+  return failure(path, 'expected a non-empty string')
 }
 
-const parseNumber = ({ fallback, path, predicate, value }: NumberParserOptions): number => {
+const parseNumber = ({ fallback, path, predicate, value }: NumberParserOptions): Result.Result<number, MinecraftSoundsParseFailure> => {
   if (isMissing(value)) {
-    return fallback
+    return Result.succeed(fallback)
   }
-  if (typeof value !== 'number' || !Number.isFinite(value) || !predicate(value)) {
-    return invalidSoundsJson(path, 'expected a finite number in the supported range')
+  if (typeof value === 'number' && Number.isFinite(value) && predicate(value)) {
+    return Result.succeed(value)
   }
-  return value
+  return failure(path, 'expected a finite number in the supported range')
 }
 
-const parseNamespace = (namespace: string, path: string): string => {
-  if (!RESOURCE_NAMESPACE_PATTERN.test(namespace)) {
-    return invalidSoundsJson(path, 'expected a lowercase resource namespace')
+const parseNamespace = (
+  namespace: MinecraftSoundNamespace,
+  path: string,
+): Result.Result<MinecraftSoundNamespace, MinecraftSoundsParseFailure> => {
+  if (RESOURCE_NAMESPACE_PATTERN.test(namespace)) {
+    return Result.succeed(namespace)
   }
-  return namespace
+  return failure(path, 'expected a lowercase resource namespace')
 }
 
-const resourceIdSeparator = (resourceId: string, path: string): number => {
+const resourceIdSeparator = (
+  resourceId: string,
+  path: string,
+): Result.Result<number, MinecraftSoundsParseFailure> => {
   if (resourceId.trim() !== resourceId || resourceId.includes(PARENT_SEGMENT)) {
-    invalidSoundsJson(path, 'must not contain whitespace or parent-directory segments')
+    return failure(path, 'must not contain whitespace or parent-directory segments')
   }
-
   const separator = resourceId.indexOf(':')
   if (separator !== NO_INDEX && resourceId.indexOf(':', separator + INDEX_STEP) !== NO_INDEX) {
-    invalidSoundsJson(path, 'must contain at most one namespace separator')
+    return failure(path, 'must contain at most one namespace separator')
   }
-  return separator
+  return Result.succeed(separator)
 }
 
-const splitResourceId = (value: unknown, defaultNamespace: string, path: string): ResourceIdParts => {
-  const resourceId = parseString(value, path)
-  const separator = resourceIdSeparator(resourceId, path)
-
-  let namespace = defaultNamespace
-  let rawPath = resourceId
-  if (separator !== NO_INDEX) {
-    namespace = resourceId.slice(EMPTY_LENGTH, separator)
-    rawPath = resourceId.slice(separator + INDEX_STEP)
+const resourceIdParts = (
+  resourceId: string,
+  defaultNamespace: MinecraftSoundNamespace,
+  separator: number,
+): ResourceIdParts => {
+  if (separator === NO_INDEX) {
+    return { namespace: defaultNamespace, path: resourceId }
   }
+  return {
+    namespace: resourceId.slice(EMPTY_LENGTH, separator),
+    path: resourceId.slice(separator + INDEX_STEP),
+  }
+}
+
+const splitResourceId = (
+  value: unknown,
+  defaultNamespace: MinecraftSoundNamespace,
+  path: string,
+): Result.Result<ResourceIdParts, MinecraftSoundsParseFailure> => Result.gen(function* splitResourceIdEffect() {
+  const resourceId = yield* parseString(value, path)
+  const separator = yield* resourceIdSeparator(resourceId, path)
+  const { namespace, path: resourcePath } = resourceIdParts(resourceId, defaultNamespace, separator)
   if (!RESOURCE_NAMESPACE_PATTERN.test(namespace)) {
-    invalidSoundsJson(path, 'contains an invalid resource namespace')
+    return yield* failure(path, 'contains an invalid resource namespace')
   }
-  return { namespace, path: rawPath }
-}
+  return { namespace, path: resourcePath }
+})
 
-const normalizeSoundPath = (rawPath: string, path: string): string => {
+const normalizeSoundPath = (rawPath: string, path: string): Result.Result<string, MinecraftSoundsParseFailure> => {
   let soundPath = rawPath
   if (rawPath.endsWith(OGG_EXTENSION)) {
     soundPath = rawPath.slice(EMPTY_LENGTH, -OGG_EXTENSION_LENGTH)
@@ -148,147 +194,224 @@ const normalizeSoundPath = (rawPath: string, path: string): string => {
   const hasInvalidSegment = soundPath.split('/').some(
     (segment) => segment.length === EMPTY_LENGTH || segment === CURRENT_SEGMENT,
   )
-  if (soundPath.length === EMPTY_LENGTH || !SOUND_PATH_PATTERN.test(soundPath) || hasInvalidSegment) {
-    invalidSoundsJson(path, 'contains an invalid sound path')
+  if (soundPath.length > EMPTY_LENGTH && SOUND_PATH_PATTERN.test(soundPath) && !hasInvalidSegment) {
+    return Result.succeed(soundPath)
   }
-  return soundPath
+  return failure(path, 'contains an invalid sound path')
 }
+
+const brandMinecraftSoundResourceId = (
+  value: string,
+  _path: string,
+): Result.Result<MinecraftSoundResourceId, MinecraftSoundsParseFailure> =>
+  Result.succeed(makeMinecraftSoundResourceId(value))
 
 export const normalizeMinecraftSoundId = (
   value: unknown,
-  defaultNamespace: string,
+  defaultNamespace: MinecraftSoundNamespace,
+  path: unknown,
+): Result.Result<MinecraftSoundResourceId, MinecraftSoundsParseFailure> => Result.gen(function* normalizeMinecraftSoundIdEffect() {
+  let pathLabel = ''
+  if (typeof path === 'string') {
+    pathLabel = path
+  }
+  const { namespace, path: rawPath } = yield* splitResourceId(value, defaultNamespace, pathLabel)
+  const soundPath = yield* normalizeSoundPath(rawPath, pathLabel)
+  return yield* brandMinecraftSoundResourceId(`${namespace}:${soundPath}`, pathLabel)
+})
+
+const parseReferenceType = (
+  value: unknown,
   path: string,
-): string => {
-  const { namespace, path: rawPath } = splitResourceId(value, defaultNamespace, path)
-  return `${namespace}:${normalizeSoundPath(rawPath, path)}`
+): Result.Result<MinecraftSoundReferenceType, MinecraftSoundsParseFailure> => {
+  if (isMissing(value) || value === 'sound') {
+    return Result.succeed('sound')
+  }
+  if (value === 'event') {
+    return Result.succeed(value)
+  }
+  return failure(path, 'expected "sound" or "event"')
 }
 
-const parseReferenceType = (value: unknown, path: string): MinecraftSoundReferenceType => {
-  if (isMissing(value)) {
-    return 'sound'
-  }
-  if (value !== 'sound' && value !== 'event') {
-    return invalidSoundsJson(path, 'expected "sound" or "event"')
-  }
-  return value
-}
-
-const defaultSoundVariant = (name: string): MinecraftSoundVariant => ({
-  attenuationDistance: DEFAULT_ATTENUATION_DISTANCE,
+const defaultSoundVariant = (name: MinecraftSoundResourceId): MinecraftSoundVariant => ({
+  attenuationDistance: makeAudioDistance(DEFAULT_ATTENUATION_DISTANCE),
   name,
-  pitch: DEFAULT_PITCH,
+  pitch: makeAudioPlaybackRate(DEFAULT_PITCH),
   preload: false,
   stream: false,
   type: 'sound',
-  volume: DEFAULT_VOLUME,
-  weight: DEFAULT_WEIGHT,
+  volume: makeAudioGain(DEFAULT_VOLUME),
+  weight: makeAudioWeight(DEFAULT_WEIGHT),
 })
 
-const parseSoundVariant = ({ defaultNamespace, path, value }: ParseSoundVariantOptions): MinecraftSoundVariant => {
+type ParsedSoundVariantValues = {
+  readonly attenuationDistance: number
+  readonly pitch: number
+  readonly preload: boolean
+  readonly stream: boolean
+  readonly volume: number
+  readonly weight: number
+}
+
+type BrandedSoundVariantValues = {
+  readonly attenuationDistance: AudioDistance
+  readonly pitch: AudioPlaybackRate
+  readonly preload: boolean
+  readonly stream: boolean
+  readonly volume: AudioGain
+  readonly weight: AudioWeight
+}
+
+const parseSoundVariantValues = (
+  object: JsonObject,
+  path: string,
+): Result.Result<ParsedSoundVariantValues, MinecraftSoundsParseFailure> => Result.gen(function* parseSoundVariantValuesEffect() {
+  const volume = yield* parseNumber({
+    fallback: DEFAULT_VOLUME,
+    path: `${path}.volume`,
+    predicate: (number) => number >= MIN_VOLUME,
+    value: object['volume'],
+  })
+  const pitch = yield* parseNumber({
+    fallback: DEFAULT_PITCH,
+    path: `${path}.pitch`,
+    predicate: (number) => number > MIN_PITCH,
+    value: object['pitch'],
+  })
+  const weight = yield* parseNumber({
+    fallback: DEFAULT_WEIGHT,
+    path: `${path}.weight`,
+    predicate: (number) => Number.isInteger(number) && number > MIN_WEIGHT,
+    value: object['weight'],
+  })
+  const attenuationDistance = yield* parseNumber({
+    fallback: DEFAULT_ATTENUATION_DISTANCE,
+    path: `${path}.attenuation_distance`,
+    predicate: (number) => number > MIN_DISTANCE,
+    value: object['attenuation_distance'],
+  })
+  const stream = yield* parseBoolean(object['stream'], false, `${path}.stream`)
+  const preload = yield* parseBoolean(object['preload'], false, `${path}.preload`)
+  return { attenuationDistance, pitch, preload, stream, volume, weight }
+})
+
+const brandSoundVariantValues = (
+  values: ParsedSoundVariantValues,
+  _path: string,
+): Result.Result<BrandedSoundVariantValues, MinecraftSoundsParseFailure> => Result.succeed({
+  attenuationDistance: makeAudioDistance(values.attenuationDistance),
+  pitch: makeAudioPlaybackRate(values.pitch),
+  preload: values.preload,
+  stream: values.stream,
+  volume: makeAudioGain(values.volume),
+  weight: makeAudioWeight(values.weight),
+})
+
+const parseSoundVariant = ({
+  defaultNamespace,
+  path,
+  value,
+}: ParseSoundVariantOptions): Result.Result<MinecraftSoundVariant, MinecraftSoundsParseFailure> => {
   if (typeof value === 'string') {
-    return defaultSoundVariant(normalizeMinecraftSoundId(value, defaultNamespace, path))
+    return Result.map(normalizeMinecraftSoundId(value, defaultNamespace, path), defaultSoundVariant)
   }
-  assertJsonObject(value, path, 'expected a sound name or sound object')
-
-  assertKnownKeys(
-    value,
-    ['name', 'type', 'volume', 'pitch', 'weight', 'stream', 'attenuation_distance', 'preload'],
-    path,
-  )
-  return {
-    attenuationDistance: parseNumber({
-      fallback: DEFAULT_ATTENUATION_DISTANCE,
-      path: `${path}.attenuation_distance`,
-      predicate: (number) => number > MIN_DISTANCE,
-      value: value['attenuation_distance'],
-    }),
-    name: normalizeMinecraftSoundId(value['name'], defaultNamespace, `${path}.name`),
-    pitch: parseNumber({
-      fallback: DEFAULT_PITCH,
-      path: `${path}.pitch`,
-      predicate: (number) => number >= MIN_PITCH,
-      value: value['pitch'],
-    }),
-    preload: parseBoolean(value['preload'], false, `${path}.preload`),
-    stream: parseBoolean(value['stream'], false, `${path}.stream`),
-    type: parseReferenceType(value['type'], `${path}.type`),
-    volume: parseNumber({
-      fallback: DEFAULT_VOLUME,
-      path: `${path}.volume`,
-      predicate: (number) => number >= MIN_VOLUME,
-      value: value['volume'],
-    }),
-    weight: parseNumber({
-      fallback: DEFAULT_WEIGHT,
-      path: `${path}.weight`,
-      predicate: (number) => Number.isInteger(number) && number > MIN_WEIGHT,
-      value: value['weight'],
-    }),
-  }
+  return Result.gen(function* parseSoundVariantObject() {
+    const object = yield* jsonObject(value, path, 'expected a sound name or sound object')
+    yield* knownKeys(object, ['name', 'type', 'volume', 'pitch', 'weight', 'stream', 'attenuation_distance', 'preload'], path)
+    const name = yield* normalizeMinecraftSoundId(object['name'], defaultNamespace, `${path}.name`)
+    const type = yield* parseReferenceType(object['type'], `${path}.type`)
+    const values = yield* parseSoundVariantValues(object, path)
+    const sharedVariant = yield* brandSoundVariantValues(values, path)
+    if (type === 'event') {
+      return { ...sharedVariant, name: makeMinecraftSoundEventId(name), type }
+    }
+    return { ...sharedVariant, name, type }
+  })
 }
 
-const parseSubtitle = (value: unknown, path: string): string | null => {
+const parseSubtitle = (value: unknown, path: string): Result.Result<AudioCaptionText | null, MinecraftSoundsParseFailure> => {
   if (isMissing(value)) {
-    return null
+    return Result.succeed(null)
   }
-  if (typeof value !== 'string') {
-    return invalidSoundsJson(path, 'expected a string')
+  if (typeof value === 'string') {
+    return Result.succeed(makeAudioCaptionText(value))
   }
-  return value
+  return failure(path, 'expected a string')
 }
 
-const parseSoundEvent = ({ defaultNamespace, id, path, value }: ParseSoundEventOptions): MinecraftSoundEvent => {
-  assertJsonObject(value, path, 'expected a sound event object')
-  assertKnownKeys(value, ['replace', 'subtitle', 'sounds'], path)
-  const { sounds } = value
-  if (!Array.isArray(sounds)) {
-    return invalidSoundsJson(`${path}.sounds`, 'expected an array')
+const parseSoundVariants = (
+  value: unknown,
+  defaultNamespace: MinecraftSoundNamespace,
+  path: string,
+): Result.Result<readonly MinecraftSoundVariant[], MinecraftSoundsParseFailure> => Result.gen(function* parseSoundVariantsEffect() {
+  if (!Array.isArray(value)) {
+    return yield* failure(path, 'expected an array')
   }
+  const sounds: MinecraftSoundVariant[] = []
+  for (const [index, sound] of value.entries()) {
+    sounds.push(yield* parseSoundVariant({ defaultNamespace, path: `${path}[${index}]`, value: sound }))
+  }
+  return sounds
+})
 
-  return {
-    id,
-    replace: parseBoolean(value['replace'], false, `${path}.replace`),
-    sounds: sounds.map((sound, index) => parseSoundVariant({
-      defaultNamespace,
-      path: `${path}.sounds[${index}]`,
-      value: sound,
-    })),
-    subtitle: parseSubtitle(value['subtitle'], `${path}.subtitle`),
-  }
+const parseSoundEvent = ({
+  defaultNamespace,
+  id,
+  path,
+  value,
+}: ParseSoundEventOptions): Result.Result<MinecraftSoundEvent, MinecraftSoundsParseFailure> => Result.gen(function* parseSoundEventEffect() {
+  const object = yield* jsonObject(value, path, 'expected a sound event object')
+  yield* knownKeys(object, ['replace', 'subtitle', 'sounds'], path)
+  const sounds = yield* parseSoundVariants(object['sounds'], defaultNamespace, `${path}.sounds`)
+  const replace = yield* parseBoolean(object['replace'], false, `${path}.replace`)
+  const subtitle = yield* parseSubtitle(object['subtitle'], `${path}.subtitle`)
+  return { id, replace, sounds, subtitle }
+})
+
+type ParseSoundEventEntryOptions = {
+  readonly events: Map<MinecraftSoundEventId, MinecraftSoundEvent>
+  readonly namespace: MinecraftSoundNamespace
+  readonly rawId: string
+  readonly value: unknown
 }
+
+const parseSoundEventEntry = ({ events, namespace, rawId, value }: ParseSoundEventEntryOptions): Result.Result<void, MinecraftSoundsParseFailure> => Result.gen(function* parseSoundEventEntryEffect() {
+  const resourceId = yield* normalizeMinecraftSoundId(rawId, namespace, rawId)
+  const id = makeMinecraftSoundEventId(resourceId)
+  if (events.has(id)) {
+    return yield* failure(rawId, `duplicate normalized sound event id ${id}`)
+  }
+  events.set(id, yield* parseSoundEvent({ defaultNamespace: namespace, id, path: rawId, value }))
+  return globalThis.undefined
+})
+
+const parseSoundEvents = (
+  object: JsonObject,
+  namespace: MinecraftSoundNamespace,
+): Result.Result<Map<MinecraftSoundEventId, MinecraftSoundEvent>, MinecraftSoundsParseFailure> => Result.gen(function* parseSoundEventsEffect() {
+  const events = new Map<MinecraftSoundEventId, MinecraftSoundEvent>()
+  for (const [rawId, value] of Object.entries(object)) {
+    yield* parseSoundEventEntry({ events, namespace, rawId, value })
+  }
+  return events
+})
 
 export const parseMinecraftSoundsJson = (
   input: unknown,
   options: MinecraftSoundRegistryOptions,
-): MinecraftSoundRegistry => {
-  const namespace = parseNamespace(options.namespace, 'namespace')
-  assertJsonObject(input, '$', 'expected an object keyed by sound event id')
-
-  const events: Record<string, MinecraftSoundEvent> = {}
-  for (const [rawId, value] of Object.entries(input)) {
-    const id = normalizeMinecraftSoundId(rawId, namespace, rawId)
-    if (Object.hasOwn(events, id)) {
-      invalidSoundsJson(rawId, `duplicate normalized sound event id ${id}`)
-    }
-    events[id] = parseSoundEvent({
-      defaultNamespace: namespace,
-      id,
-      path: rawId,
-      value,
-    })
-  }
+): Result.Result<MinecraftSoundRegistry, MinecraftSoundsParseFailure> => Result.gen(function* parseMinecraftSoundsJsonEffect() {
+  const namespace = yield* parseNamespace(options.namespace, 'namespace')
+  const object = yield* jsonObject(input, '$', 'expected an object keyed by sound event id')
+  const events = yield* parseSoundEvents(object, namespace)
   return { events }
-}
+})
 
 const withoutMergeDirective = (event: MinecraftSoundEvent): MinecraftSoundEvent => ({
   ...event,
   replace: false,
 })
 
-const mergeEvents = (
-  baseEvent: MinecraftSoundEvent,
-  overlayEvent: MinecraftSoundEvent,
-): MinecraftSoundEvent => {
+const mergeEvents = (baseEvent: MinecraftSoundEvent, overlayEvent: MinecraftSoundEvent): MinecraftSoundEvent => {
   if (overlayEvent.replace) {
     return withoutMergeDirective(overlayEvent)
   }
@@ -300,32 +423,23 @@ const mergeEvents = (
   }
 }
 
-const mergeBaseEvent = (
-  baseEvent: MinecraftSoundEvent,
-  overlayEvent: MinecraftSoundEvent | null,
-): MinecraftSoundEvent => {
-  if (overlayEvent === null) {
-    return withoutMergeDirective(baseEvent)
-  }
-  return mergeEvents(baseEvent, overlayEvent)
-}
-
 export const mergeMinecraftSoundRegistries = (
   base: MinecraftSoundRegistry,
   overlay: MinecraftSoundRegistry,
 ): MinecraftSoundRegistry => {
-  const events: Record<string, MinecraftSoundEvent> = Object.fromEntries(
-    Object.entries(base.events).map(([id, baseEvent]) => {
-      const overlayEvent = overlay.events[id] ?? null
-      return [id, mergeBaseEvent(baseEvent, overlayEvent)]
-    }),
-  )
-
-  for (const [id, overlayEvent] of Object.entries(overlay.events)) {
-    if (!Object.hasOwn(base.events, id)) {
-      events[id] = withoutMergeDirective(overlayEvent)
+  const events = new Map<MinecraftSoundEventId, MinecraftSoundEvent>()
+  for (const [id, baseEvent] of base.events) {
+    const overlayEvent = overlay.events.get(id)
+    if (overlayEvent === globalThis.undefined) {
+      events.set(id, withoutMergeDirective(baseEvent))
+    } else {
+      events.set(id, mergeEvents(baseEvent, overlayEvent))
+    }
+  }
+  for (const [id, overlayEvent] of overlay.events) {
+    if (!base.events.has(id)) {
+      events.set(id, withoutMergeDirective(overlayEvent))
     }
   }
   return { events }
 }
-

@@ -1,7 +1,18 @@
 /* oxlint-disable max-statements, no-magic-numbers */
-import { Effect } from 'effect'
+import { Effect, Option, Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { mergeAudioSampleManifests } from '../src/domain/audio-sample.js'
+import {
+  AudioDurationSecs,
+  AudioGain,
+  AudioPlaybackRate,
+  AudioSampleId,
+  AudioSampleRate,
+  AudioSampleUrl,
+  MinecraftSoundEventId,
+  MinecraftSoundNamespace,
+  MinecraftSoundResourceId,
+} from '../src/domain/audio-brands.js'
 import {
   FREE_MINECRAFT_MUSIC_TRACKS,
   createFreeMinecraftMusicManifest,
@@ -17,6 +28,28 @@ import { mergeMinecraftSoundRegistries, parseMinecraftSoundsJson } from '../src/
 import { resolveMinecraftSound } from '../src/domain/minecraft-sounds-resolver.js'
 import { makeWebAudioBackend } from '../src/domain/webaudio-adapter.js'
 import { makeFakeWebAudio } from './fake-webaudio.js'
+
+const success = <Value, Failure>(result: Result.Result<Value, Failure>): Value => {
+  if (Result.isSuccess(result)) {
+    return result.success
+  }
+  throw new Error('Expected a successful result')
+}
+
+const wav = (id: string, options: Parameters<typeof generateFreeMusicWav>[1] = {}): ArrayBuffer =>
+  success(generateFreeMusicWav(MinecraftSoundResourceId(id), options))
+
+const freeManifest = (options: Parameters<typeof createFreeMinecraftMusicManifest>[0] = {}) =>
+  success(createFreeMinecraftMusicManifest(options))
+
+const freePack = (options: Parameters<typeof createFreeMinecraftMusicPack>[0] = {}) =>
+  success(createFreeMinecraftMusicPack(options))
+
+const registryRecord = (registry: ReturnType<typeof createFreeMinecraftMusicRegistry>) =>
+  Object.fromEntries(registry.events)
+
+const resolveSound = (registry: ReturnType<typeof createFreeMinecraftMusicRegistry>, id: string, random?: number) =>
+  success(resolveMinecraftSound(registry, MinecraftSoundEventId(id), random))
 
 const officialMusicVariantMetadata = (variant: Minecraft26_2SoundVariantDefinition) => {
   if (typeof variant === 'string') {
@@ -91,30 +124,31 @@ const EXPECTED_FREE_MUSIC_EVENT_SIZES = {
 
 describe('free Minecraft music bank', () => {
   it('merges additions without replacing an existing sample source', () => {
-    const base = { shared: { kind: 'url', url: '/vanilla.ogg' } } as const
-    const additions = {
-      shared: { kind: 'url', url: '/generated.ogg' },
-      free: { kind: 'array-buffer', data: new ArrayBuffer(0) },
-    } as const
+    const base = new Map([
+      [AudioSampleId('shared'), { kind: 'url' as const, url: AudioSampleUrl('/vanilla.ogg') }],
+    ])
+    const additions = new Map([
+      [AudioSampleId('shared'), { kind: 'url' as const, url: AudioSampleUrl('/generated.ogg') }],
+      [AudioSampleId('free'), { kind: 'array-buffer' as const, data: new ArrayBuffer(0) }],
+    ])
 
-    expect(mergeAudioSampleManifests(base, additions)).toEqual({
-      shared: { kind: 'url', url: '/vanilla.ogg' },
-      free: { kind: 'array-buffer', data: new ArrayBuffer(0) },
-    })
+    const merged = mergeAudioSampleManifests(base, additions)
+    expect(merged.get(AudioSampleId('shared'))).toEqual(base.get(AudioSampleId('shared')))
+    expect(merged.get(AudioSampleId('free'))).toEqual(additions.get(AudioSampleId('free')))
   })
 
   it('generates deterministic PCM WAV samples with valid headers', () => {
-    const first = generateFreeMusicWav('minecraft:music/free_game', {
-      durationSecs: 0.01,
-      sampleRate: 8000,
+    const first = wav('minecraft:music/free_game', {
+      durationSecs: AudioDurationSecs(0.01),
+      sampleRate: AudioSampleRate(8000),
     })
-    const second = generateFreeMusicWav('minecraft:music/free_game', {
-      durationSecs: 0.01,
-      sampleRate: 8000,
+    const second = wav('minecraft:music/free_game', {
+      durationSecs: AudioDurationSecs(0.01),
+      sampleRate: AudioSampleRate(8000),
     })
-    const audible = generateFreeMusicWav('minecraft:music/free_game', {
-      durationSecs: 0.5,
-      sampleRate: 8000,
+    const audible = wav('minecraft:music/free_game', {
+      durationSecs: AudioDurationSecs(0.5),
+      sampleRate: AudioSampleRate(8000),
     })
     const view = new DataView(first)
 
@@ -128,92 +162,121 @@ describe('free Minecraft music bank', () => {
     expect(new Uint8Array(first)).toEqual(new Uint8Array(second))
   })
 
-  it('uses safe bounds for invalid generation options', () => {
-    const low = generateFreeMusicWav('minecraft:music/free_game', {
-      durationSecs: 0.001,
-      sampleRate: 1,
-    })
-    const high = generateFreeMusicWav('minecraft:music/free_game', {
-      durationSecs: 0.001,
-      sampleRate: 100000,
-    })
-    const fallback = generateFreeMusicWav('minecraft:music/free_game', {
-      durationSecs: 0.001,
-      sampleRate: Number.NaN,
-    })
-    const defaulted = generateFreeMusicWav('minecraft:music/free_game', {
-      durationSecs: 0,
-    })
-    const nonFiniteDuration = generateFreeMusicWav('minecraft:music/free_game', {
-      durationSecs: Number.NaN,
-    })
-    const omittedDuration = generateFreeMusicWav('minecraft:music/free_game', {
-      sampleRate: 8000,
-    })
+  it('clamps valid rates and rejects invalid generation options', () => {
+  const low = wav('minecraft:music/free_game', {
+    durationSecs: AudioDurationSecs(0.001),
+    sampleRate: AudioSampleRate(1),
+  })
+  const high = wav('minecraft:music/free_game', {
+    durationSecs: AudioDurationSecs(0.001),
+    sampleRate: AudioSampleRate(100000),
+  })
+  const malformedRate = generateFreeMusicWav(MinecraftSoundResourceId('minecraft:music/free_game'), {
+    durationSecs: AudioDurationSecs(0.001),
+    // @ts-expect-error Simulate an invalid sample rate from an untyped JavaScript caller.
+    sampleRate: Number.NaN,
+  })
+  const malformedDuration = generateFreeMusicWav(MinecraftSoundResourceId('minecraft:music/free_game'), {
+    // @ts-expect-error Simulate an invalid duration from an untyped JavaScript caller.
+    durationSecs: Number.NaN,
+  })
+  const zeroDuration = generateFreeMusicWav(
+    MinecraftSoundResourceId('minecraft:music/free_game'),
+    { durationSecs: AudioDurationSecs(0) },
+  )
+  const nullRate = generateFreeMusicWav(MinecraftSoundResourceId('minecraft:music/free_game'), {
+    // @ts-expect-error Explicit null is invalid and must not select the default rate.
+    sampleRate: null,
+  })
+  const nullDuration = generateFreeMusicWav(MinecraftSoundResourceId('minecraft:music/free_game'), {
+    // @ts-expect-error Explicit null is invalid and must not select the default duration.
+    durationSecs: null,
+  })
+  const omittedDuration = wav('minecraft:music/free_game', { sampleRate: AudioSampleRate(8000) })
 
-    expect(new DataView(low).getUint32(24, true)).toBe(8000)
-    expect(new DataView(high).getUint32(24, true)).toBe(48000)
-    expect(new DataView(fallback).getUint32(24, true)).toBe(22050)
-    expect(new DataView(defaulted).getUint32(24, true)).toBe(22050)
-    expect(defaulted.byteLength).toBe(44 + 8 * 22050 * 2)
-    expect(nonFiniteDuration.byteLength).toBe(44 + 8 * 22050 * 2)
-    expect(omittedDuration.byteLength).toBe(44 + 8 * 8000 * 2)
-    expect(() => generateFreeMusicWav('minecraft:music/unknown')).toThrow()
+  expect(Option.isNone(AudioSampleRate.option(Number.NaN))).toBe(true)
+  expect(Option.isNone(AudioDurationSecs.option(Number.NaN))).toBe(true)
+  expect(new DataView(low).getUint32(24, true)).toBe(8000)
+  expect(new DataView(high).getUint32(24, true)).toBe(48000)
+  expect(Result.isFailure(malformedRate)).toBe(true)
+  expect(Result.isFailure(malformedDuration)).toBe(true)
+  expect(Result.isFailure(zeroDuration)).toBe(true)
+  expect(Result.isFailure(nullRate)).toBe(true)
+  expect(Result.isFailure(nullDuration)).toBe(true)
+  expect(omittedDuration.byteLength).toBe(44 + 8 * 8000 * 2)
+  expect(Result.isFailure(generateFreeMusicWav(MinecraftSoundResourceId('minecraft:music/unknown')))).toBe(true)
+})
+
+  it('rejects a malformed resource id before track lookup', () => {
+    // @ts-expect-error Simulate an invalid resource ID from an untyped JavaScript caller.
+    const result = generateFreeMusicWav('')
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toMatchObject({ _tag: 'FreeMusicBankFailure', path: 'soundId' })
+    }
   })
 
   it('rejects synthesis durations that would create an unbounded wav allocation', () => {
-    expect(() =>
-      generateFreeMusicWav('minecraft:music/free_game', {
-        durationSecs: Number.MAX_VALUE,
-      }),
-    ).toThrow(RangeError)
+    const result = generateFreeMusicWav(MinecraftSoundResourceId('minecraft:music/free_game'), {
+      durationSecs: AudioDurationSecs(Number.MAX_VALUE),
+    })
+    expect(Result.isFailure(result)).toBe(true)
+  })
+
+  it('returns the duration failure when building a manifest would exceed its allocation limit', () => {
+    const result = createFreeMinecraftMusicManifest({ durationSecs: AudioDurationSecs(61) })
+
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toMatchObject({ _tag: 'FreeMusicBankFailure', path: 'durationSecs' })
+    }
   })
 
   it('exposes all generated tracks through a Minecraft-compatible pack', () => {
-    const manifest = createFreeMinecraftMusicManifest({ durationSecs: 0.01, sampleRate: 8000 })
+    const manifest = freeManifest({ durationSecs: AudioDurationSecs(0.01), sampleRate: AudioSampleRate(8000) })
     const registry = createFreeMinecraftMusicRegistry()
-    const pack = createFreeMinecraftMusicPack({ durationSecs: 0.01, sampleRate: 8000 })
+    const pack = freePack({ durationSecs: AudioDurationSecs(0.01), sampleRate: AudioSampleRate(8000) })
+    const events = registryRecord(registry)
     const eventIds = Object.keys(EXPECTED_FREE_MUSIC_EVENT_SIZES)
 
-    expect(Object.keys(manifest)).toEqual(
-      FREE_MINECRAFT_MUSIC_TRACKS.map((track) => track.soundId),
-    )
-    expect(Object.keys(registry.events)).toEqual(eventIds)
-    expect(Object.keys(registry.events)).toHaveLength(56)
-    expect(Object.values(registry.events).every((event) => event.replace === false)).toBe(true)
+    expect([...manifest.keys()]).toEqual(FREE_MINECRAFT_MUSIC_TRACKS.map((track) => AudioSampleId(track.soundId)))
+    expect(Object.keys(events)).toEqual(eventIds)
+    expect(Object.keys(events)).toHaveLength(56)
+    expect(Object.values(events).every((event) => event.replace === false)).toBe(true)
     expect(pack.manifest).toEqual(manifest)
     expect(pack.registry).toEqual(registry)
 
     for (const [eventId, expectedSize] of Object.entries(EXPECTED_FREE_MUSIC_EVENT_SIZES)) {
-      expect(registry.events[eventId]?.sounds).toHaveLength(expectedSize)
+      expect(events[eventId]?.sounds).toHaveLength(expectedSize)
     }
 
     for (const track of FREE_MINECRAFT_MUSIC_TRACKS) {
-      expect(registry.events[track.eventId]?.sounds.some((sound) => sound.name === track.soundId)).toBe(true)
-      expect(manifest[track.soundId]?.kind).toBe('array-buffer')
-      expect(manifest[track.soundId]?.stream).toBe(true)
+      expect(events[track.eventId]?.sounds.some((sound) => sound.name === track.soundId)).toBe(true)
+      expect(manifest.get(AudioSampleId(track.soundId))?.kind).toBe('array-buffer')
+      expect(manifest.get(AudioSampleId(track.soundId))?.stream).toBe(true)
     }
 
-    expect(resolveMinecraftSound(registry, 'minecraft:music.free_game', 0).soundId).toBe(
+    expect(resolveSound(registry, 'minecraft:music.free_game', 0).soundId).toBe(
       'minecraft:music/free_game',
     )
-    expect(resolveMinecraftSound(registry, 'minecraft:music.game', 0).soundId).toBe(
+    expect(resolveSound(registry, 'minecraft:music.game', 0).soundId).toBe(
       'minecraft:music/free_game',
     )
-    expect(resolveMinecraftSound(registry, 'minecraft:music.game', 0.99).soundId).toBe(
+    expect(resolveSound(registry, 'minecraft:music.game', 0.99).soundId).toBe(
       'minecraft:music/free_game',
     )
-    expect(resolveMinecraftSound(registry, 'minecraft:music.free_sulfur_caves', 0).soundId).toBe(
+    expect(resolveSound(registry, 'minecraft:music.free_sulfur_caves', 0).soundId).toBe(
       'minecraft:music/free_sulfur_caves',
     )
-    expect(resolveMinecraftSound(registry, 'minecraft:music.overworld.swamp', 0).soundId).toBe(
+    expect(resolveSound(registry, 'minecraft:music.overworld.swamp', 0).soundId).toBe(
       'minecraft:music/game/ebb',
     )
-    expect(resolveMinecraftSound(registry, 'minecraft:music_disc.bounce').soundId).toBe(
+    expect(resolveSound(registry, 'minecraft:music_disc.bounce').soundId).toBe(
       'minecraft:records/bounce',
     )
-    expect(resolveMinecraftSound(registry, 'minecraft:music.under_water').volume).toBe(0.4)
-    const gameSounds = registry.events['minecraft:music.game']?.sounds
+    expect(resolveSound(registry, 'minecraft:music.under_water').volume).toBe(0.4)
+    const gameSounds = events['minecraft:music.game']?.sounds
     expect(gameSounds?.[7]).toMatchObject({
       name: 'minecraft:music/game/ebb',
       stream: true,
@@ -249,25 +312,25 @@ describe('free Minecraft music bank', () => {
       volume: 0.4,
       weight: 2,
     })
-    expect(registry.events['minecraft:music.creative']?.sounds[0]).toMatchObject({
+    expect(events['minecraft:music.creative']?.sounds[0]).toMatchObject({
       name: 'minecraft:music.game',
       stream: false,
       type: 'event',
       volume: 1,
       weight: 1,
     })
-    expect(registry.events['minecraft:music.under_water']?.sounds.every((sound) => (
+    expect(events['minecraft:music.under_water']?.sounds.every((sound) => (
       sound.name === 'minecraft:music/free_underwater'
       && sound.volume === 0.4
       && sound.weight === 1
     ))).toBe(true)
-    expect(Object.keys(registry.events)
+    expect(Object.keys(events)
       .filter((eventId) => eventId.startsWith('minecraft:music_disc.'))
-      .every((eventId) => registry.events[eventId]?.sounds[0]?.name === 'minecraft:records/bounce'))
+      .every((eventId) => events[eventId]?.sounds[0]?.name === 'minecraft:records/bounce'))
       .toBe(true)
 
     for (const [eventId, expectedSize] of Object.entries(EXPECTED_FREE_MUSIC_EVENT_SIZES)) {
-      const event = registry.events[eventId]
+      const event = events[eventId]
       expect(event?.sounds).toHaveLength(expectedSize)
       expect(event?.sounds.every((sound) => (
         sound.attenuationDistance === 16
@@ -277,20 +340,21 @@ describe('free Minecraft music bank', () => {
       ))).toBe(true)
       for (const sound of event?.sounds ?? []) {
         if (sound.type === 'sound') {
-          expect(manifest[sound.name]?.kind).toBe('array-buffer')
+          expect(manifest.get(AudioSampleId(sound.name))?.kind).toBe('array-buffer')
         }
       }
     }
 
-    expect(Object.values(registry.events).every((event) => event.replace === false)).toBe(true)
-    const base = parseMinecraftSoundsJson({
+    expect(Object.values(events).every((event) => event.replace === false)).toBe(true)
+    const base = success(parseMinecraftSoundsJson({
       'music.game': { sounds: ['music/game/vanilla'] },
-    }, { namespace: 'minecraft' })
+    }, { namespace: MinecraftSoundNamespace('minecraft') }))
     const merged = mergeMinecraftSoundRegistries(base, registry)
-    expect(merged.events['minecraft:music.game']?.replace).toBe(false)
-    expect(merged.events['minecraft:music.game']?.sounds).toHaveLength(33)
-    expect(merged.events['minecraft:music.game']?.sounds[0]?.name).toBe('minecraft:music/game/vanilla')
-    expect(merged.events['minecraft:music.game']?.sounds.some((sound) => (
+    const mergedEvents = registryRecord(merged)
+    expect(mergedEvents['minecraft:music.game']?.replace).toBe(false)
+    expect(mergedEvents['minecraft:music.game']?.sounds).toHaveLength(33)
+    expect(mergedEvents['minecraft:music.game']?.sounds[0]?.name).toBe('minecraft:music/game/vanilla')
+    expect(mergedEvents['minecraft:music.game']?.sounds.some((sound) => (
       sound.name === 'minecraft:music/game/shores'
       && sound.volume === 0.4
       && sound.weight === 2
@@ -299,16 +363,17 @@ describe('free Minecraft music bank', () => {
 
   it('preserves official music event topology and selection metadata', () => {
     const registry = createFreeMinecraftMusicRegistry()
+    const events = registryRecord(registry)
     const officialMusicEvents = Object.entries(MINECRAFT_26_2_SOUNDS_JSON)
       .filter(([eventId]) => eventId.startsWith('music.') || eventId.startsWith('music_disc.'))
     const officialEventIds = officialMusicEvents.map(([eventId]) => `minecraft:${eventId}`)
 
-    expect(Object.keys(registry.events).filter((eventId) => officialEventIds.includes(eventId))).toEqual(
+    expect(Object.keys(events).filter((eventId) => officialEventIds.includes(eventId))).toEqual(
       officialEventIds,
     )
 
     for (const [eventId, definition] of officialMusicEvents) {
-      const actualVariants = registry.events[`minecraft:${eventId}`]?.sounds ?? []
+      const actualVariants = events[`minecraft:${eventId}`]?.sounds ?? []
       expect(actualVariants).toHaveLength(definition.sounds.length)
       expect(actualVariants.map(({ type, volume, weight, stream }) => ({ type, volume, weight, stream }))).toEqual(
         definition.sounds.map(officialMusicVariantMetadata),
@@ -318,17 +383,17 @@ describe('free Minecraft music bank', () => {
 
   it('plays a generated track through the concrete WebAudio backend', async () => {
     const fake = makeFakeWebAudio({ decodedDurationSecs: 0.2 })
-    const pack = createFreeMinecraftMusicPack({ durationSecs: 0.01, sampleRate: 8000 })
+    const generatedPack = freePack({ durationSecs: AudioDurationSecs(0.01), sampleRate: AudioSampleRate(8000) })
     const audio = await Effect.runPromise(makeWebAudioBackend({
       global: fake.global,
-      sampleManifest: pack.manifest,
+      sampleManifest: generatedPack.manifest,
     }))
 
     await Effect.runPromise(audio.unlock)
     await Effect.runPromise(audio.playMusic({
-      gain: 1,
-      playbackRate: 1,
-      soundId: 'minecraft:music/free_game',
+      gain: AudioGain(1),
+      playbackRate: AudioPlaybackRate(1),
+      soundId: MinecraftSoundResourceId('minecraft:music/free_game'),
       stream: true,
     }))
 

@@ -1,10 +1,9 @@
 # 公開 API
 
-plan.md §3.6 の要求を出発点に、現行 package の `src/index.ts` と `src/domain/*` の公開契約を
-**参照実装の移植根拠と突き合わせて**確定させたもの。`packages/game/*` などのパスは移植元の
-根拠であり、現行 package の実装パスではない。
+現行 package の `src/index.ts` と `src/domain/*` が公開する契約を記録する。参照実装との対応も
+併記する。`packages/game/*` などのパスは移植元の根拠であり、現行 package の実装パスではない。
 
-## 0. plan.md が要求している API
+## 0. 公開 API の概要
 
 > **主要な公開 API**: `SoundCuePort`（`play(cueId, options)` を持つ service の依存注入タグ）、字幕イベントの `CaptionStream`、
 > 音量カテゴリ（master/sfx/music）、Minecraft `sounds.json` レジストリ、WebAudio アダプタ
@@ -14,31 +13,28 @@ plan.md §3.6 の要求を出発点に、現行 package の `src/index.ts` と `
 ## 1. キューレジストリ
 
 ```typescript
-export const SOUND_CUE_IDS: readonly ['blockBreak', 'blockPlace', 'playerHurt', ...]
+export const SOUND_CUE_IDS: readonly SoundCueId[]
 export type SoundCueId = (typeof SOUND_CUE_IDS)[number]
-export const isSoundCueId: (value: string) => value is SoundCueId
+export const SoundCueId: Brand.Constructor<SoundCueId>
+export const isSoundCueId: (value: unknown) => value is SoundCueId
 
 export type CueDefinition = {
-  readonly baseGain: number
-  readonly caption: string | null
+  readonly frequency: AudioFrequencyHz
+  readonly durationSecs: AudioDurationSecs
+  readonly wave: 'sine' | 'square' | 'sawtooth' | 'triangle'
+  readonly baseGain: AudioGain
+  readonly caption: AudioCaptionText | null
   readonly spatial: boolean
 }
-export const CUE_DEFINITIONS: Record<SoundCueId, CueDefinition>
+export const CUE_DEFINITIONS: Readonly<Record<RawSoundCueId, CueDefinition>>
 export const cueDefinition: (cueId: SoundCueId) => CueDefinition
 ```
 
-`src/domain/cue.ts`。**リテラル型のユニオン**であって opaque な id ではない。
-キューを追加したら、全ての `switch` がコンパイルエラーになってほしいからである。
-
-参照実装も同じ判断をしており、ユニオンとテーブルの対応を 1 行で強制していた
-（`packages/game/application/sound-manager.types.ts:31`）:
-
-```typescript
-SOUND_LIBRARY satisfies Record<SoundEffect, unknown>
-```
-
-mc-audio では `CUE_DEFINITIONS` を `Record<SoundCueId, CueDefinition>` と宣言することで
-**両方向**に強制している（定義漏れも余りも型エラー）。
+`SoundCueId` is a branded string derived from the literal cue roster. Its
+constructor rejects values outside that roster. `RawSoundCueId` is the
+registry's private union of those string literals. `CUE_DEFINITIONS` is
+exhaustive over that union, but its object keys are unbranded strings. Use
+`cueDefinition` to look up an entry with a `SoundCueId`.
 
 ### 現在のロスター
 
@@ -61,30 +57,30 @@ mc-audio も 17 個のキューを公開している。キューを発火する 
 ```typescript
 export const VOLUME_CATEGORIES: readonly ['master', 'sfx', 'music']
 export type VolumeCategory = (typeof VOLUME_CATEGORIES)[number]
-export type VolumeSettings = { readonly [C in VolumeCategory]: number }
+export type VolumeSettings = { readonly [C in VolumeCategory]: AudioVolume }
 export const DEFAULT_VOLUME_SETTINGS: VolumeSettings   // { master: 0.8, sfx: 1, music: 0.55 }
 
-export const clamp01: (value: number) => number
-export const clampNonNegative: (value: number) => number
-export const clampPan: (value: number) => number
-export const SPATIAL_DISTANCE_SCALE = 12
+export const clamp01: (value: unknown) => AudioVolume
+export const clampNonNegative: (value: unknown) => AudioGain
+export const clampPan: (value: unknown) => AudioPan
+export const SPATIAL_DISTANCE_SCALE: AudioDistance
 export const spatialise: (listener: Position, source: Position, options?: SpatialisationOptions) => Spatialisation
 export const minecraftSpatialise: (listener: Position, source: Position, options?: SpatialisationOptions) => Spatialisation
 export const NO_SPATIALISATION: Spatialisation
 
 export const effectiveSfxGain: (input: {
-  readonly baseGain: number
-  readonly sfxVolume: number
-  readonly spatialGain: number
-  readonly gainScale?: number
-}) => number
+  readonly baseGain: AudioGain
+  readonly sfxVolume: AudioVolume
+  readonly spatialGain: AudioVolume
+  readonly gainScale?: AudioGain
+}) => AudioGain
 
 export const effectiveMusicGain: (input: {
-  readonly baseGain: number
-  readonly musicVolume: number
-}) => number
+  readonly baseGain: AudioGain
+  readonly musicVolume: AudioVolume
+}) => AudioGain
 
-export const masterNodeGain: (settings: VolumeSettings) => number
+export const masterNodeGain: (settings: VolumeSettings) => AudioVolume
 ```
 
 `src/domain/volume.ts`。**`master` はどの per-cue 計算にも入っていない。**
@@ -148,25 +144,25 @@ export const AUDIO_AVAILABILITIES: readonly ['unavailable', 'locked', 'ready']
 export type AudioAvailability = (typeof AUDIO_AVAILABILITIES)[number]
 
 export type ToneRequest = {
-  readonly soundId?: string
-  readonly playbackRate?: number
-  readonly frequency: number
+  readonly soundId?: AudioSampleId | MinecraftSoundResourceId | SoundCueId
+  readonly playbackRate?: AudioPlaybackRate
+  readonly frequency: AudioFrequencyHz
   readonly wave?: 'sine' | 'square' | 'sawtooth' | 'triangle'
-  readonly durationSecs: number
-  readonly gain: number
-  readonly pan: number
+  readonly durationSecs: AudioDurationSecs
+  readonly gain: AudioGain
+  readonly pan: AudioPan
   readonly loop: boolean
   readonly stream?: boolean
   readonly naturalDuration?: boolean
   readonly sampleOnly?: boolean
 }
 export type MusicRequest = {
-  readonly soundId: string
-  readonly gain: number
-  readonly playbackRate: number
+  readonly soundId: MinecraftSoundResourceId
+  readonly gain: AudioGain
+  readonly playbackRate: AudioPlaybackRate
   readonly stream: boolean
 }
-export type ToneHandle = { readonly id: number }
+export type ToneHandle = { readonly id: AudioHandleId }
 export type TonePlayback = ToneHandle & { readonly accepted: boolean }
 
 export type AudioBackend = {
@@ -174,12 +170,14 @@ export type AudioBackend = {
   readonly playTone: (request: ToneRequest) => Effect.Effect<TonePlayback>
   readonly playMusic: (request: MusicRequest) => Effect.Effect<TonePlayback>
   readonly stopTone: (handle: ToneHandle) => Effect.Effect<void>
-  readonly setToneGain: (handle: ToneHandle, gain: number) => Effect.Effect<void>
+  readonly setToneGain: (handle: ToneHandle, gain: AudioGain) => Effect.Effect<void>
   readonly isToneActive: (handle: ToneHandle) => Effect.Effect<boolean>
-  readonly setMasterGain: (gain: number) => Effect.Effect<void>
+  readonly setMasterGain: (gain: AudioVolume) => Effect.Effect<void>
 }
 
-export class AudioBackendPort extends Context.Tag('@nerima-games/mc-audio/AudioBackendPort')<...>() {}
+export class AudioBackendPort extends Context.Service<AudioBackendPort, AudioBackend>()(
+  '@nerima-games/mc-audio/AudioBackendPort',
+) {}
 
 export const makeRecordingBackend: (availability: AudioAvailability) => Effect.Effect<RecordedBackend>
 export const UnavailableBackendLayer: Layer.Layer<AudioBackendPort>
@@ -190,45 +188,17 @@ export const UnavailableBackendLayer: Layer.Layer<AudioBackendPort>
 
 ### `availability` が値であることが要点
 
-参照実装には音が鳴らない理由が 3 つあり、**どれも区別できなかった**:
-
-| # | 理由 | 場所 |
-| --- | --- | --- |
-| 1 | 設定ゲート（`audioEnabled === false`） | `sound-manager-playback.ts:19-21` |
-| 2 | `AudioContext` がそもそも無い | `audio-engine.ts:42-44` |
-| 3 | ブラウザの自動再生ポリシー | `audio-engine.ts:46-49` |
-
-3 番目が特に問題である。参照実装のコードは:
-
-```typescript
-yield* Effect.tryPromise({
-  try: () => context.resume(),
-  catch: () => new Error('AudioContext resume failed'),
-}).pipe(Effect.catchAllCause(() => Effect.void))
-```
-
-`resume()` の拒否（ユーザジェスチャが無いのでブラウザが拒む）を
-`Effect.void` に飲み込み、そのままオシレータノードを組み立てる。
-音は永久に鳴らないが、上位からは観測できない。
-
-**ユーザジェスチャによるアンロック機構、`unlocked` フラグ、保留キューは
-参照実装全体に存在しない**。mc-audio では `locked` を公開状態として扱う。
-
-`locked` という状態に名前を付けることで、字幕が `gate-blocked` と自己申告でき、
-UI が「クリックして音を有効化」と出せるようになる。
+`AudioAvailability` is one of `unavailable`, `locked`, or `ready`. `locked` means a
+backend exists but needs a user gesture before playback; `unavailable` means no
+backend is available. A host can use `locked` to offer an unlock action.
 
 ### 再生受理とハンドルは別の値
-
-参照実装は `playTone` の id を**コンテキストゲートより前**に採番していた
-（`audio-engine.ts:40` で採番、`:42` でゲート）。
-つまりオーディオが無くても id は単調に増える。
 
 **「ハンドルが返ってきた＝音が鳴った」と判断してはならない。**
 mc-audio は `TonePlayback.accepted` を再生要求の受理結果として公開する。
 `false` のときはノードや音源が再生可能な状態になっておらず、`id` は診断用の
-単調増加値にすぎない。上位プレイヤーも `accepted === true` のときだけ
-`played` や字幕の audible 判定に進む。`availability` は、再生を要求する前に
-`locked` や `unavailable` を設定ゲートとして区別するために引き続き使う。
+単調増加値にすぎない。`availability` は、再生を要求する前に `locked` や
+`unavailable` を設定ゲートとして区別するために使う。
 
 ---
 
@@ -239,51 +209,41 @@ export const CAPTION_REASONS: readonly ['audible', 'muted', 'gate-blocked', 'una
 export type CaptionReason = (typeof CAPTION_REASONS)[number]
 
 export type CaptionEvent = {
-  readonly cueId: SoundCueId
-  readonly text: string
-  readonly atSecs: number      // monotonic。壁時計でも performance.now() でもない
+  readonly cueId: SoundCueId | MinecraftSoundEventId
+  readonly text: AudioCaptionText
+  readonly atSecs: MonotonicTimeSecs      // monotonic。壁時計でも performance.now() でもない
   readonly reason: CaptionReason
-  readonly pan?: number        // 空間キューのみ
+  readonly pan?: AudioPan        // 空間キューのみ
 }
 
 export type CaptionSink = { readonly emit: (event: CaptionEvent) => Effect.Effect<void> }
-export class CaptionStream extends Context.Tag('@nerima-games/mc-audio/CaptionStream')<...>() {}
+export class CaptionStream extends Context.Service<CaptionStream, CaptionSink>()(
+  '@nerima-games/mc-audio/CaptionStream',
+) {}
 
-export const CAPTION_DISPLAY_SECS = 2.5
+export const CAPTION_LIFETIME_SECS: AudioDurationSecs  // 2.5
+export const CAPTION_DISPLAY_SECS: typeof CAPTION_LIFETIME_SECS  // compatibility alias
 export const MAX_VISIBLE_CAPTIONS = 5
-export const visibleCaptions: (events: ReadonlyArray<CaptionEvent>, nowSecs: number)
+export const visibleCaptions: (events: ReadonlyArray<CaptionEvent>, nowSecs: MonotonicTimeSecs)
   => ReadonlyArray<CaptionEvent>
+
+export type CaptionSettings = { readonly captionsEnabled: boolean; readonly audioUnlocked: boolean }
+export type CaptionQueue = { readonly visible: ReadonlyArray<CaptionEvent> }
+export const emptyCaptionQueue: CaptionQueue
+export const receiveCaption: (queue: CaptionQueue, event: CaptionEvent, settings: CaptionSettings) => CaptionQueue
+export const applyCaptionSettings: (queue: CaptionQueue, settings: CaptionSettings) => CaptionQueue
+export const expireCaptions: (queue: CaptionQueue, nowSecs: MonotonicTimeSecs, lifetimeSecs?: AudioDurationSecs) => CaptionQueue
 ```
 
 `src/domain/caption.ts`。
 
-### 参照実装との差
-
-参照実装の `SoundCaptionPort`（`packages/game/application/sound-caption-port.ts:8-15`）:
-
-```typescript
-export type SoundCaptionPortShape = {
-  readonly announce: (effect: SoundEffect) => Effect.Effect<void, never>
-}
-```
-
-**イベントは素のキュー ID だけ**である。タイムスタンプも位置も音量も無い。
-
-その結果、字幕消費に必要なロジックが全部 DOM コードに入った
-（`packages/presentation/hud/sound-captions.ts`）:
-
-| ロジック | 場所 | 問題 |
-| --- | --- | --- |
-| ラベルによる重複排除 | `:66-70` | モジュールレベルの mutable `Map`（`:34`） |
-| 5 行の上限 | `:72-76` | 同上 |
-| 2500ms の期限切れ | `:6`, `:82` | 生の `setTimeout`。テストに fake timer が要る |
-| 有効/無効 | `:33`, `:44` | モジュールレベルの `let captionsEnabled` |
-
-DOM 無しの consumer（字幕エクスポータ、スクリーンリーダーブリッジ）は何も再利用できない。
-
-`atSecs` を付けたことで期限切れと重複排除が**イベント列の純関数**になり、
-`visibleCaptions` として DOM の外に出た。
-DOM 側は描画だけをする。
+`receiveCaption` and `applyCaptionSettings` use `captionsEnabled` to decide whether
+captions are shown; `audioUnlocked` does not suppress them. Sound players set
+`CaptionEvent.reason` from the enabled setting and backend availability:
+`muted`, `gate-blocked`, and `unavailable` describe those conditions, while
+`audible` means the backend was `ready` when the event was emitted. The caption
+is emitted before the playback request, so `audible` is not confirmation that a
+sound was accepted by the backend.
 
 ### `reason` があること自体が契約
 
@@ -314,12 +274,13 @@ export const planCue: (cueId: SoundCueId, context: CueContext, options?: CuePlay
 export type SoundCueService = {
   readonly play: (cueId: SoundCueId, options?: CuePlayOptions) => Effect.Effect<void>
 }
-export class SoundCuePort extends Context.Tag('@nerima-games/mc-audio/SoundCuePort')<...>() {}
+export class SoundCuePort extends Context.Service<SoundCuePort, SoundCueService>()(
+  '@nerima-games/mc-audio/SoundCuePort',
+) {}
 
 export const makeSoundCueService: (input: {
   readonly context: Effect.Effect<CueContext>
-  readonly nowSecs: Effect.Effect<number>
-}) => Effect.Effect<SoundCueService, never, AudioBackendPort | CaptionStream>
+}) => Effect.Effect<SoundCueService, never, AudioBackendPort | CaptionStream | ClockPort>
 ```
 
 `src/domain/engine.ts`。
@@ -331,13 +292,11 @@ export const makeSoundCueService: (input: {
 参照実装にも純粋なプランナはあったが（`sound-manager-playback.ts:11-18`）、
 **字幕はその外側**にあった。だから両者の関係は文の順序だけで表現されていた。
 
-### `nowSecs` が引数である理由
+### Caption timestamps
 
-低レベルの `makeSoundCueService` は純粋な依存注入を保つため、時計を
-`Effect<number>` として受け取る。高レベルの `makeMinecraftSoundPlayer` は
-mc-kernel の `ClockPort.monotonicSecs` を直接利用してこの依存を配線する。
-いずれも monotonic 秒であり、壁時計でも `performance.now()` でもない
-（`performance.now()` は `pnpm check:deps` が禁止している）。
+`makeSoundCueService` reads `ClockPort` from its Effect environment when it emits a
+caption. `makeMinecraftSoundPlayer` also requires `ClockPort` in its environment.
+Caption times are monotonic seconds, never wall-clock time or `performance.now()`.
 
 ---
 
@@ -348,12 +307,17 @@ Minecraft のデータ駆動 BGM は次の公開 API で扱う。
 ```typescript
 export const makeMinecraftMusicPlayer: (
   registry: MinecraftSoundRegistry,
-  randomSource: () => number,
+  randomSource: () => unknown,
 ) => Effect.Effect<MinecraftMusicPlayer, never, AudioBackendPort>
+
+export type MinecraftMusicPlayer = {
+  readonly tick: (input: MinecraftMusicTickInput) => Effect.Effect<MinecraftMusicTickResult, MinecraftMusicPlaybackError>
+  readonly stop: Effect.Effect<void>
+}
 
 export const makeMinecraftSoundPlayer: (
   registry: MinecraftSoundRegistry,
-  randomSource: () => number,
+  randomSource: () => unknown,
 ) => Effect.Effect<
   MinecraftSoundPlayer,
   never,
@@ -367,13 +331,15 @@ export const makeMinecraftSoundPlayer: (
 ```typescript
 export const MUSIC_ENVIRONMENTS: readonly ['day', 'night', 'cave']
 export type MusicEnvironment = (typeof MUSIC_ENVIRONMENTS)[number]
-export const DEFAULT_CAVE_THRESHOLD_Y = 40
+export type MusicTrack = { readonly baseGain: AudioGain; readonly frequency: AudioFrequencyHz }
+export const DEFAULT_CAVE_THRESHOLD_Y: PositionAxis
 
-export const resolveMusicEnvironment: (context: {
-  readonly playerY: number
+export type MusicEnvironmentContext = {
+  readonly playerPosition: Position
   readonly isNight: boolean
-  readonly caveThresholdY?: number
-}) => MusicEnvironment
+  readonly caveThresholdY?: PositionAxis
+}
+export const resolveMusicEnvironment: (context: MusicEnvironmentContext) => MusicEnvironment
 
 export type MusicPlan = {
   readonly shouldStopActiveTrack: boolean
@@ -385,8 +351,8 @@ export const resolveMusicPlan: (input: {
   readonly desired: MusicEnvironment
 }) => MusicPlan
 
-export const MUSIC_TRACKS: Record<MusicEnvironment, MusicTrack>
-export const musicTrackGain: (environment: MusicEnvironment, musicVolume: number) => number
+export const MUSIC_TRACKS: Readonly<Record<MusicEnvironment, MusicTrack>>
+export const musicTrackGain: (environment: MusicEnvironment, musicVolume: AudioVolume) => AudioGain
 ```
 
 `src/domain/music.ts`。参照実装の構造をそのまま移植した
@@ -419,43 +385,64 @@ mc-worldgen の `SEA_LEVEL = 63` より下なので、浜辺に立っている�
 
 ### トラック定義
 
-`music-manager.config.ts:9-13` より:
-day 174.61Hz sine gain 0.28 / night 130.81Hz triangle 0.24 / cave 98.0Hz sawtooth 0.2。
-
-参照実装は `durationMs: 2000` かつ `loop: true` で再生していたが、
-エンジンは `loop` が真なら `oscillator.stop(...)` を呼ばないので
-（`audio-engine.ts:103-105`）、BGM の `durationMs` は**無効**である。
+The current `MusicTrack` contract exposes only `baseGain` and `frequency`; it has
+no waveform field. The tracks are day 174.61 Hz / 0.28 gain, night 130.81 Hz /
+0.24 gain, and cave 98 Hz / 0.2 gain.
 
 ### Java `ambient_sounds`
 
 ```typescript
 export type MinecraftAmbientSoundsDefinition = {
-  readonly loop?: string
-  readonly mood?: MinecraftAmbientMood
-  readonly additions?: readonly MinecraftAmbientAddition[]
+  readonly loop?: unknown
+  readonly mood?: unknown
+  readonly additions?: unknown
+}
+export type MinecraftAmbientMood = {
+  readonly sound: MinecraftSoundEventId
+  readonly tick_delay: AudioDelayTicks
+  readonly block_search_extent: AudioCount
+  readonly offset: AudioOffset
+}
+export type MinecraftAmbientAddition = {
+  readonly sound: MinecraftSoundEventId
+  readonly tick_chance: AudioVolume
+}
+export type NormalizedMinecraftAmbientSoundsDefinition = {
+  readonly loop: MinecraftSoundEventId | null
+  readonly mood: MinecraftAmbientMood | null
+  readonly additions: readonly MinecraftAmbientAddition[]
 }
 export type MinecraftAmbientMoodResolution = {
-  readonly delayTicks: number
+  readonly delayTicks: AudioDelayTicks
   readonly position: Position | null
 }
-export type MinecraftAmbientMoodResolver = (input: {
+export type MinecraftAmbientMoodResolverInput = {
   readonly cameraPosition: Position
   readonly mood: MinecraftAmbientMood
-  readonly randomSource: () => number
-  readonly tick: number
-}) => MinecraftAmbientMoodResolution | null
+  readonly randomSource: () => unknown
+  readonly tick: AudioTick
+}
+export type MinecraftAmbientMoodResolver = (
+  input: MinecraftAmbientMoodResolverInput,
+) => MinecraftAmbientMoodResolution | null
 export type MinecraftAmbientSoundsPlannerInput = {
   readonly cameraPosition: Position
   readonly definition?: MinecraftAmbientSoundsDefinition | null
+  readonly moodPosition: Position | null
   readonly moodResolver?: MinecraftAmbientMoodResolver
-  readonly randomSource: () => number
+  readonly randomSource: () => unknown
   readonly state: MinecraftAmbientSoundsState
-  readonly tick: number
+  readonly tick: AudioTick
 }
 
+export type MinecraftAmbientSoundsFailure = {
+  readonly _tag: 'MinecraftAmbientSoundsFailure'
+  readonly path: AudioDiagnosticPath
+  readonly message: AudioDiagnosticMessage
+}
 export const normalizeMinecraftAmbientSoundsDefinition: (
-  definition?: MinecraftAmbientSoundsDefinition | null,
-) => NormalizedMinecraftAmbientSoundsDefinition
+  definition?: unknown,
+) => Result.Result<NormalizedMinecraftAmbientSoundsDefinition, MinecraftAmbientSoundsFailure>
 export const initialMinecraftAmbientSoundsState: () => MinecraftAmbientSoundsState
 export const planMinecraftAmbientSounds: (
   input: MinecraftAmbientSoundsPlannerInput,
@@ -463,8 +450,13 @@ export const planMinecraftAmbientSounds: (
 
 export const makeMinecraftAmbientSoundsPlayer: (
   registry: MinecraftSoundRegistry,
-  randomSource: () => number,
+  randomSource: () => unknown,
 ) => Effect.Effect<MinecraftAmbientSoundsPlayer, never, AudioBackendPort>
+
+export type MinecraftAmbientSoundsPlayer = {
+  readonly tick: (options: MinecraftAmbientSoundsTickOptions) => Effect.Effect<MinecraftAmbientSoundsPlayback, MinecraftAmbientSoundsPlaybackError>
+  readonly stop: Effect.Effect<void>
+}
 ```
 
 `loop`、`mood.sound`、`mood.tick_delay`、`mood.block_search_extent`、`mood.offset`、
@@ -489,14 +481,16 @@ export type WebAudioGlobalSurface = {
 }
 export type WebAudioOptions = {
   readonly global: WebAudioGlobalSurface
-  readonly initialMasterGain?: number
-  readonly maxConcurrentTones?: number  // default: 32
-  readonly resolveAudioBuffer?: (soundId: string) => AudioBufferSurface | null
+  readonly initialMasterGain?: AudioVolume
+  readonly maxConcurrentTones?: AudioCount  // default: 32
+  readonly resolveAudioBuffer?: (soundId: NonNullable<ToneRequest['soundId']>) => AudioBufferSurface | null
   readonly sampleManifest?: AudioSampleManifest
-  readonly loadSampleData?: (url: string) => Promise<ArrayBuffer>
+  readonly loadSampleData?: (url: AudioSampleUrl) => PromiseLike<ArrayBuffer>
+  readonly createStreamSource?: (options: WebAudioStreamSourceOptions) => AudioScheduledSourceSurface | null
+  readonly preloadStream?: (soundId: AudioSampleId, source: AudioSampleSource) => Effect.Effect<boolean, unknown>
 }
 export type WebAudioBackend = AudioBackend & {
-  readonly preloadSamples: (sampleIds?: ReadonlyArray<string>) => Effect.Effect<AudioSampleLoadReport>
+  readonly preloadSamples: (sampleIds?: ReadonlyArray<AudioSampleId>) => Effect.Effect<AudioSampleLoadReport>
   readonly unlock: Effect.Effect<AudioAvailability>   // ユーザジェスチャから呼ぶ
   readonly report: Effect.Effect<WebAudioReport>
   readonly setMuted: (muted: boolean) => Effect.Effect<void>
@@ -512,15 +506,17 @@ export const DEFAULT_TONE_WAVE: OscillatorWave
 
 ### `lib: ["DOM"]` は**必要にならなかった**
 
-この節の以前の版は「`lib: ["DOM"]` が必要になるため入れていない」と書いていた。
-実際には要らなかった。`src/domain/webaudio-surface.ts` が
+`src/domain/webaudio-surface.ts` が
 アダプタが使うメンバだけを構造的に記述し、
 `test/webaudio-surface.test.ts` が fixture を**本物の `lib.dom.d.ts`** に対して
 コンパイルして「実 `AudioContext` がキャスト無しで満たす」ことを証明している。
 
-構造的に書けなかったのは `AudioNode.connect` **1 つだけ**で、
-その理由（反変にすると `AudioNode` 全体を記述する羽目になる）と
-メソッド構文の双変性が何を失うかは同ファイルのヘッダに書いてある。
+Values on the browser surface, including `currentTime`, buffer `duration`, and
+`AudioParam.value`, use `unknown`; WebAudio method arguments do as well. The
+adapter validates `currentTime` and buffer duration before converting them to
+`AudioDurationSecs`, then writes domain branded numbers to `AudioParam`.
+`pnpm typecheck` compiles fixtures that assign real DOM objects to these
+interfaces without casts.
 
 ### `globalThis` を引数で受け取る
 
@@ -540,36 +536,12 @@ feature detection はアダプタの責務だが、**どこを見るか**は呼�
 **この Layer 経由だけで配線した consumer は context をアンロックできない**（永久に `locked`）。
 
 これは実在する落とし穴で、隠さずに置いてある。
-`AudioBackendPort` に `unlock` を足すと、下流の全リポジトリの全 fake が
-「自動再生ポリシーを持っているふり」を実装させられる。
-音を出したいホストは `makeWebAudioBackend` を 1 回呼んで値を保持し、
-`unlock` を最初のクリックハンドラに渡し、残りを Layer として提供する。
+Adding `unlock` to `AudioBackendPort` would require every downstream fake to
+implement a browser-specific operation. A host that needs audio should call
+`makeWebAudioBackend` once, then build `Layer.succeed(AudioBackendPort, backend)`
+from that same value. Run `backend.unlock` from the user gesture, and do not
+create a separate `webAudioBackendLayer(options)`.
 配線は mc-compose の仕事である（`docs/porting.md` §4）。
-
-### 参照実装から移植した内容
-
-参照実装の `AudioContext` 生成（`packages/game/infrastructure/audio-context-helpers.ts:3-24`）:
-
-```typescript
-export const acquireAudioContext = (): Effect.Effect<Option.Option<AudioContext>, never> => {
-  if (typeof AudioContext === 'undefined') {
-    return Effect.succeed(Option.none())
-  }
-  return Effect.gen(function* () {
-    const ctx = yield* Effect.try({
-      try: () => new AudioContext(),
-      catch: () => new Error('AudioContext creation failed'),
-    })
-    return Option.some(ctx)
-  }).pipe(Effect.catchAllCause(() => Effect.succeed(Option.none())))
-}
-```
-
-feature detection + `Effect.try` + `catchAllCause` で、**決して失敗しない** `Option` を返す。
-この形は良いのでそのまま持ってくる。
-
-生成は遅延（最初の `playTone` 時、`audio-engine.ts:22-36` の `ensureContext`）。
-ノードの後始末も同様にガードしてある（`safeDisconnect` `:26-30`、`safeStop` `:32-36`）。
 
 ### 新規に作ったもの（参照実装に存在しない）
 
@@ -586,8 +558,6 @@ feature detection + `Effect.try` + `catchAllCause` で、**決して失敗しな
 波形が任意の位相で切れて**全キューにクリックが乗る**。
 attack 5ms / release 20ms のランプで消してある。
 
-エラーにならず、テストも赤くならず、「なんか安っぽい」としてしか現れない種類の欠陥である。
-
 ### キューごとの波形
 
 `CueDefinition.wave` は `planCue` から `ToneRequest.wave` へ渡り、WebAudio の
@@ -599,41 +569,71 @@ attack 5ms / release 20ms のランプで消してある。
 WebAudio のスケジューリングは `AudioContext.currentTime` を使う
 （`audio-engine.ts:104`）。これは壁時計ではないので `Date.now()` 禁止に抵触しない。
 
-もし `performance.now()` が必要になったら、その行に
-`mc-kernel-allow-time-source` コメントを付けて逃がすこと
-（`scripts/check-dependency-whitelist.ts` の `TIME_SOURCE_ESCAPE_HATCH`）。
-
 ---
 
 ## 8. Minecraft のデータ駆動音声
 
 ```typescript
+export type MinecraftSoundVariant = {
+  readonly volume: AudioGain
+  readonly pitch: AudioPlaybackRate
+  readonly weight: AudioWeight
+  readonly stream: boolean
+  readonly attenuationDistance: AudioDistance
+  readonly preload: boolean
+} & (
+  | { readonly name: MinecraftSoundResourceId; readonly type: 'sound' }
+  | { readonly name: MinecraftSoundEventId; readonly type: 'event' }
+)
+export type MinecraftSoundEvent = {
+  readonly id: MinecraftSoundEventId
+  readonly replace: boolean
+  readonly subtitle: AudioCaptionText | null
+  readonly sounds: readonly MinecraftSoundVariant[]
+}
+export type MinecraftSoundRegistryOptions = { readonly namespace: MinecraftSoundNamespace }
 export const parseMinecraftSoundsJson: (
   value: unknown,
   options: MinecraftSoundRegistryOptions,
-) => MinecraftSoundRegistry
+) => Result.Result<MinecraftSoundRegistry, MinecraftSoundsParseFailure>
+export type MinecraftSoundRegistry = {
+  readonly events: ReadonlyMap<MinecraftSoundEventId, MinecraftSoundEvent>
+}
 export const mergeMinecraftSoundRegistries: (
   base: MinecraftSoundRegistry,
   overlay: MinecraftSoundRegistry,
 ) => MinecraftSoundRegistry
 export const resolveMinecraftSound: (
   registry: MinecraftSoundRegistry,
-  eventId: string,
-  random?: number,
-) => ResolvedMinecraftSound
+  eventId: MinecraftSoundEventId,
+  random?: unknown,
+) => Result.Result<ResolvedMinecraftSound, MinecraftSoundResolutionFailure>
+export type ResolvedMinecraftSound = {
+  readonly eventId: MinecraftSoundEventId
+  readonly soundId: MinecraftSoundResourceId
+  readonly volume: AudioGain
+  readonly pitch: AudioPlaybackRate
+  readonly stream: boolean
+  readonly attenuationDistance: AudioDistance
+  readonly preload: boolean
+}
+export type AudioSampleManifest = ReadonlyMap<AudioSampleId, AudioSampleSource>
 export const minecraftSoundManifest: (
   registry: MinecraftSoundRegistry,
-  baseUrl: string,
-) => AudioSampleManifest
+  baseUrl: AudioSampleUrl,
+) => Result.Result<AudioSampleManifest, MinecraftSoundResolutionFailure>
 export const mergeAudioSampleManifests: (
   base: AudioSampleManifest,
   additions: AudioSampleManifest,
 ) => AudioSampleManifest
 export const planMinecraftSound: (
   registry: MinecraftSoundRegistry,
-  eventId: string,
+  eventId: MinecraftSoundEventId,
   options: MinecraftSoundPlayOptions,
-) => MinecraftSoundPlaybackPlan
+) => Result.Result<
+  MinecraftSoundPlaybackPlan,
+  MinecraftSoundResolutionFailure | MinecraftSoundPlayOptionsFailure
+>
 ```
 
 `src/domain/minecraft-sounds-*` は公式 `sounds.json` の `sounds` 配列と、文字列／オブジェクト
@@ -677,33 +677,23 @@ mob の標準 variant は `parseMinecraftMobSoundVariantJson`、
 | モジュール | 主な公開面 | 責務 |
 | --- | --- | --- |
 | `src/domain/end-audio.ts` / `end-audio-controller.ts` | `planEndAudio`、`makeEndAudioController` | End のイベント、ループ、Dragon Battle の音声状態 |
-| `src/domain/footstep.ts` | `footstepCueFor` | ブロック表面から足音キューを選ぶ純関数 |
+| `src/domain/audio-runtime.ts` | `makeAudioRuntime`、`AudioRuntime`、`AudioRuntimeSnapshot` | Effect-based host runtime for cue playback, captions, settings, unlock, and close. |
+| `src/domain/footstep.ts` | `cueForSurface`、`surfaceForBlockType`、`footstepCueFor` | Pure surface-to-cue mapping. `footstepCueFor` remains as a compatibility alias. |
 | `src/domain/game-audio.ts` | `makeGameAudioHost` | ゲームイベントを音声・字幕 Port へ接続する host |
-| `src/domain/weather-ambience.ts` / `weather-audio-controller.ts` | `planWeatherAmbience`、`makeWeatherAudioController` | 雨・雪・雷のループと遷移 |
+| `src/domain/weather-ambience.ts` / `weather-audio-controller.ts` | `planWeatherAmbience`、`makeWeatherAudioController` | Ambient loops and transitions for `clear`, `rain`, and `thunder`. |
+| `src/qa/audio.ts` / `src/entrypoints/audio-qa.ts` | `makeAudioQaSurface`、`makeAudioQaEntrypoint` | Effect-based audio QA provider and synchronous `audio.report` / `audio.snapshot` entrypoint. |
 | `src/domain/minecraft-audio.ts` | `parseMinecraftAudioComponent`、`normalizeMinecraftAudioComponent` | `minecraft:audio/*` component の解析・正規化 |
 | `src/domain/audio-sample.ts` | `AudioSampleManifest`、`mergeAudioSampleManifests` | リソースパック音源の manifest 境界 |
-| `src/domain/original-sample-bank.ts` / `free-music-bank.ts` | `createOriginalSampleManifest`、`createFreeMinecraftMusicPack` | 権利を持つ音源を注入するための生成 helper |
+| `src/domain/original-sample-bank.ts` / `free-music-bank.ts` | `createOriginalSampleManifest`、`createFreeMinecraftMusicPack` | 権利を持つ音源を manifest 化する。標準サンプル生成の失敗は `Result` で返す。 |
 
 root export の完全な機械的な一覧は `src/index.ts` を正とする。この表は各モジュールの利用目的を示し、
 音声バイナリやブラウザ固有の型を公開契約に混ぜないという境界を補足する。
 
-## 10. 利用者が移行するときの確認事項
+## 10. mc-audio 0.4
 
-次の minor release を既存の consumer に導入するときは、次の順で確認する。
-
-1. `pnpm typecheck` または consumer の型検査を実行する。`Position`、`ClockPort`、
-   `CameraPoseSnapshot` などは consumer が利用している `@nerima-games/mc-kernel` の公開型を
-   そのまま渡し、mc-audio 側の型を重複定義しない。
-2. resource pack や `minecraft:audio/*` component を外部入力から読む場合、先に
-   `parseMinecraftSoundsJson`、`parseMinecraftMobSoundVariantJson`、
-   `parseMinecraftAudioComponent` のいずれかへ `unknown` として渡す。入力不正時は
-   `TypeError` または `RangeError` になるため、読み込み境界でエラーを表示または破棄する。
-   型アサーションだけで不正な JSON を通してはならない。
-3. ブラウザでは `makeWebAudioBackend` の戻り値を保持し、最初のユーザージェスチャーから
-   `backend.unlock` を実行する。`webAudioBackendLayer` だけを提供しても `unlock` は公開されないため、
-   `locked` のまま再生を始めない。
-4. 独自 `AudioBackend` を実装する場合、`playTone` と `playMusic` の戻り値の
-   `accepted` を成功判定に使う。ハンドルの `id` が返ったことだけで再生成功と判定しない。
-
-mc-kernel の依存版数はこのガイドに記載しない。consumer は package manager の解決結果を使い、
-型検査で互換性を確認する。
+mc-audio 0.4 migrates the package to Effect 4 and mc-kernel 0.9. Its branded
+audio values, result-based validators, Effect-returning audio runtime, caption
+queue, and audio QA entrypoint are described in the
+[0.4 migration guide](./migration-0.4.md). Consumer code should import kernel
+types from their public domain entrypoints and run audio Effects at its host
+boundary.

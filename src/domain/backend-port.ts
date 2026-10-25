@@ -1,4 +1,4 @@
-/* oxlint-disable new-cap, no-magic-numbers -- Effect.Tag is a callable class factory; zero/one are the recorder counter's identity and increment. */
+/* oxlint-disable new-cap, no-magic-numbers -- Context.Service is a callable class factory; zero/one are the recorder counter's identity and increment. */
 /**
  * `AudioBackendPort` — the only place WebAudio is allowed to exist.
  *
@@ -29,7 +29,7 @@
  *  2. no AudioContext at all — `packages/game/infrastructure/audio-engine.ts:42-44`,
  *     which returns a valid `ToneHandle` for a sound that will never exist
  *  3. the browser's autoplay policy — `audio-engine.ts:46-49`, a `context.resume()`
- *     whose rejection is swallowed by `Effect.catchAllCause(() => Effect.void)`
+ *     whose rejection is swallowed by `Effect.catchCause(() => Effect.void)`
  *
  * Case 3 is the interesting one. There is no user-gesture unlock, no "unlocked"
  * flag and no pending-cue queue anywhere in that repository — a grep for
@@ -41,7 +41,19 @@
  * events `gate-blocked` rather than `audible`, and lets a UI say "click to
  * enable sound" instead of appearing broken.
  */
+import {
+  type AudioDurationSecs,
+  type AudioFrequencyHz,
+  type AudioGain,
+  AudioHandleId,
+  type AudioPan,
+  type AudioPlaybackRate,
+  type AudioSampleId,
+  type AudioVolume,
+  type MinecraftSoundResourceId,
+} from './audio-brands.js'
 import { Context, Effect, Layer, Ref } from 'effect'
+import type { SoundCueId } from '../data/cue-definitions.js'
 
 /**
  * - `unavailable` — no backend exists (Node, SSR, a browser without WebAudio).
@@ -54,18 +66,18 @@ export const AUDIO_AVAILABILITIES = ['unavailable', 'locked', 'ready'] as const
 export type AudioAvailability = (typeof AUDIO_AVAILABILITIES)[number]
 
 export type ToneRequest = {
-  readonly soundId?: string
+  readonly soundId?: AudioSampleId | MinecraftSoundResourceId | SoundCueId
   /** Positive playback multiplier for decoded samples; oscillator frequency is unchanged. */
-  readonly playbackRate?: number
-  readonly frequency: number
+  readonly playbackRate?: AudioPlaybackRate
+  readonly frequency: AudioFrequencyHz
   /** Oscillator waveform; cue authoring may override the sine default. */
   readonly wave?: 'sine' | 'square' | 'sawtooth' | 'triangle'
   /** Seconds. Inert when `loop` or `naturalDuration` is true. */
-  readonly durationSecs: number
+  readonly durationSecs: AudioDurationSecs
   /** Final finite, non-negative per-tone gain. Master is NOT included — see domain/volume.ts. */
-  readonly gain: number
+  readonly gain: AudioGain
   /** Stereo position in [-1, 1]. */
-  readonly pan: number
+  readonly pan: AudioPan
   readonly loop: boolean
   /** Prefer the host's streaming source factory; fall back to a decoded sample when available. */
   readonly stream?: boolean
@@ -77,17 +89,17 @@ export type ToneRequest = {
 
 export type MusicRequest = {
   /** A decoded or streamed Minecraft sound id supplied by the host manifest. */
-  readonly soundId: string
+  readonly soundId: MinecraftSoundResourceId
   /** Initial gain before master volume is applied. */
-  readonly gain: number
+  readonly gain: AudioGain
   /** Playback-rate multiplier resolved from the Minecraft sound variant. */
-  readonly playbackRate: number
+  readonly playbackRate: AudioPlaybackRate
   /** Whether the Minecraft sound variant requests a streaming source. */
   readonly stream: boolean
 }
 
 export type ToneHandle = {
-  readonly id: number
+  readonly id: AudioHandleId
 }
 
 /**
@@ -105,22 +117,22 @@ export type AudioBackend = {
   readonly playTone: (request: ToneRequest) => Effect.Effect<TonePlayback>
   readonly playMusic: (request: MusicRequest) => Effect.Effect<TonePlayback>
   readonly stopTone: (handle: ToneHandle) => Effect.Effect<void>
-  readonly setToneGain: (handle: ToneHandle, gain: number) => Effect.Effect<void>
+  readonly setToneGain: (handle: ToneHandle, gain: AudioGain) => Effect.Effect<void>
   readonly isToneActive: (handle: ToneHandle) => Effect.Effect<boolean>
   /**
    * Set the single master gain node. Called once per settings change, never
    * per cue — see `domain/volume.ts` on why master is applied exactly once.
    */
-  readonly setMasterGain: (gain: number) => Effect.Effect<void>
+  readonly setMasterGain: (gain: AudioVolume) => Effect.Effect<void>
 }
 
-const AudioBackendPortBase: Context.TagClass<
+const AudioBackendPortService: Context.ServiceClass<
   AudioBackendPort,
   '@nerima-games/mc-audio/AudioBackendPort',
   AudioBackend
-> = Context.Tag('@nerima-games/mc-audio/AudioBackendPort')<AudioBackendPort, AudioBackend>()
+> = Context.Service<AudioBackendPort, AudioBackend>()('@nerima-games/mc-audio/AudioBackendPort')
 
-export class AudioBackendPort extends AudioBackendPortBase {}
+export class AudioBackendPort extends AudioBackendPortService {}
 
 export type RecordedBackend = {
   readonly backend: AudioBackend
@@ -129,8 +141,8 @@ export type RecordedBackend = {
   /** Every music track the music manager asked for, in order. */
   readonly musicPlayed: Effect.Effect<ReadonlyArray<MusicRequest>>
   /** Every per-tone gain update, in order. */
-  readonly toneGains: Effect.Effect<ReadonlyArray<{ readonly handle: ToneHandle; readonly gain: number }>>
-  readonly masterGains: Effect.Effect<ReadonlyArray<number>>
+  readonly toneGains: Effect.Effect<ReadonlyArray<{ readonly handle: ToneHandle; readonly gain: AudioGain }>>
+  readonly masterGains: Effect.Effect<ReadonlyArray<AudioVolume>>
 }
 
 /**
@@ -146,10 +158,10 @@ export const makeRecordingBackend = (
   Effect.gen(function* buildRecordingBackend() {
     const requests = yield* Ref.make<ReadonlyArray<ToneRequest>>([])
     const musicRequests = yield* Ref.make<ReadonlyArray<MusicRequest>>([])
-    const toneGainChanges = yield* Ref.make<ReadonlyArray<{ readonly handle: ToneHandle; readonly gain: number }>>([])
-    const gains = yield* Ref.make<ReadonlyArray<number>>([])
-    const nextId = yield* Ref.make(0)
-    const activeIds = yield* Ref.make<ReadonlySet<number>>(new Set())
+    const toneGainChanges = yield* Ref.make<ReadonlyArray<{ readonly handle: ToneHandle; readonly gain: AudioGain }>>([])
+    const gains = yield* Ref.make<ReadonlyArray<AudioVolume>>([])
+    const nextId = yield* Ref.make(AudioHandleId(0))
+    const activeIds = yield* Ref.make<ReadonlySet<AudioHandleId>>(new Set())
     const accepted = availability === 'ready'
 
     const backend: AudioBackend = {
@@ -158,7 +170,7 @@ export const makeRecordingBackend = (
       playMusic: (request) =>
         Effect.gen(function* playMusic() {
           yield* Ref.update(musicRequests, (current) => [...current, request])
-          const id = yield* Ref.updateAndGet(nextId, (value) => value + 1)
+          const id = yield* Ref.updateAndGet(nextId, (value) => AudioHandleId(value + 1))
           if (accepted) {
             yield* Ref.update(activeIds, (current) => new Set(current).add(id))
           }
@@ -167,7 +179,7 @@ export const makeRecordingBackend = (
       playTone: (request) =>
         Effect.gen(function*  playTone() {
           yield* Ref.update(requests, (current) => [...current, request])
-          const id = yield* Ref.updateAndGet(nextId, (value) => value + 1)
+          const id = yield* Ref.updateAndGet(nextId, (value) => AudioHandleId(value + 1))
           if (accepted) {
             yield* Ref.update(activeIds, (current) => new Set(current).add(id))
           }
@@ -202,8 +214,8 @@ export const makeRecordingBackend = (
 export const UnavailableBackendLayer: Layer.Layer<AudioBackendPort> = Layer.succeed(AudioBackendPort, {
   availability: Effect.succeed<AudioAvailability>('unavailable'),
   isToneActive: () => Effect.succeed(false),
-  playMusic: () => Effect.succeed({ accepted: false, id: 0 }),
-  playTone: () => Effect.succeed({ accepted: false, id: 0 }),
+  playMusic: () => Effect.succeed({ accepted: false, id: AudioHandleId(0) }),
+  playTone: () => Effect.succeed({ accepted: false, id: AudioHandleId(0) }),
   setMasterGain: () => Effect.void,
   setToneGain: () => Effect.void,
   stopTone: () => Effect.void,

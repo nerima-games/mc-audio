@@ -1,70 +1,72 @@
+import type { MinecraftMobSoundVariantId, MinecraftSoundEventId, MinecraftSoundNamespace } from './audio-brands.js'
+
 export const MINECRAFT_MOB_SOUND_VARIANT_KINDS = ['cat', 'pig', 'cow', 'chicken'] as const
 
 export type MinecraftMobSoundVariantKind = (typeof MINECRAFT_MOB_SOUND_VARIANT_KINDS)[number]
 
 export type MinecraftCatSoundSet = {
-  readonly ambientSound: string
-  readonly strayAmbientSound: string
-  readonly hissSound: string
-  readonly hurtSound: string
-  readonly deathSound: string
-  readonly eatSound: string
-  readonly begForFoodSound: string
-  readonly purrSound: string
-  readonly purreowSound: string
+  readonly ambientSound: MinecraftSoundEventId
+  readonly strayAmbientSound: MinecraftSoundEventId
+  readonly hissSound: MinecraftSoundEventId
+  readonly hurtSound: MinecraftSoundEventId
+  readonly deathSound: MinecraftSoundEventId
+  readonly eatSound: MinecraftSoundEventId
+  readonly begForFoodSound: MinecraftSoundEventId
+  readonly purrSound: MinecraftSoundEventId
+  readonly purreowSound: MinecraftSoundEventId
 }
 
 export type MinecraftPigSoundSet = {
-  readonly ambientSound: string
-  readonly hurtSound: string
-  readonly deathSound: string
-  readonly stepSound: string
-  readonly eatSound: string
+  readonly ambientSound: MinecraftSoundEventId
+  readonly hurtSound: MinecraftSoundEventId
+  readonly deathSound: MinecraftSoundEventId
+  readonly stepSound: MinecraftSoundEventId
+  readonly eatSound: MinecraftSoundEventId
 }
 
 export type MinecraftCowSoundSet = {
-  readonly ambientSound: string
-  readonly hurtSound: string
-  readonly deathSound: string
-  readonly stepSound: string
+  readonly ambientSound: MinecraftSoundEventId
+  readonly hurtSound: MinecraftSoundEventId
+  readonly deathSound: MinecraftSoundEventId
+  readonly stepSound: MinecraftSoundEventId
 }
 
 export type MinecraftChickenSoundSet = {
-  readonly ambientSound: string
-  readonly hurtSound: string
-  readonly deathSound: string
-  readonly stepSound: string
+  readonly ambientSound: MinecraftSoundEventId
+  readonly hurtSound: MinecraftSoundEventId
+  readonly deathSound: MinecraftSoundEventId
+  readonly stepSound: MinecraftSoundEventId
 }
 
 export type MinecraftWolfSoundSet = {
-  readonly ambientSound: string
-  readonly deathSound: string
-  readonly growlSound: string
-  readonly hurtSound: string
-  readonly pantSound: string
-  readonly whineSound: string
+  readonly ambientSound: MinecraftSoundEventId
+  readonly deathSound: MinecraftSoundEventId
+  readonly growlSound: MinecraftSoundEventId
+  readonly hurtSound: MinecraftSoundEventId
+  readonly pantSound: MinecraftSoundEventId
+  readonly whineSound: MinecraftSoundEventId
 }
 
 export type MinecraftMobSoundVariantDefinition =
   | {
-      readonly id: string
+      readonly id: MinecraftMobSoundVariantId
       readonly kind: 'cat'
       readonly adultSounds: MinecraftCatSoundSet
       readonly babySounds: MinecraftCatSoundSet
     }
   | {
-      readonly id: string
+      readonly id: MinecraftMobSoundVariantId
       readonly kind: 'pig'
       readonly adultSounds: MinecraftPigSoundSet
       readonly babySounds: MinecraftPigSoundSet
     }
   | {
-      readonly id: string
+      readonly id: MinecraftMobSoundVariantId
       readonly kind: 'cow'
       readonly sounds: MinecraftCowSoundSet
     }
   | {
-      readonly id: string
+      readonly id: MinecraftMobSoundVariantId
       readonly kind: 'chicken'
       readonly adultSounds: MinecraftChickenSoundSet
       readonly babySounds: MinecraftChickenSoundSet
@@ -72,7 +74,7 @@ export type MinecraftMobSoundVariantDefinition =
 
 export type MinecraftMobSoundVariantRegistry = {
   readonly kind: MinecraftMobSoundVariantKind
-  readonly variants: Readonly<Record<string, MinecraftMobSoundVariantDefinition>>
+  readonly variants: ReadonlyMap<MinecraftMobSoundVariantId, MinecraftMobSoundVariantDefinition>
 }
 
 export type MinecraftMobSoundBehavior =
@@ -90,13 +92,13 @@ export type MinecraftMobSoundBehavior =
 export type MinecraftWolfSoundBehavior = 'ambient' | 'death' | 'growl' | 'hurt' | 'pant' | 'whine'
 
 export type MinecraftMobSoundVariantRegistryOptions = {
-  readonly namespace: string
+  readonly namespace: MinecraftSoundNamespace
 }
 
 export type MinecraftMobSoundVariantJsonOptions = MinecraftMobSoundVariantRegistryOptions & {
   readonly input: unknown
   readonly kind: unknown
-  readonly variantId: string
+  readonly variantId: MinecraftMobSoundVariantId
 }
 
 export type MinecraftMobSoundVariantRegistryParseOptions = MinecraftMobSoundVariantRegistryOptions & {
@@ -110,7 +112,7 @@ export type MinecraftWolfSoundParserOptions = MinecraftMobSoundVariantRegistryOp
 
 export type MinecraftMobSoundResolutionOptions = {
   readonly isBaby?: boolean
-  readonly random?: number
+  readonly random?: unknown
 }
 
 export type MinecraftWolfSoundDefinition = {

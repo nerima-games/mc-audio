@@ -6,6 +6,7 @@ import type {
   AudioScheduledSourceSurface,
   WebAudioGlobalSurface,
 } from './webaudio-surface.js'
+import type { AudioCount, AudioSampleId, AudioSampleUrl, AudioVolume } from './audio-brands.js'
 import type { AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
 import type { Effect } from 'effect'
 import type { WebAudioConstructorName } from './webaudio-runtime.js'
@@ -26,25 +27,25 @@ export type WebAudioOptions = {
    * master node that starts at 1 and is corrected on the next settings change
    * plays the first cue at full volume.
    */
-  readonly initialMasterGain?: number
+  readonly initialMasterGain?: AudioVolume
   /** Maximum active tones. Additional cues are discarded and reported. */
-  readonly maxConcurrentTones?: number
+  readonly maxConcurrentTones?: AudioCount
   /** Resolves an already-decoded sample; missing/failed samples use synthesis. */
-  readonly resolveAudioBuffer?: (soundId: string) => AudioBufferSurface | null
+  readonly resolveAudioBuffer?: (soundId: NonNullable<ToneRequest['soundId']>) => AudioBufferSurface | null
   /** Manifest samples to decode. Manifest-backed cues also load lazily on first playback. */
   readonly sampleManifest?: AudioSampleManifest
   /** Host-owned URL transport, keeping fetch and DOM types outside the domain. */
-  readonly loadSampleData?: (url: string) => Promise<ArrayBuffer>
+  readonly loadSampleData?: (url: AudioSampleUrl) => PromiseLike<ArrayBuffer>
   /** Host-owned source creation for sounds that must remain streamed. */
   readonly createStreamSource?: (options: WebAudioStreamSourceOptions) => AudioScheduledSourceSurface | null
   /** Host-owned preload for streamed sounds that cannot be decoded as buffers. */
-  readonly preloadStream?: (soundId: string, source: AudioSampleSource) => Effect.Effect<boolean, unknown>
+  readonly preloadStream?: (soundId: AudioSampleId, source: AudioSampleSource) => Effect.Effect<boolean, unknown>
 }
 
 export type WebAudioStreamSourceOptions = {
   readonly context: AudioContextSurface
   readonly request: ToneRequest
-  readonly soundId: string
+  readonly soundId: AudioSampleId
   readonly source: AudioSampleSource
 }
 
@@ -58,17 +59,17 @@ export type WebAudioReport = {
   /** `true` once construction has been attempted, successfully or not. */
   readonly contextAttempted: boolean
   /** How many times `unlock` was run. */
-  readonly unlockAttempts: number
+  readonly unlockAttempts: AudioCount
   /** How many of those left the context not running. The autoplay refusals. */
-  readonly unlockRefusals: number
+  readonly unlockRefusals: AudioCount
   /** Cues the guard refused, and therefore discarded. Never queued. */
-  readonly refusedTones: number
+  readonly refusedTones: AudioCount
   /** Ready-state cues discarded because `maxConcurrentTones` was reached. */
-  readonly capacityRefusals: number
+  readonly capacityRefusals: AudioCount
   /** Tones currently scheduled or sounding. */
-  readonly activeTones: number
+  readonly activeTones: AudioCount
   /** How many times the browser changed `state` without being asked. */
-  readonly spontaneousStateChanges: number
+  readonly spontaneousStateChanges: AudioCount
   readonly muted: boolean
   readonly disposed: boolean
 }
@@ -76,7 +77,7 @@ export type WebAudioReport = {
 /** The AudioBackend with operations that require a concrete WebAudio runtime. */
 export type WebAudioBackend = AudioBackend & {
   /** Decode configured samples. Concurrent requests for one id share one load. */
-  readonly preloadSamples: (soundIds?: ReadonlyArray<string>) => Effect.Effect<AudioSampleLoadReport>
+  readonly preloadSamples: (soundIds?: ReadonlyArray<AudioSampleId>) => Effect.Effect<AudioSampleLoadReport>
   /** Run from a user gesture handler and report the resulting availability. */
   readonly unlock: Effect.Effect<AudioAvailability>
   readonly report: Effect.Effect<WebAudioReport>

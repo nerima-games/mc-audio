@@ -130,6 +130,12 @@ export const installsHandlersOnTheRealThing = (): void => {
  */
 export const drivesTheRealApiThroughTheNarrowTypes = async (): Promise<void> => {
   const context: AudioContextSurface = new AudioContext()
+  const audioTime = (value: unknown): number => {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      return 0
+    }
+    return value
+  }
 
   const master = context.createGain()
   master.gain.value = 0.8
@@ -146,9 +152,10 @@ export const drivesTheRealApiThroughTheNarrowTypes = async (): Promise<void> => 
     oscillator.frequency.value = 220
 
     const gain = context.createGain()
-    gain.gain.setValueAtTime(0, context.currentTime)
-    gain.gain.linearRampToValueAtTime(0.4, context.currentTime + 0.005)
-    gain.gain.cancelScheduledValues(context.currentTime + 0.05)
+    const now = audioTime(context.currentTime)
+    gain.gain.setValueAtTime(0, now)
+    gain.gain.linearRampToValueAtTime(0.4, now + 0.005)
+    gain.gain.cancelScheduledValues(now + 0.05)
 
     oscillator.connect(gain)
 
@@ -165,8 +172,8 @@ export const drivesTheRealApiThroughTheNarrowTypes = async (): Promise<void> => 
       gain.disconnect()
     }
 
-    oscillator.start(context.currentTime)
-    oscillator.stop(context.currentTime + 0.07)
+    oscillator.start(now)
+    oscillator.stop(now + 0.07)
   }
 
   context.onstatechange = () => {}

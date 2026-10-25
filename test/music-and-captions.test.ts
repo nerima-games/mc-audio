@@ -1,13 +1,16 @@
-import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { PositionAxis, type Position } from '@nerima-games/mc-kernel/domain/coordinates'
+import { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Option } from 'effect'
+import { AudioCaptionText } from '../src/domain/audio-brands'
 import {
   CAPTION_DISPLAY_SECS,
+  CAPTION_LIFETIME_SECS,
   MAX_VISIBLE_CAPTIONS,
   visibleCaptions,
   type CaptionEvent,
 } from '../src/domain/caption'
-import { isSoundCueId, SOUND_CUE_IDS, CUE_DEFINITIONS } from '../src/domain/cue'
+import { cueDefinition, isSoundCueId, SOUND_CUE_IDS, CUE_DEFINITIONS, SoundCueId } from '../src/domain/cue'
 import {
   DEFAULT_CAVE_THRESHOLD_Y,
   resolveMusicEnvironment,
@@ -15,18 +18,24 @@ import {
   type MusicEnvironment,
 } from '../src/domain/music'
 
+const atPosition = (x: number, y: number, z: number): Position => ({
+  x: PositionAxis(x),
+  y: PositionAxis(y),
+  z: PositionAxis(z),
+})
+
 describe('resolveMusicEnvironment', () => {
   it.effect('cave wins over day and night', () =>
     Effect.sync(() => {
-      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: 10, z: 0 }, isNight: false })).toBe('cave')
-      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: 10, z: 0 }, isNight: true })).toBe('cave')
+      expect(resolveMusicEnvironment({ playerPosition: atPosition(0, 10, 0), isNight: false })).toBe('cave')
+      expect(resolveMusicEnvironment({ playerPosition: atPosition(0, 10, 0), isNight: true })).toBe('cave')
     }),
   )
 
   it.effect('picks day or night above the threshold', () =>
     Effect.sync(() => {
-      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: 70, z: 0 }, isNight: false })).toBe('day')
-      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: 70, z: 0 }, isNight: true })).toBe('night')
+      expect(resolveMusicEnvironment({ playerPosition: atPosition(0, 70, 0), isNight: false })).toBe('day')
+      expect(resolveMusicEnvironment({ playerPosition: atPosition(0, 70, 0), isNight: true })).toBe('night')
     }),
   )
 
@@ -41,14 +50,14 @@ describe('resolveMusicEnvironment', () => {
    */
   it.effect('treats exactly-at-threshold as surface, not cave', () =>
     Effect.sync(() => {
-      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: DEFAULT_CAVE_THRESHOLD_Y, z: 0 }, isNight: false })).toBe('day')
-      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: DEFAULT_CAVE_THRESHOLD_Y - 1, z: 0 }, isNight: false })).toBe('cave')
+      expect(resolveMusicEnvironment({ playerPosition: atPosition(0, DEFAULT_CAVE_THRESHOLD_Y, 0), isNight: false })).toBe('day')
+      expect(resolveMusicEnvironment({ playerPosition: atPosition(0, DEFAULT_CAVE_THRESHOLD_Y - 1, 0), isNight: false })).toBe('cave')
     }),
   )
 
   it.effect('honours a caller-supplied threshold', () =>
     Effect.sync(() => {
-      expect(resolveMusicEnvironment({ playerPosition: { x: 0, y: 50, z: 0 }, isNight: false, caveThresholdY: 60 })).toBe('cave')
+      expect(resolveMusicEnvironment({ playerPosition: atPosition(0, 50, 0), isNight: false, caveThresholdY: PositionAxis(60) })).toBe('cave')
     }),
   )
 })
@@ -104,13 +113,21 @@ describe('resolveMusicPlan', () => {
 })
 
 const caption = (text: string, atSecs: number): CaptionEvent => ({
-  cueId: 'blockBreak',
-  text,
+  cueId: SoundCueId('blockBreak'),
+  text: AudioCaptionText(text),
   atSecs: MonotonicTimeSecs(atSecs),
   reason: 'audible',
 })
 
 describe('visibleCaptions', () => {
+  it.effect('pins the 2.5 second lifetime, compatibility alias, and five caption limit', () =>
+    Effect.sync(() => {
+      expect(CAPTION_LIFETIME_SECS).toBe(2.5)
+      expect(CAPTION_DISPLAY_SECS).toBe(CAPTION_LIFETIME_SECS)
+      expect(MAX_VISIBLE_CAPTIONS).toBe(5)
+    }),
+  )
+
   it.effect('drops captions older than the display window', () =>
     Effect.sync(() => {
       const events = [caption('old', 0), caption('fresh', 9)]
@@ -147,8 +164,8 @@ describe('visibleCaptions', () => {
 
   it.effect('deduplicates by text, so two footstep cues share one row', () =>
     Effect.sync(() => {
-      const grass: CaptionEvent = { cueId: 'footstepGrass', text: 'Footsteps', atSecs: MonotonicTimeSecs(1), reason: 'audible' }
-      const stone: CaptionEvent = { cueId: 'footstepStone', text: 'Footsteps', atSecs: MonotonicTimeSecs(1.2), reason: 'audible' }
+      const grass: CaptionEvent = { cueId: SoundCueId('footstepGrass'), text: AudioCaptionText('Footsteps'), atSecs: MonotonicTimeSecs(1), reason: 'audible' }
+      const stone: CaptionEvent = { cueId: SoundCueId('footstepStone'), text: AudioCaptionText('Footsteps'), atSecs: MonotonicTimeSecs(1.2), reason: 'audible' }
 
       expect(visibleCaptions([grass, stone], MonotonicTimeSecs(2))).toHaveLength(1)
     }),
@@ -192,7 +209,7 @@ describe('cue roster', () => {
   it.effect('keeps every base gain inside the mixing headroom', () =>
     Effect.sync(() => {
       for (const cueId of SOUND_CUE_IDS) {
-        const definition = CUE_DEFINITIONS[cueId]
+        const definition = cueDefinition(cueId)
         expect(definition.baseGain).toBeGreaterThan(0)
         expect(definition.baseGain).toBeLessThanOrEqual(1)
       }

@@ -1,12 +1,18 @@
+import {
+  type MinecraftSoundEventId,
+  MinecraftSoundEventId as makeMinecraftSoundEventId,
+  MinecraftSoundNamespace as makeMinecraftSoundNamespace,
+} from './audio-brands.js'
+import { type MinecraftSoundsParseFailure, parseMinecraftSoundsJson } from './minecraft-sounds-parser.js'
 import { MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON } from './minecraft-26-3-snapshot-9-sound-data.js'
 import type { MinecraftSoundRegistry } from './minecraft-sounds-types.js'
-import { parseMinecraftSoundsJson } from './minecraft-sounds-parser.js'
+import { type Result } from 'effect'
 
 export { MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON }
 
 type Minecraft26_3Snapshot9SoundKey = Extract<keyof typeof MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON, string>
 
-export type Minecraft26_3Snapshot9SoundEventId = `minecraft:${Minecraft26_3Snapshot9SoundKey}`
+export type Minecraft26_3Snapshot9SoundEventId = MinecraftSoundEventId
 
 const isSoundEventKey = (key: string): key is Minecraft26_3Snapshot9SoundKey =>
   Object.hasOwn(MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON, key)
@@ -14,7 +20,7 @@ const isSoundEventKey = (key: string): key is Minecraft26_3Snapshot9SoundKey =>
 const SOUND_EVENT_KEYS = Object.keys(MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON).filter(isSoundEventKey)
 
 const namespacedSoundEventId = (key: Minecraft26_3Snapshot9SoundKey): Minecraft26_3Snapshot9SoundEventId =>
-  `minecraft:${key}`
+  makeMinecraftSoundEventId(`minecraft:${key}`)
 
 const eventIdsWithPrefix = (prefix: string): readonly Minecraft26_3Snapshot9SoundEventId[] =>
   SOUND_EVENT_KEYS.filter((key) => key.startsWith(`${prefix}.`)).map(namespacedSoundEventId)
@@ -48,10 +54,10 @@ export const MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_GROUPS: {
   weather: eventIdsWithPrefix('weather'),
 } as const
 
-export const createMinecraft26_3Snapshot9SoundRegistry = (): MinecraftSoundRegistry =>
-  parseMinecraftSoundsJson(MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON, { namespace: 'minecraft' })
+export const createMinecraft26_3Snapshot9SoundRegistry = (): Result.Result<MinecraftSoundRegistry, MinecraftSoundsParseFailure> =>
+  parseMinecraftSoundsJson(MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON, { namespace: makeMinecraftSoundNamespace('minecraft') })
 
 export const missingMinecraft26_3Snapshot9SoundEvents = (
   registry: MinecraftSoundRegistry,
 ): readonly Minecraft26_3Snapshot9SoundEventId[] =>
-  MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_IDS.filter((eventId) => !Object.hasOwn(registry.events, eventId))
+  MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_IDS.filter((eventId) => !registry.events.has(eventId))

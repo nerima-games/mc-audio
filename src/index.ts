@@ -30,7 +30,9 @@
  */
 
 export * from './domain/backend-port.js'
+export * from './domain/audio-brands.js'
 export * from './domain/audio-sample.js'
+export * from './domain/audio-runtime.js'
 export * from './domain/caption.js'
 export * from './domain/cue.js'
 export * from './domain/end-audio.js'
@@ -59,3 +61,5 @@ export * from './domain/webaudio-adapter.js'
 export * from './domain/webaudio-surface.js'
 export * from './domain/weather-ambience.js'
 export * from './domain/weather-audio-controller.js'
+export * from './entrypoints/audio-qa.js'
+export * from './qa/audio.js'

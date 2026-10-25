@@ -1,3 +1,4 @@
+import type { AudioDurationSecs, AudioGain, AudioHandleId, AudioPan } from './audio-brands.js'
 import {
   INITIAL_WEATHER_AMBIENCE_STATE,
   WEATHER_FADE_SECS,
@@ -8,16 +9,16 @@ import {
   planWeatherAmbience,
 } from './weather-ambience.js'
 
-export type WeatherAudioHandle = { readonly id: number }
+export type WeatherAudioHandle = { readonly id: AudioHandleId }
 
 export type WeatherAudioPort = {
-  readonly createLoop: (kind: WeatherLoopKind, initialGain: number) => WeatherAudioHandle
-  readonly setLoopGain: (handle: WeatherAudioHandle, gain: number, fadeSecs: number) => void
-  readonly stopLoop: (handle: WeatherAudioHandle, fadeSecs: number) => void
+  readonly createLoop: (kind: WeatherLoopKind, initialGain: AudioGain) => WeatherAudioHandle
+  readonly setLoopGain: (handle: WeatherAudioHandle, gain: AudioGain, fadeSecs: AudioDurationSecs) => void
+  readonly stopLoop: (handle: WeatherAudioHandle, fadeSecs: AudioDurationSecs) => void
   readonly playThunder: (request: {
-    readonly delaySecs: number
-    readonly gain: number
-    readonly pan: number
+    readonly delaySecs: AudioDurationSecs
+    readonly gain: AudioGain
+    readonly pan: AudioPan
   }) => WeatherAudioHandle
   readonly release: (handle: WeatherAudioHandle) => void
 }

@@ -1,38 +1,50 @@
+import type {
+  AudioCaptionText,
+  AudioDistance,
+  AudioGain,
+  AudioPlaybackRate,
+  AudioWeight,
+  MinecraftSoundEventId,
+  MinecraftSoundNamespace,
+  MinecraftSoundResourceId,
+} from './audio-brands.js'
+
 export type MinecraftSoundReferenceType = 'sound' | 'event'
 
 export type MinecraftSoundVariant = {
-  readonly name: string
-  readonly type: MinecraftSoundReferenceType
-  readonly volume: number
-  readonly pitch: number
-  readonly weight: number
+  readonly volume: AudioGain
+  readonly pitch: AudioPlaybackRate
+  readonly weight: AudioWeight
   readonly stream: boolean
-  readonly attenuationDistance: number
+  readonly attenuationDistance: AudioDistance
   readonly preload: boolean
-}
+} & (
+  | { readonly name: MinecraftSoundResourceId; readonly type: 'sound' }
+  | { readonly name: MinecraftSoundEventId; readonly type: 'event' }
+)
 
 export type MinecraftSoundEvent = {
-  readonly id: string
+  readonly id: MinecraftSoundEventId
   readonly replace: boolean
-  readonly subtitle: string | null
+  readonly subtitle: AudioCaptionText | null
   readonly sounds: readonly MinecraftSoundVariant[]
 }
 
 export type MinecraftSoundRegistry = {
-  readonly events: Readonly<Record<string, MinecraftSoundEvent>>
+  readonly events: ReadonlyMap<MinecraftSoundEventId, MinecraftSoundEvent>
 }
 
 export type MinecraftSoundRegistryOptions = {
-  readonly namespace: string
+  readonly namespace: MinecraftSoundNamespace
 }
 
 export type ResolvedMinecraftSound = {
-  readonly eventId: string
-  readonly soundId: string
-  readonly volume: number
-  readonly pitch: number
+  readonly eventId: MinecraftSoundEventId
+  readonly soundId: MinecraftSoundResourceId
+  readonly volume: AudioGain
+  readonly pitch: AudioPlaybackRate
   readonly stream: boolean
-  readonly attenuationDistance: number
+  readonly attenuationDistance: AudioDistance
   readonly preload: boolean
 }
 

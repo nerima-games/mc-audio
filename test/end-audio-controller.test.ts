@@ -1,5 +1,6 @@
 /* oxlint-disable id-length, max-statements, no-empty-function, no-magic-numbers, sort-imports -- Compact no-op ports make ownership and lifecycle assertions explicit. */
 import { describe, expect, it } from 'vitest'
+import { Result } from 'effect'
 import {
   makeEndAudioController,
   type EndAudioHandle,
@@ -12,12 +13,17 @@ import {
   type WeatherAudioPort,
 } from '../src/domain/weather-audio-controller'
 import type { WeatherAudioSnapshot } from '../src/domain/weather-ambience'
+import { AudioEventId, AudioHandleId, AudioVolume } from '../src/domain/audio-brands'
+import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
+import { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
+
+const position = () => ({ x: PositionAxis(0), y: PositionAxis(64), z: PositionAxis(0) })
 
 const endSnapshot = (overrides: Partial<EndAudioSnapshot> = {}): EndAudioSnapshot => ({
   dimension: 'end',
   events: [],
-  listener: { x: 0, y: 64, z: 0 },
-  nowSecs: 1,
+  listener: position(),
+  nowSecs: MonotonicTimeSecs(1),
   phase: 'active',
   ...overrides,
 })
@@ -30,7 +36,10 @@ const recorder = (primaryAvailable: boolean) => {
   const released: number[] = []
   const stopped: number[] = []
   const gains: number[] = []
-  const next = (): EndAudioHandle => ({ id: (id += 1) })
+  const next = (): EndAudioHandle => {
+    id += 1
+    return { id: AudioHandleId(id) }
+  }
   const port: EndAudioPort = {
     createLoop: () => {
       const handle = next()
@@ -61,8 +70,8 @@ describe('End audio controller', () => {
   it('falls back for an unsupported event and releases it when its lifetime ends', () => {
     const record = recorder(false)
     const controller = makeEndAudioController(record.port)
-    controller.update(endSnapshot({ events: [{ id: 'flap', kind: 'dragonFlap', position: { x: 0, y: 64, z: 0 } }] }))
-    controller.update(endSnapshot({ nowSecs: 2 }))
+    controller.update(endSnapshot({ events: [{ id: AudioEventId('flap'), kind: 'dragonFlap', position: position() }] }))
+    controller.update(endSnapshot({ nowSecs: MonotonicTimeSecs(2) }))
     expect(record.created).toStrictEqual([1])
     expect(record.fallback).toStrictEqual([2])
     expect(record.released).toStrictEqual([2])
@@ -72,11 +81,11 @@ describe('End audio controller', () => {
   it('prefers primary playback, transitions its loop, and disposes idempotently', () => {
     const record = recorder(true)
     const controller = makeEndAudioController(record.port)
-    controller.update(endSnapshot({ events: [{ id: 'roar', kind: 'dragonRoar', position: { x: 0, y: 64, z: 0 } }] }))
-    controller.update(endSnapshot({ dimension: 'overworld', nowSecs: 1.1, phase: 'unstarted' }))
+    controller.update(endSnapshot({ events: [{ id: AudioEventId('roar'), kind: 'dragonRoar', position: position() }] }))
+    controller.update(endSnapshot({ dimension: 'overworld', nowSecs: MonotonicTimeSecs(1.1), phase: 'unstarted' }))
     controller.dispose()
     controller.dispose()
-    controller.update(endSnapshot({ nowSecs: 9 }))
+    controller.update(endSnapshot({ nowSecs: MonotonicTimeSecs(9) }))
     expect(record.primary).toStrictEqual([2])
     expect(record.fallback).toStrictEqual([])
     expect(record.stopped).toStrictEqual([1])
@@ -97,7 +106,7 @@ describe('End audio controller', () => {
       stopLoop: () => {},
     }
     const controller = makeEndAudioController(port)
-    const input = endSnapshot({ events: [{ id: 'hurt', kind: 'dragonHurt', position: { x: 0, y: 64, z: 0 } }] })
+    const input = endSnapshot({ events: [{ id: AudioEventId('hurt'), kind: 'dragonHurt', position: position() }] })
     controller.update(input)
     controller.update(input)
     controller.dispose()
@@ -109,7 +118,10 @@ describe('End audio controller', () => {
     let id = 0
     const released: number[] = []
     const stopped: number[] = []
-    const next = (): { readonly id: number } => ({ id: (id += 1) })
+    const next = (): { readonly id: AudioHandleId } => {
+      id += 1
+      return { id: AudioHandleId(id) }
+    }
     const shared = {
       release: (handle: { readonly id: number }) => released.push(handle.id),
       stopLoop: (handle: { readonly id: number }) => stopped.push(handle.id),
@@ -132,29 +144,49 @@ describe('End audio controller', () => {
     const weather = makeWeatherAudioController(weatherPort)
     const end = makeEndAudioController(endPort)
     const rain: WeatherAudioSnapshot = {
-      intensity: 1,
-      listener: { x: 0, y: 64, z: 0 },
+      intensity: AudioVolume(1),
+      listener: position(),
       mode: 'rain',
-      occlusion: 0,
+      occlusion: AudioVolume(0),
     }
     weather.update(rain)
-    end.update(endSnapshot({ events: [{ id: 'roar', kind: 'dragonRoar', position: { x: 0, y: 64, z: 0 } }] }))
+    end.update(endSnapshot({ events: [{ id: AudioEventId('roar'), kind: 'dragonRoar', position: position() }] }))
     end.dispose()
     expect(released.sort()).toStrictEqual([2, 3])
     expect(stopped).toStrictEqual([2])
 
-    weather.update({ ...rain, intensity: 0.5 })
+    weather.update({ ...rain, intensity: AudioVolume(0.5) })
     weather.dispose()
     expect(released.sort()).toStrictEqual([1, 2, 3])
     expect(stopped).toStrictEqual([2, 1])
   })
 
-  it('floors a non-finite nowSecs to the start of the clock rather than propagating NaN', () => {
+  it('rejects an untyped NaN clock before port calls or state updates', () => {
+    const record = recorder(true)
+    const controller = makeEndAudioController(record.port)
+    const initialState = controller.state()
+    const snapshot = endSnapshot({
+      events: [{ id: AudioEventId('roar'), kind: 'dragonRoar', position: position() }],
+    })
+    expect(Reflect.set(snapshot, 'nowSecs', Number.NaN)).toBe(true)
+
+    const result = controller.update(snapshot)
+    expect(Result.isFailure(result)).toBe(true)
+    expect(record.created).toStrictEqual([])
+    expect(record.fallback).toStrictEqual([])
+    expect(record.primary).toStrictEqual([])
+    expect(record.released).toStrictEqual([])
+    expect(record.stopped).toStrictEqual([])
+    expect(record.gains).toStrictEqual([])
+    expect(controller.state()).toBe(initialState)
+  })
+
+  it('tracks an event at the branded start of the clock', () => {
     const record = recorder(true)
     const controller = makeEndAudioController(record.port)
     controller.update(endSnapshot({
-      events: [{ id: 'roar', kind: 'dragonRoar', position: { x: 0, y: 64, z: 0 } }],
-      nowSecs: Number.NaN,
+      events: [{ id: AudioEventId('roar'), kind: 'dragonRoar', position: position() }],
+      nowSecs: MonotonicTimeSecs(0),
     }))
     expect(controller.state().lastPlayedAtSecs.dragonRoar).toBe(0)
   })

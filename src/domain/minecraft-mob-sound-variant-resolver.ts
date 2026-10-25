@@ -1,3 +1,9 @@
+import {
+  type AudioDiagnosticMessage,
+  type MinecraftMobSoundVariantId,
+  type MinecraftSoundEventId,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+} from './audio-brands.js'
 import type {
   MinecraftMobSoundBehavior,
   MinecraftMobSoundResolutionOptions,
@@ -7,10 +13,10 @@ import type {
   MinecraftWolfSoundDefinition,
 } from './minecraft-mob-sound-variant-types.js'
 import type { MinecraftSoundRegistry, ResolvedMinecraftSound } from './minecraft-sounds-types.js'
-import { resolveMinecraftSound } from './minecraft-sounds-resolver.js'
+import { type MinecraftSoundResolutionFailure, resolveMinecraftSound } from './minecraft-sounds-resolver.js'
+import { Result } from 'effect'
 
 const DEFAULT_IS_BABY = false
-const DEFAULT_RANDOM = 0
 
 const SOUND_FIELD_BY_BEHAVIOR: Readonly<Record<MinecraftMobSoundBehavior, string>> = {
   ambient: 'ambientSound',
@@ -34,10 +40,35 @@ const WOLF_SOUND_FIELD_BY_BEHAVIOR: Readonly<Record<MinecraftWolfSoundBehavior, 
   whine: 'whineSound',
 }
 
+export type MinecraftMobSoundVariantResolutionFailure = {
+  readonly _tag: 'MinecraftMobSoundVariantResolutionFailure'
+  readonly behavior: MinecraftMobSoundBehavior | MinecraftWolfSoundBehavior
+  readonly message: AudioDiagnosticMessage
+  readonly variantId?: MinecraftMobSoundVariantId
+}
+
+type ResolveFailure = MinecraftMobSoundVariantResolutionFailure | MinecraftSoundResolutionFailure
+
+const failure = (
+  behavior: MinecraftMobSoundBehavior | MinecraftWolfSoundBehavior,
+  message: string,
+  variantId?: MinecraftMobSoundVariantId,
+): Result.Result<never, MinecraftMobSoundVariantResolutionFailure> => {
+  const baseFailure: MinecraftMobSoundVariantResolutionFailure = {
+    _tag: 'MinecraftMobSoundVariantResolutionFailure',
+    behavior,
+    message: makeAudioDiagnosticMessage(message),
+  }
+  if (variantId !== globalThis.undefined) {
+    return Result.fail({ ...baseFailure, variantId })
+  }
+  return Result.fail(baseFailure)
+}
+
 const soundSetFor = (
   definition: MinecraftMobSoundVariantDefinition,
   isBaby: boolean,
-): Readonly<Record<string, string>> => {
+): Readonly<Record<string, MinecraftSoundEventId>> => {
   if (definition.kind === 'cow') {
     return definition.sounds
   }
@@ -50,7 +81,7 @@ const soundSetFor = (
 const wolfSoundSetFor = (
   definition: MinecraftWolfSoundDefinition,
   isBaby: boolean,
-): Readonly<Record<string, string>> => {
+): Readonly<Record<string, MinecraftSoundEventId>> => {
   if (isBaby) {
     return definition.babySounds
   }
@@ -58,26 +89,27 @@ const wolfSoundSetFor = (
 }
 
 const eventIdFromSoundSet = (
-  soundSet: Readonly<Record<string, string>>,
+  soundSet: Readonly<Record<string, MinecraftSoundEventId>>,
   field: string,
-  behavior: string,
-): string => {
+  behavior: MinecraftMobSoundBehavior | MinecraftWolfSoundBehavior,
+): Result.Result<MinecraftSoundEventId, MinecraftMobSoundVariantResolutionFailure> => {
   const eventId = soundSet[field]
-  if (typeof eventId !== 'string') {
-    throw new Error(`Minecraft sound variant does not define ${behavior}`)
+  if (eventId === globalThis.undefined) {
+    return failure(behavior, `Minecraft sound variant does not define ${behavior}`)
   }
-  return eventId
+  return Result.succeed(eventId)
 }
 
 export const resolveMinecraftMobSoundEventId = (
   definition: MinecraftMobSoundVariantDefinition,
   behavior: MinecraftMobSoundBehavior,
   isBaby: boolean = DEFAULT_IS_BABY,
-): string => eventIdFromSoundSet(
-  soundSetFor(definition, isBaby),
-  SOUND_FIELD_BY_BEHAVIOR[behavior],
-  behavior,
-)
+): Result.Result<MinecraftSoundEventId, MinecraftMobSoundVariantResolutionFailure> => {
+  if (typeof isBaby !== 'boolean') {
+    return failure(behavior, 'Minecraft mob sound isBaby must be a boolean')
+  }
+  return eventIdFromSoundSet(soundSetFor(definition, isBaby), SOUND_FIELD_BY_BEHAVIOR[behavior], behavior)
+}
 
 type ResolveMinecraftMobSoundOptions = {
   readonly behavior: MinecraftMobSoundBehavior
@@ -86,25 +118,23 @@ type ResolveMinecraftMobSoundOptions = {
   readonly registry: MinecraftSoundRegistry
 }
 
-export const resolveMinecraftMobSound = ({ behavior, definition, options = {}, registry }: ResolveMinecraftMobSoundOptions): ResolvedMinecraftSound => resolveMinecraftSound(
-  registry,
-  resolveMinecraftMobSoundEventId(definition, behavior, options.isBaby ?? DEFAULT_IS_BABY),
-  options.random ?? DEFAULT_RANDOM,
-)
+export const resolveMinecraftMobSound = ({ behavior, definition, options = {}, registry }: ResolveMinecraftMobSoundOptions): Result.Result<ResolvedMinecraftSound, ResolveFailure> =>
+  Result.flatMap(
+    resolveMinecraftMobSoundEventId(definition, behavior, options.isBaby),
+    (eventId) => resolveMinecraftSound(registry, eventId, options.random),
+  )
 
-export const resolveMinecraftMobSoundVariant = (
-  options: {
-    readonly behavior: MinecraftMobSoundBehavior
-    readonly options?: MinecraftMobSoundResolutionOptions
-    readonly registry: MinecraftSoundRegistry
-    readonly variantId: string
-    readonly variants: MinecraftMobSoundVariantRegistry
-  },
-): ResolvedMinecraftSound => {
+export const resolveMinecraftMobSoundVariant = (options: {
+  readonly behavior: MinecraftMobSoundBehavior
+  readonly options?: MinecraftMobSoundResolutionOptions
+  readonly registry: MinecraftSoundRegistry
+  readonly variantId: MinecraftMobSoundVariantId
+  readonly variants: MinecraftMobSoundVariantRegistry
+}): Result.Result<ResolvedMinecraftSound, ResolveFailure> => {
   const { behavior, options: resolutionOptions = {}, registry, variantId, variants } = options
-  const definition = variants.variants[variantId]
-  if (typeof definition !== 'object' || definition === null) {
-    throw new Error(`Unknown Minecraft ${variants.kind} sound variant: ${variantId}`)
+  const definition = variants.variants.get(variantId)
+  if (definition === globalThis.undefined) {
+    return failure(behavior, `Unknown Minecraft ${variants.kind} sound variant: ${variantId}`, variantId)
   }
   return resolveMinecraftMobSound({ behavior, definition, options: resolutionOptions, registry })
 }
@@ -113,25 +143,22 @@ export const resolveMinecraftWolfSoundEventId = (
   definition: MinecraftWolfSoundDefinition,
   behavior: MinecraftWolfSoundBehavior,
   isBaby: boolean = DEFAULT_IS_BABY,
-): string => eventIdFromSoundSet(
-  wolfSoundSetFor(definition, isBaby),
-  WOLF_SOUND_FIELD_BY_BEHAVIOR[behavior],
-  behavior,
-)
-
-export const resolveMinecraftWolfSound = (
-  options: {
-    readonly behavior: MinecraftWolfSoundBehavior
-    readonly definition: MinecraftWolfSoundDefinition
-    readonly options?: MinecraftMobSoundResolutionOptions
-    readonly registry: MinecraftSoundRegistry
-  },
-): ResolvedMinecraftSound => {
-  const { behavior, definition, options: resolutionOptions = {}, registry } = options
-  return resolveMinecraftSound(
-    registry,
-    resolveMinecraftWolfSoundEventId(definition, behavior, resolutionOptions.isBaby ?? DEFAULT_IS_BABY),
-    resolutionOptions.random ?? DEFAULT_RANDOM,
-  )
+): Result.Result<MinecraftSoundEventId, MinecraftMobSoundVariantResolutionFailure> => {
+  if (typeof isBaby !== 'boolean') {
+    return failure(behavior, 'Minecraft wolf sound isBaby must be a boolean')
+  }
+  return eventIdFromSoundSet(wolfSoundSetFor(definition, isBaby), WOLF_SOUND_FIELD_BY_BEHAVIOR[behavior], behavior)
 }
 
+export const resolveMinecraftWolfSound = (options: {
+  readonly behavior: MinecraftWolfSoundBehavior
+  readonly definition: MinecraftWolfSoundDefinition
+  readonly options?: MinecraftMobSoundResolutionOptions
+  readonly registry: MinecraftSoundRegistry
+}): Result.Result<ResolvedMinecraftSound, ResolveFailure> => {
+  const { behavior, definition, options: resolutionOptions = {}, registry } = options
+  return Result.flatMap(
+    resolveMinecraftWolfSoundEventId(definition, behavior, resolutionOptions.isBaby),
+    (eventId) => resolveMinecraftSound(registry, eventId, resolutionOptions.random),
+  )
+}

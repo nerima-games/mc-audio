@@ -36,6 +36,7 @@
  * Every number below comes from `domain/`. Nothing here recomputes anything.
  */
 import { Option } from 'effect'
+import { AudioDurationSecs } from '../../src/domain/audio-brands'
 import type { AudioAvailability } from '../../src/domain/backend-port'
 import { type CaptionEvent, visibleCaptions } from '../../src/domain/caption'
 import { SOUND_CUE_IDS, cueDefinition } from '../../src/domain/cue'
@@ -301,10 +302,10 @@ const renderEnvelope = (plan: CuePlan, style: Style, ascii: boolean): ReadonlyAr
     ]
   }
 
-  const envelope = toneEnvelope(plan.tone, 0)
-  const span = envelope.stopAtSecs ?? 0.1
+  const envelope = toneEnvelope(plan.tone, AudioDurationSecs(0))
+  const span = envelope.stopAtSecs ?? AudioDurationSecs(0.1)
   const values = Array.from({ length: ENVELOPE_SAMPLES }, (_unused, index) =>
-    gainAt(envelope, (span * index) / (ENVELOPE_SAMPLES - 1)),
+    gainAt(envelope, AudioDurationSecs((span * index) / (ENVELOPE_SAMPLES - 1))),
   )
 
   return [

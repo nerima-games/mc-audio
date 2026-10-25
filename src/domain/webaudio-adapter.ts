@@ -28,8 +28,8 @@
  *
  *     yield* Effect.tryPromise({
  *       try: () => context.resume(),
- *       catch: () => new Error('AudioContext resume failed'),
- *     }).pipe(Effect.catchAllCause(() => Effect.void))    // audio-engine.ts:46-49
+ *       catch: (cause) => cause,
+ *     }).pipe(Effect.catch(() => Effect.void))          // audio-engine.ts:46-49
  *
  * — and then, on the very next line, it built the oscillator anyway. When the
  * autoplay policy refused, that code created a node graph, started it,
@@ -56,9 +56,7 @@
  * What happens to a cue that is refused: it is DISCARDED
  * ---------------------------------------------------------------------------
  *
- * `docs/public-api.md` §7 lists a pending queue as an open question — replay
- * refused cues after unlock, or drop them. This adapter drops them, and counts
- * them.
+ * This adapter drops refused cues and counts them.
  *
  * Replaying is worse than it sounds. The cues that pile up before the first
  * click are the ones that fired during loading and the opening seconds; playing
@@ -74,7 +72,8 @@
  * shrugging one, and it is why `docs/design-notes.md` DN-1 is the invariant
  * this repository protects hardest.
  */
-import { Effect, Layer, Option, Ref } from 'effect'
+import { Deferred, Effect, Layer, Option, Ref } from 'effect'
+import { AudioCount, AudioDurationSecs, AudioFrequencyHz, AudioGain, AudioHandleId, AudioPan, AudioPlaybackRate, AudioSampleId, AudioVolume } from './audio-brands.js'
 import {
   type AudioAvailability,
   type AudioBackend,
@@ -110,7 +109,7 @@ import { buildToneGraph, type ActiveTone } from './webaudio-tone-graph.js'
 export { DEFAULT_TONE_WAVE } from './webaudio-tone-graph.js'
 
 /** A conservative ceiling that prevents pathological cue bursts from exhausting nodes. */
-export const DEFAULT_MAX_CONCURRENT_TONES = 32
+export const DEFAULT_MAX_CONCURRENT_TONES: AudioCount = AudioCount(32)
 
 export type { AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
 export { availabilityForState } from './webaudio-runtime.js'
@@ -132,7 +131,7 @@ export type {
  * Cleanup that can throw turns a finished sound into an unhandled rejection.
  */
 const ignoringFailure = (run: () => void): Effect.Effect<void> =>
-  Effect.try({ catch: (cause) => cause, try: run }).pipe(Effect.catchAll(() => Effect.void))
+  Effect.try({ catch: (cause) => cause, try: run }).pipe(Effect.catch(() => Effect.void))
 
 const attempt = (run: () => void): Effect.Effect<boolean> =>
   Effect.try({
@@ -141,51 +140,120 @@ const attempt = (run: () => void): Effect.Effect<boolean> =>
       run()
       return true
     },
-  }).pipe(Effect.catchAll(() => Effect.succeed(false)))
+  }).pipe(Effect.catch(() => Effect.succeed(false)))
 
 const closeContext = (context: AudioContextSurface): Effect.Effect<void> =>
   Effect.tryPromise({
     catch: (cause) => cause,
     try: () => context.close(),
-  }).pipe(Effect.catchAll(() => Effect.void))
+  }).pipe(Effect.catch(() => Effect.void))
 
-const resolveMaxConcurrentTones = (value: number | undefined): number =>
-  value === undefined || !Number.isFinite(value)
-    ? DEFAULT_MAX_CONCURRENT_TONES
-    : Math.max(1, Math.floor(value))
+const resolveMaxConcurrentTones = (value: AudioCount | undefined): Option.Option<AudioCount> => {
+  if (value === undefined) {
+    return Option.some(DEFAULT_MAX_CONCURRENT_TONES)
+  }
+  return Option.match(AudioCount.option(value), {
+    onNone: () => Option.none<AudioCount>(),
+    onSome: (validValue) => Option.some(AudioCount(Math.max(1, Math.floor(validValue)))),
+  })
+}
 
-const resolvePlaybackRate = (playbackRate: number | undefined): number =>
-  playbackRate !== undefined && Number.isFinite(playbackRate) && playbackRate > 0 ? playbackRate : 1
+const resolvePlaybackRate = (playbackRate: AudioPlaybackRate | undefined): Option.Option<AudioPlaybackRate> => {
+  if (playbackRate === undefined) {
+    return Option.some(AudioPlaybackRate(1))
+  }
+  return AudioPlaybackRate.option(playbackRate)
+}
+
+type PlaybackAdmission = {
+  readonly maxConcurrentTones: AudioCount
+  readonly playbackRate: AudioPlaybackRate
+  readonly request: AdmittedToneRequest
+  readonly sampleId: Option.Option<AudioSampleId>
+}
+
+type AdmittedToneRequest = Omit<ToneRequest, 'soundId'> & { readonly soundId?: AudioSampleId }
+
+const playbackAdmission = (
+  request: ToneRequest,
+  maxConcurrentTones: Option.Option<AudioCount>,
+): Option.Option<PlaybackAdmission> => {
+  if (Option.isNone(maxConcurrentTones)) {
+    return Option.none()
+  }
+
+  const playbackRate = resolvePlaybackRate(request.playbackRate)
+  if (Option.isNone(playbackRate)) {
+    return Option.none()
+  }
+
+  const { soundId: untrustedSoundId, ...requestWithoutSoundId } = request
+  const sampleId =
+    untrustedSoundId === undefined ? Option.none<AudioSampleId>() : AudioSampleId.option(untrustedSoundId)
+  if (untrustedSoundId !== undefined && Option.isNone(sampleId)) {
+    return Option.none()
+  }
+
+  return Option.some({
+    maxConcurrentTones: maxConcurrentTones.value,
+    playbackRate: playbackRate.value,
+    request: {
+      ...requestWithoutSoundId,
+      playbackRate: playbackRate.value,
+      ...(Option.isSome(sampleId) ? { soundId: sampleId.value } : {}),
+    },
+    sampleId,
+  })
+}
 
 const sampleDurationSecs = (
   buffer: AudioBufferSurface,
-  playbackRate: number,
-  fallbackDurationSecs: number,
-): number =>
-  Number.isFinite(buffer.duration) && buffer.duration >= 0
-    ? buffer.duration / playbackRate
-    : fallbackDurationSecs
+  playbackRate: AudioPlaybackRate,
+): Option.Option<AudioDurationSecs> => {
+  const { duration } = buffer
+  if (typeof duration !== 'number' || !Number.isFinite(duration) || duration < 0) {
+    return Option.none<AudioDurationSecs>()
+  }
+  return AudioDurationSecs.option(duration / playbackRate)
+}
+
+const audioTime = (value: unknown): Option.Option<AudioDurationSecs> =>
+  typeof value === 'number' ? AudioDurationSecs.option(value) : Option.none<AudioDurationSecs>()
+
+type SampleBufferResolution =
+  | { readonly kind: 'invalid' }
+  | { readonly buffer: AudioBufferSurface | null; readonly kind: 'resolved' }
 
 const resolveSampleBuffer = (
-  request: ToneRequest,
+  request: AdmittedToneRequest,
   options: WebAudioOptions,
-  sampleCache: ReadonlyMap<string, AudioBufferSurface>,
-): AudioBufferSurface | null => {
+  sampleCache: ReadonlyMap<AudioSampleId, AudioBufferSurface>,
+): Effect.Effect<SampleBufferResolution> => {
   const { soundId } = request
   if (soundId === undefined) {
-    return null
+    return Effect.succeed({ buffer: null, kind: 'resolved' })
   }
-  try {
-    return options.resolveAudioBuffer?.(soundId) ?? sampleCache.get(soundId) ?? null
-  } catch {
-    return null
-  }
+  return Effect.try({
+    catch: (cause) => cause,
+    try: (): SampleBufferResolution => {
+      const cached = sampleCache.get(soundId)
+      const resolver = options.resolveAudioBuffer
+      if (resolver === undefined) {
+        return { buffer: cached ?? null, kind: 'resolved' }
+      }
+      const resolved = resolver(soundId)
+      if (resolved === globalThis.undefined) {
+        return { kind: 'invalid' }
+      }
+      return { buffer: resolved ?? cached ?? null, kind: 'resolved' }
+    },
+  }).pipe(Effect.catch(() => Effect.succeed({ buffer: null, kind: 'resolved' as const })))
 }
 
 type StreamSourceRequestOptions = {
   readonly context: AudioContextSurface
   readonly createStreamSource: WebAudioOptions['createStreamSource']
-  readonly request: ToneRequest
+  readonly request: AdmittedToneRequest
   readonly sampleManifest: AudioSampleManifest
 }
 
@@ -204,7 +272,7 @@ const streamSourceForRequest = ({
     return Effect.succeed(null)
   }
 
-  const source = sampleManifest[soundId]
+  const source = sampleManifest.get(soundId)
   if (source === undefined || source.stream !== true) {
     return Effect.succeed(null)
   }
@@ -212,7 +280,7 @@ const streamSourceForRequest = ({
   return Effect.try({
     catch: (cause) => cause,
     try: () => createStreamSource({ context, request, soundId, source }),
-  }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+  }).pipe(Effect.catch(() => Effect.succeed(null)))
 }
 
 /**
@@ -237,26 +305,27 @@ export const makeWebAudioBackend = (
   options: WebAudioOptions,
 ): Effect.Effect<WebAudioBackend> =>
   Effect.gen(function* buildWebAudioBackend() {
+    const { initialMasterGain = 0.8, sampleManifest: configuredManifest = new Map() } = options
     const runtimeRef = yield* Ref.make<Option.Option<ContextRuntime>>(Option.none())
     const attemptedRef = yield* Ref.make(false)
-    const masterGainValueRef = yield* Ref.make(clamp01(options.initialMasterGain ?? 0.8))
+    const masterGainValueRef = yield* Ref.make(clamp01(initialMasterGain))
     const mutedRef = yield* Ref.make(false)
     const disposedRef = yield* Ref.make(false)
     const maxConcurrentTones = resolveMaxConcurrentTones(options.maxConcurrentTones)
-    const activeRef = yield* Ref.make<ReadonlyMap<number, ActiveTone>>(new Map())
+    const activeTones = new Map<AudioHandleId, ActiveTone>()
     const nextIdRef = yield* Ref.make(0)
     const unlockAttemptsRef = yield* Ref.make(0)
     const unlockRefusalsRef = yield* Ref.make(0)
     const refusedTonesRef = yield* Ref.make(0)
     const capacityRefusalsRef = yield* Ref.make(0)
-    const stateChangesRef = yield* Ref.make(0)
-    const sampleCache = new Map<string, AudioBufferSurface>()
-    const sampleLoads = new Map<string, Promise<boolean>>()
-    const preloadedStreams = new Set<string>()
-    const sampleManifest = options.sampleManifest ?? {}
+    let spontaneousStateChanges = 0
+    const sampleCache = new Map<AudioSampleId, AudioBufferSurface>()
+    const sampleLoads = new Map<AudioSampleId, Deferred.Deferred<boolean>>()
+    const preloadedStreams = new Set<AudioSampleId>()
+    const sampleManifest = configuredManifest
     const autoPreloadStartedRef = yield* Ref.make(false)
     const autoPreloadEffectRef = yield* Ref.make<Effect.Effect<void>>(Effect.void)
-    const hasConfiguredPreloads = Object.values(sampleManifest).some((source) => source.preload === true)
+    const hasConfiguredPreloads = [...sampleManifest.values()].some((source) => source.preload === true)
 
     /** Feature detection, as a value rather than as a global read. */
     const ensureRuntime: Effect.Effect<Option.Option<ContextRuntime>> = Effect.gen(function*  ensureRuntime() {
@@ -279,12 +348,12 @@ export const makeWebAudioBackend = (
       // Has exhausted its hardware contexts (Chrome caps them at six per page)
       // Throws rather than returning a dead one. The reference guarded this
       // Too and was right to (`acquireAudioContext`, `Effect.try` +
-      // `catchAllCause`). Returning `none` rather than failing keeps the
+      // `catchCause`). Returning `none` rather than failing keeps the
       // "never fails" shape that `AudioBackend` promises.
       const built = yield* Effect.try({
         catch: (cause) => cause,
         try: () => new found.value.construct(),
-      }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+      }).pipe(Effect.catch(() => Effect.succeed(null)))
 
       if (built === null) {
         return Option.none<ContextRuntime>()
@@ -305,7 +374,7 @@ export const makeWebAudioBackend = (
             master,
           }
         },
-      }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+      }).pipe(Effect.catch(() => Effect.succeed(null)))
 
       if (wired === null) {
         yield* closeContext(built)
@@ -316,7 +385,7 @@ export const makeWebAudioBackend = (
       // Begins and ends between two cues leaves a trace. See `WebAudioReport`.
       yield* ignoringFailure(() => {
         built.onstatechange = () => {
-          Effect.runSync(Ref.update(stateChangesRef, (count) => count + 1))
+          spontaneousStateChanges += 1
         }
       })
 
@@ -324,7 +393,7 @@ export const makeWebAudioBackend = (
       yield* Ref.set(runtimeRef, runtime)
       if (hasConfiguredPreloads && !(yield* Ref.get(autoPreloadStartedRef))) {
         yield* Ref.set(autoPreloadStartedRef, true)
-        yield* Effect.forkDaemon(yield* Ref.get(autoPreloadEffectRef))
+        yield* Effect.forkDetach(yield* Ref.get(autoPreloadEffectRef))
       }
       return runtime
     })
@@ -338,7 +407,7 @@ export const makeWebAudioBackend = (
     )
 
     const loadSample = (
-      _soundId: string,
+      _soundId: AudioSampleId,
       source: AudioSampleSource,
     ): Effect.Effect<AudioBufferSurface | null> =>
       Effect.gen(function* loadSampleEffect() {
@@ -346,33 +415,32 @@ export const makeWebAudioBackend = (
         if (Option.isNone(runtime) || (yield* Ref.get(disposedRef))) {
           return null
         }
-        const loadData = (): Promise<ArrayBuffer> => {
-          if (source.kind === 'array-buffer') {
-            return Promise.resolve(source.data.slice(0))
-          }
-          if (options.loadSampleData === undefined) {
-            return Promise.reject(new Error('No sample URL loader configured'))
-          }
-          return options.loadSampleData(source.url)
+        const { loadSampleData } = options
+        let data: ArrayBuffer | null = null
+        if (source.kind === 'array-buffer') {
+          const { data: arrayBuffer } = source
+          data = arrayBuffer.slice(0)
+        } else if (loadSampleData !== undefined) {
+          const { url } = source
+          data = yield* Effect.tryPromise({
+            catch: (cause) => cause,
+            try: () => loadSampleData(url),
+          }).pipe(Effect.catch(() => Effect.succeed(null)))
         }
-        const data = yield* Effect.tryPromise({
-          catch: (cause) => cause,
-          try: loadData,
-        }).pipe(Effect.catchAll(() => Effect.succeed(null)))
         if (data === null) {
           return null
         }
         const decoded = yield* Effect.tryPromise({
           catch: (cause) => cause,
           try: () => runtime.value.context.decodeAudioData(data),
-        }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+        }).pipe(Effect.catch(() => Effect.succeed(null)))
         if (decoded === null || (yield* Ref.get(disposedRef))) {
           return null
         }
         return decoded
       })
 
-    const preloadSamples = (soundIds?: ReadonlyArray<string>): Effect.Effect<AudioSampleLoadReport> =>
+    const preloadSamples = (soundIds?: ReadonlyArray<AudioSampleId>): Effect.Effect<AudioSampleLoadReport> =>
       preloadAudioSamples(soundIds, {
         cache: sampleCache,
         loadSample,
@@ -389,14 +457,12 @@ export const makeWebAudioBackend = (
         yield* ignoringFailure(() => tone.panner.disconnect())
       })
 
-    const removeActiveTone = (id: number): Effect.Effect<void> =>
-      Ref.update(activeRef, (current) => {
-        const next = new Map(current)
-        next.delete(id)
-        return next
+    const removeActiveTone = (id: AudioHandleId): Effect.Effect<void> =>
+      Effect.sync(() => {
+        activeTones.delete(id)
       })
 
-    const discardTone = (id: number, tone: ActiveTone): Effect.Effect<void> =>
+    const discardTone = (id: AudioHandleId, tone: ActiveTone): Effect.Effect<void> =>
       Effect.gen(function* discardFailedTone() {
         yield* removeActiveTone(id)
         yield* ignoringFailure(() => tone.source.stop())
@@ -406,8 +472,14 @@ export const makeWebAudioBackend = (
     const playTone = (request: ToneRequest): Effect.Effect<TonePlayback> =>
       Effect.gen(function* scheduleTone() {
         // Handles stay uniform across the admission gate; accepted is authoritative.
-        const id = yield* Ref.updateAndGet(nextIdRef, (value) => value + 1)
+        const id = AudioHandleId(yield* Ref.updateAndGet(nextIdRef, (value) => value + 1))
         const refusedPlayback = (): TonePlayback => ({ accepted: false, id })
+        const admission = playbackAdmission(request, maxConcurrentTones)
+        if (Option.isNone(admission)) {
+          yield* Ref.update(refusedTonesRef, (count) => count + 1)
+          return refusedPlayback()
+        }
+        const { maxConcurrentTones: concurrentToneLimit, playbackRate, request: playbackRequest, sampleId } = admission.value
 
         const runtime = yield* ensureRuntime
         if (Option.isNone(runtime)) {
@@ -426,8 +498,8 @@ export const makeWebAudioBackend = (
           return refusedPlayback()
         }
 
-        if (request.soundId !== undefined && sampleManifest[request.soundId] !== undefined) {
-          yield* preloadSamples([request.soundId]).pipe(Effect.asVoid)
+        if (Option.isSome(sampleId) && sampleManifest.has(sampleId.value)) {
+          yield* preloadSamples([sampleId.value]).pipe(Effect.asVoid)
         }
 
         if ((yield* Ref.get(disposedRef)) || context.state !== 'running') {
@@ -435,24 +507,34 @@ export const makeWebAudioBackend = (
           return refusedPlayback()
         }
 
-        const playbackRate = resolvePlaybackRate(request.playbackRate)
-        const sampleBuffer = resolveSampleBuffer(request, options, sampleCache)
+        const sampleResolution = yield* resolveSampleBuffer(playbackRequest, options, sampleCache)
+        if (sampleResolution.kind === 'invalid') {
+          yield* Ref.update(refusedTonesRef, (count) => count + 1)
+          return refusedPlayback()
+        }
+        const { buffer: sampleBuffer } = sampleResolution
         const canUseSample = sampleBuffer !== null && context.createBufferSource !== undefined
-        const scheduledRequest =
-          canUseSample && sampleBuffer !== null && !request.loop
-            ? {
-                ...request,
-                durationSecs: sampleDurationSecs(sampleBuffer, playbackRate, request.durationSecs),
-              }
-            : request
-        const envelope = toneEnvelope(scheduledRequest, context.currentTime)
+        const sampleDuration =
+          canUseSample && sampleBuffer !== null && !playbackRequest.loop
+            ? sampleDurationSecs(sampleBuffer, playbackRate)
+            : Option.some(playbackRequest.durationSecs)
+        if (Option.isNone(sampleDuration)) {
+          yield* Ref.update(refusedTonesRef, (count) => count + 1)
+          return refusedPlayback()
+        }
+        const scheduledRequest = { ...playbackRequest, durationSecs: sampleDuration.value }
+        const startSecs = audioTime(context.currentTime)
+        if (Option.isNone(startSecs)) {
+          yield* Ref.update(refusedTonesRef, (count) => count + 1)
+          return refusedPlayback()
+        }
+        const envelope = toneEnvelope(scheduledRequest, startSecs.value)
         if (envelope.peakGain === 0) {
           return refusedPlayback()
         }
 
-        const activeTones = (yield* Ref.get(activeRef)).values()
-        const activeCount = [...activeTones].filter((tone) => !tone.releasing).length
-        if (activeCount >= maxConcurrentTones) {
+        const activeCount = [...activeTones.values()].filter((tone) => !tone.releasing).length
+        if (activeCount >= concurrentToneLimit) {
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
           yield* Ref.update(capacityRefusalsRef, (count) => count + 1)
           return refusedPlayback()
@@ -461,41 +543,26 @@ export const makeWebAudioBackend = (
         const streamSource = yield* streamSourceForRequest({
           context,
           createStreamSource: options.createStreamSource,
-          request,
+          request: playbackRequest,
           sampleManifest,
         })
 
-        const built = yield* Effect.try({
-          catch: (cause) => cause,
-          try: () =>
-            buildToneGraph({
-              context,
-              envelope,
-              master,
-              playbackRate,
-              request,
-              sampleBuffer: canUseSample ? sampleBuffer : null,
-              streamSource,
-            }),
-        }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+        const built = yield* buildToneGraph({
+          context,
+          envelope,
+          master,
+          playbackRate,
+          request: playbackRequest,
+          sampleBuffer: canUseSample ? sampleBuffer : null,
+          streamSource,
+        }).pipe(Effect.catch(() => Effect.succeed(null)))
 
         if (built === null) {
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
           return refusedPlayback()
         }
 
-        yield* Ref.update(activeRef, (current) => new Map(current).set(id, built))
-
-        yield* ignoringFailure(() => {
-          built.source.onended = () => {
-            Effect.runSync(
-              Effect.gen(function*  onended() {
-                yield* releaseTone(built)
-                yield* removeActiveTone(id)
-              }),
-            )
-          }
-        })
+        activeTones.set(id, built)
 
         const scheduled = yield* attempt(() => {
           built.source.start(envelope.startSecs)
@@ -507,14 +574,30 @@ export const makeWebAudioBackend = (
         if (!scheduled) {
           yield* discardTone(id, built)
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
+          return refusedPlayback()
         }
 
-        return { accepted: scheduled, id }
+        yield* Effect.forkDetach(
+          Effect.callback<void>((resume) => {
+            built.source.onended = () => {
+              activeTones.delete(id)
+              built.source.onended = null
+              resume(Effect.gen(function* releaseEndedTone() {
+                yield* ignoringFailure(() => built.source.disconnect())
+                yield* ignoringFailure(() => built.gain.disconnect())
+                yield* ignoringFailure(() => built.panner.disconnect())
+              }))
+            }
+          }),
+          { startImmediately: true },
+        )
+
+        return { accepted: true, id }
       })
 
     const stopTone = (handle: ToneHandle): Effect.Effect<void> =>
       Effect.gen(function* stopActiveTone() {
-        const tone = (yield* Ref.get(activeRef)).get(handle.id)
+        const tone = activeTones.get(handle.id)
         if (tone === undefined) {
           return
         }
@@ -537,21 +620,27 @@ export const makeWebAudioBackend = (
           return
         }
 
-        const now = runtime.value.context.currentTime
+        const { context } = runtime.value
+        const now = audioTime(context.currentTime)
+        if (Option.isNone(now)) {
+          yield* discardTone(handle.id, tone)
+          return
+        }
 
         // Ramp down instead of stopping outright. `stopTone` is how a BGM track
         // Ends and how a looping cue is cancelled, and a loop cut mid-cycle at
         // Full amplitude is the loudest click this adapter could produce — a
         // Sustained tone is at full gain by definition, unlike a short cue
         // Which is usually already in its release when it ends.
+        const nowSecs = now.value
         const stopped = yield* attempt(() => {
           // `cancelScheduledValues` first, or the tone's own release — already
           // On the automation timeline from `playTone` — competes with this
           // One and the parameter jumps between the two curves.
-          tone.gain.gain.cancelScheduledValues(now)
-          tone.gain.gain.setValueAtTime(gainAt(tone.envelope, now), now)
-          tone.gain.gain.linearRampToValueAtTime(0, now + RELEASE_SECS)
-          tone.source.stop(now + RELEASE_SECS)
+          tone.gain.gain.cancelScheduledValues(nowSecs)
+          tone.gain.gain.setValueAtTime(gainAt(tone.envelope, nowSecs), nowSecs)
+          tone.gain.gain.linearRampToValueAtTime(0, nowSecs + RELEASE_SECS)
+          tone.source.stop(nowSecs + RELEASE_SECS)
         })
         if (!stopped) {
           yield* discardTone(handle.id, tone)
@@ -560,9 +649,9 @@ export const makeWebAudioBackend = (
         }
       })
 
-    const setToneGain = (handle: ToneHandle, gain: number): Effect.Effect<void> =>
+    const setToneGain = (handle: ToneHandle, gain: AudioGain): Effect.Effect<void> =>
       Effect.gen(function* updateToneGain() {
-        const tone = (yield* Ref.get(activeRef)).get(handle.id)
+        const tone = activeTones.get(handle.id)
         if (tone === undefined) {
           return
         }
@@ -575,9 +664,9 @@ export const makeWebAudioBackend = (
       })
 
     const isToneActive = (handle: ToneHandle): Effect.Effect<boolean> =>
-      Effect.map(Ref.get(activeRef), (active) => active.has(handle.id))
+      Effect.sync(() => activeTones.has(handle.id))
 
-    const setMasterGain = (gain: number): Effect.Effect<void> =>
+    const setMasterGain = (gain: AudioVolume): Effect.Effect<void> =>
       Effect.gen(function* updateMasterGain() {
         const next = clamp01(gain)
         yield* Ref.set(masterGainValueRef, next)
@@ -625,7 +714,7 @@ export const makeWebAudioBackend = (
       yield* Effect.tryPromise({
         catch: (cause) => cause,
         try: () => context.resume(),
-      }).pipe(Effect.catchAll(() => Effect.void))
+      }).pipe(Effect.catch(() => Effect.void))
 
       // The state, not the promise. A resolved `resume()` is not a running
       // Context — see the doc comment on `WebAudioBackend.unlock`.
@@ -638,14 +727,17 @@ export const makeWebAudioBackend = (
 
     const playMusic = (request: MusicRequest): Effect.Effect<TonePlayback> =>
       Effect.gen(function* scheduleMusic() {
-        yield* preloadSamples([request.soundId]).pipe(Effect.asVoid)
+        const sampleId = AudioSampleId.option(request.soundId)
+        if (Option.isSome(sampleId)) {
+          yield* preloadSamples([sampleId.value]).pipe(Effect.asVoid)
+        }
         return yield* playTone({
-          durationSecs: 1,
-          frequency: 20,
+          durationSecs: AudioDurationSecs(1),
+          frequency: AudioFrequencyHz(20),
           gain: request.gain,
           loop: false,
           naturalDuration: true,
-          pan: 0,
+          pan: AudioPan(0),
           playbackRate: request.playbackRate,
           sampleOnly: true,
           soundId: request.soundId,
@@ -653,7 +745,7 @@ export const makeWebAudioBackend = (
         })
       })
 
-    // No catchAllCause wrapper: `preloadAudioSamples` types its error channel
+    // No Effect.catch wrapper: `preloadAudioSamples` types its error channel
     // As `never` (per-sample failures are reported in the returned counts,
     // Not thrown), so there is nothing for a catch here to ever handle.
     const autoPreload = preloadAudioSamples(undefined, {
@@ -669,15 +761,13 @@ export const makeWebAudioBackend = (
 
     const report: Effect.Effect<WebAudioReport> = Effect.gen(function*  report() {
       const runtime = yield* Ref.get(runtimeRef)
-      const active = yield* Ref.get(activeRef)
-
       return {
-        activeTones: active.size,
+        activeTones: AudioCount(activeTones.size),
         availability: Option.match(runtime, {
           onNone: (): AudioAvailability => 'unavailable',
           onSome: (value) => availabilityForState(value.context.state),
         }),
-        capacityRefusals: yield* Ref.get(capacityRefusalsRef),
+        capacityRefusals: AudioCount(yield* Ref.get(capacityRefusalsRef)),
         constructorName: Option.match(runtime, {
           onNone: (): WebAudioConstructorName | null => null,
           onSome: (value) => value.constructorName,
@@ -689,10 +779,10 @@ export const makeWebAudioBackend = (
         }),
         disposed: yield* Ref.get(disposedRef),
         muted: yield* Ref.get(mutedRef),
-        refusedTones: yield* Ref.get(refusedTonesRef),
-        spontaneousStateChanges: yield* Ref.get(stateChangesRef),
-        unlockAttempts: yield* Ref.get(unlockAttemptsRef),
-        unlockRefusals: yield* Ref.get(unlockRefusalsRef),
+        refusedTones: AudioCount(yield* Ref.get(refusedTonesRef)),
+        spontaneousStateChanges: AudioCount(spontaneousStateChanges),
+        unlockAttempts: AudioCount(yield* Ref.get(unlockAttemptsRef)),
+        unlockRefusals: AudioCount(yield* Ref.get(unlockRefusalsRef)),
       }
     })
 
@@ -707,11 +797,11 @@ export const makeWebAudioBackend = (
         sampleLoads.clear()
         return
       }
-      for (const tone of (yield* Ref.get(activeRef)).values()) {
+      for (const tone of activeTones.values()) {
         yield* ignoringFailure(() => tone.source.stop())
         yield* releaseTone(tone)
       }
-      yield* Ref.set(activeRef, new Map())
+      activeTones.clear()
       sampleCache.clear()
       preloadedStreams.clear()
       sampleLoads.clear()

@@ -1,6 +1,17 @@
 /* oxlint-disable max-statements, no-magic-numbers */
 import { describe, expect, it } from '@effect/vitest'
-import { Either, Effect, Layer } from 'effect'
+import { Effect, Layer, Result } from 'effect'
+import {
+  AudioDistance,
+  AudioGain,
+  AudioHandleId,
+  AudioPlaybackRate,
+  AudioDelayTicks,
+  AudioVolume,
+  AudioWeight,
+  MinecraftSoundEventId,
+  MinecraftSoundResourceId,
+} from '../src/domain/audio-brands.js'
 import {
   type AudioBackend,
   type AudioAvailability,
@@ -21,57 +32,60 @@ import {
 import { createFreeMinecraftMusicRegistry } from '../src/domain/free-music-bank.js'
 
 const REGISTRY = createFreeMinecraftMusicRegistry()
+const handle = (id: number) => ({ id: AudioHandleId(id) })
+const success = <A, E>(result: Result.Result<A, E>): A => {
+  if (Result.isFailure(result)) {
+    throw new Error('expected a successful result')
+  }
+  return result.success
+}
 const METADATA_REGISTRY: MinecraftSoundRegistry = {
-  events: {
-    'minecraft:music.game': {
-      id: 'minecraft:music.game',
+  events: new Map([[MinecraftSoundEventId('minecraft:music.game'), {
+      id: MinecraftSoundEventId('minecraft:music.game'),
       replace: false,
       sounds: [
         {
-          attenuationDistance: 16,
-          pitch: 1.25,
+          attenuationDistance: AudioDistance(16),
+          pitch: AudioPlaybackRate(1.25),
           preload: true,
-          name: 'minecraft:music/free_game',
+          name: MinecraftSoundResourceId('minecraft:music/free_game'),
           stream: true,
           type: 'sound',
-          volume: 0.5,
-          weight: 1,
+          volume: AudioGain(0.5),
+          weight: AudioWeight(1),
         },
       ],
       subtitle: null,
-    },
-  },
+    }]]),
 }
 const LOUD_METADATA_REGISTRY: MinecraftSoundRegistry = {
-  events: {
-    'minecraft:music.game': {
-      id: 'minecraft:music.game',
+  events: new Map([[MinecraftSoundEventId('minecraft:music.game'), {
+      id: MinecraftSoundEventId('minecraft:music.game'),
       replace: false,
       sounds: [
         {
-          attenuationDistance: 16,
-          pitch: 1.25,
+          attenuationDistance: AudioDistance(16),
+          pitch: AudioPlaybackRate(1.25),
           preload: true,
-          name: 'minecraft:music/free_game',
+          name: MinecraftSoundResourceId('minecraft:music/free_game'),
           stream: true,
           type: 'sound',
-          volume: 4,
-          weight: 1,
+          volume: AudioGain(4),
+          weight: AudioWeight(1),
         },
       ],
       subtitle: null,
-    },
-  },
+    }]]),
 }
 const START_DEFINITION: MinecraftMusicDefinition = {
-  max_delay: 0,
-  min_delay: 0,
-  sound: 'minecraft:music.game',
+  max_delay: AudioDelayTicks(0),
+  min_delay: AudioDelayTicks(0),
+  sound: MinecraftSoundEventId('minecraft:music.game'),
 }
 const START_INPUT: MinecraftMusicTickInput = {
   context: { creative: false, underwater: false },
   definition: START_DEFINITION,
-  musicVolume: 1,
+  musicVolume: AudioVolume(1),
 }
 
 const makeHarness = (
@@ -126,7 +140,7 @@ describe('Minecraft music player', () => {
   it.effect('keeps an omitted official background_music component silent', () =>
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness()
-      const { backgroundMusic } = normalizeMinecraftAudioComponent()
+      const { backgroundMusic } = success(normalizeMinecraftAudioComponent())
       const result = yield* tickToStart(player, {
         backgroundMusic,
         context: { creative: false, underwater: false },
@@ -142,9 +156,9 @@ describe('Minecraft music player', () => {
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness('ready', () => 0.99)
       const backgroundMusic = {
-        creative: { ...START_DEFINITION, sound: 'minecraft:music.creative' },
+        creative: { ...START_DEFINITION, sound: MinecraftSoundEventId('minecraft:music.creative') },
         default: START_DEFINITION,
-        underwater: { ...START_DEFINITION, sound: 'minecraft:music.under_water' },
+        underwater: { ...START_DEFINITION, sound: MinecraftSoundEventId('minecraft:music.under_water') },
       }
 
       const result = yield* tickToStart(player, {
@@ -161,7 +175,7 @@ describe('Minecraft music player', () => {
         context: { creative: true, underwater: false },
       })
       expect(stopped.soundId).toBeNull()
-      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(false)
+      expect(yield* recorded.backend.isToneActive(handle(1))).toBe(false)
     }),
   )
 
@@ -170,8 +184,8 @@ describe('Minecraft music player', () => {
       let randomValue = 0
       const { player, recorded } = yield* makeHarness('ready', () => randomValue)
       const biomeMusic = [
-        { data: { ...START_DEFINITION, sound: 'minecraft:music.game' }, weight: 1 },
-        { data: { ...START_DEFINITION, sound: 'minecraft:music.creative' }, weight: 1 },
+          { data: { ...START_DEFINITION, sound: MinecraftSoundEventId('minecraft:music.game') }, weight: 1 },
+          { data: { ...START_DEFINITION, sound: MinecraftSoundEventId('minecraft:music.creative') }, weight: 1 },
       ] as const
       const input: MinecraftMusicTickInput = {
         biomeMusic,
@@ -185,7 +199,7 @@ describe('Minecraft music player', () => {
       const retained = yield* player.tick(input)
       expect(retained.soundId).toBe('minecraft:music.game')
 
-      yield* recorded.backend.stopTone({ id: 1 })
+      yield* recorded.backend.stopTone(handle(1))
       const ended = yield* player.tick(input)
       expect(ended.soundId).toBeNull()
       expect(ended.plan.state.currentSound).toBeNull()
@@ -202,7 +216,7 @@ describe('Minecraft music player', () => {
       const input: MinecraftMusicTickInput = {
         biomeMusic: [
           {
-            data: { ...START_DEFINITION, sound: 'minecraft:music.free_sulfur_caves' },
+            data: { ...START_DEFINITION, sound: MinecraftSoundEventId('minecraft:music.free_sulfur_caves') },
             weight: 1,
           },
         ],
@@ -232,7 +246,7 @@ describe('Minecraft music player', () => {
 
       expect(result.played).toBe(false)
       expect(result.soundId).toBeNull()
-      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(false)
+      expect(yield* recorded.backend.isToneActive(handle(1))).toBe(false)
     }),
   )
 
@@ -241,7 +255,7 @@ describe('Minecraft music player', () => {
       const { player, recorded } = yield* makeHarness()
       yield* tickToStart(player)
 
-      const result = yield* player.tick({ ...START_INPUT, musicVolume: 0 })
+      const result = yield* player.tick({ ...START_INPUT, musicVolume: AudioVolume(0) })
 
       expect(result.played).toBe(false)
       expect(yield* recorded.toneGains).toStrictEqual([{ gain: 0.38, handle: { id: 1 } }])
@@ -253,7 +267,7 @@ describe('Minecraft music player', () => {
       const { player, recorded } = yield* makeHarness('ready', () => 0, METADATA_REGISTRY)
       yield* tickToStart(player)
 
-      yield* player.tick({ ...START_INPUT, musicVolume: 0 })
+      yield* player.tick({ ...START_INPUT, musicVolume: AudioVolume(0) })
 
       expect(yield* recorded.toneGains).toStrictEqual([{ gain: 0.475, handle: { id: 1 } }])
     }),
@@ -265,10 +279,10 @@ describe('Minecraft music player', () => {
       yield* tickToStart(player)
 
       const replacement: MinecraftMusicDefinition = {
-        max_delay: 0,
-        min_delay: 0,
+        max_delay: AudioDelayTicks(0),
+        min_delay: AudioDelayTicks(0),
         replace_current_music: true,
-        sound: 'minecraft:music.creative',
+        sound: MinecraftSoundEventId('minecraft:music.creative'),
       }
       const result = yield* player.tick({ ...START_INPUT, definition: replacement })
 
@@ -278,8 +292,8 @@ describe('Minecraft music player', () => {
         { gain: 0.4, playbackRate: 1, soundId: 'minecraft:music/free_game', stream: true },
         { gain: 0.4, playbackRate: 1, soundId: 'minecraft:music/free_game', stream: true },
       ])
-      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(false)
-      expect(yield* recorded.backend.isToneActive({ id: 2 })).toBe(true)
+      expect(yield* recorded.backend.isToneActive(handle(1))).toBe(false)
+      expect(yield* recorded.backend.isToneActive(handle(2))).toBe(true)
     }),
   )
 
@@ -288,25 +302,70 @@ describe('Minecraft music player', () => {
       const { player, recorded } = yield* makeHarness()
       yield* tickToStart(player)
 
-      const result = yield* Effect.either(player.tick({
+      const result = yield* player.tick({
         ...START_INPUT,
         definition: {
-          max_delay: 0,
-          min_delay: 0,
+          max_delay: AudioDelayTicks(0),
+          min_delay: AudioDelayTicks(0),
           replace_current_music: true,
-          sound: 'minecraft:music.missing',
+          sound: MinecraftSoundEventId('minecraft:music.missing'),
         },
+      }).pipe(Effect.catch((error) => Effect.succeed(error)))
+
+      expect(result).toMatchObject({
+        _tag: 'MinecraftMusicPlaybackError',
+        soundId: 'minecraft:music.missing',
+      })
+      expect(yield* recorded.musicPlayed).toHaveLength(1)
+      expect(yield* recorded.backend.isToneActive(handle(1))).toBe(true)
+    }),
+  )
+
+  it.effect('maps malformed biome music selection to a playback error without an event id', () =>
+    Effect.gen(function* () {
+      const { player } = yield* makeHarness()
+      const result = yield* player.tick({
+        biomeMusic: [{ data: START_DEFINITION, weight: 0 }],
+        context: { creative: false, underwater: false },
+      }).pipe(Effect.catch((cause) => Effect.succeed(cause)))
+
+      expect(result).toMatchObject({
+        _tag: 'MinecraftMusicPlaybackError',
+        soundId: null,
+        cause: { _tag: 'MinecraftMusicDataFailure', path: 'weight' },
+      })
+    }),
+  )
+
+  it.effect('preserves a malformed desired definition sound when mapping planner errors', () =>
+    Effect.gen(function* () {
+      const { player } = yield* makeHarness()
+      const malformedWithSound = JSON.parse(JSON.stringify({
+        context: { creative: false, underwater: false },
+        definition: { max_delay: 0, min_delay: -1, sound: 'minecraft:music.game' },
+      }))
+      const malformedWithoutSound = JSON.parse(JSON.stringify({
+        context: { creative: false, underwater: false },
+        definition: { max_delay: 0, min_delay: 0 },
       }))
 
-      expect(Either.isLeft(result)).toBe(true)
-      if (Either.isLeft(result)) {
-        expect(result.left).toMatchObject({
-          _tag: 'MinecraftMusicPlaybackError',
-          soundId: 'minecraft:music.missing',
-        })
-      }
-      expect(yield* recorded.musicPlayed).toHaveLength(1)
-      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(true)
+      const withSound = yield* player.tick(malformedWithSound).pipe(
+        Effect.catch((cause) => Effect.succeed(cause)),
+      )
+      const withoutSound = yield* player.tick(malformedWithoutSound).pipe(
+        Effect.catch((cause) => Effect.succeed(cause)),
+      )
+
+      expect(withSound).toMatchObject({
+        _tag: 'MinecraftMusicPlaybackError',
+        soundId: 'minecraft:music.game',
+        cause: { _tag: 'MinecraftMusicDataFailure', path: 'min_delay' },
+      })
+      expect(withoutSound).toMatchObject({
+        _tag: 'MinecraftMusicPlaybackError',
+        soundId: null,
+        cause: { _tag: 'MinecraftMusicDataFailure', path: 'sound' },
+      })
     }),
   )
 
@@ -314,7 +373,7 @@ describe('Minecraft music player', () => {
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness()
       yield* tickToStart(player)
-      yield* recorded.backend.stopTone({ id: 1 })
+      yield* recorded.backend.stopTone(handle(1))
 
       const ended = yield* player.tick(START_INPUT)
       expect(ended.soundId).toBeNull()
@@ -323,7 +382,7 @@ describe('Minecraft music player', () => {
       yield* tickToStart(player)
       const disabled = yield* player.tick({ ...START_INPUT, enabled: false })
       expect(disabled.soundId).toBeNull()
-      expect(yield* recorded.backend.isToneActive({ id: 2 })).toBe(false)
+      expect(yield* recorded.backend.isToneActive(handle(2))).toBe(false)
     }),
   )
 
@@ -345,7 +404,7 @@ describe('Minecraft music player', () => {
       const recorded = yield* makeRecordingBackend('ready')
       const refusingBackend: AudioBackend = {
         ...recorded.backend,
-        playMusic: () => Effect.succeed({ accepted: false, id: 1 }),
+        playMusic: () => Effect.succeed({ accepted: false, id: AudioHandleId(1) }),
       }
       const player = yield* makeMinecraftMusicPlayer(REGISTRY, () => 0).pipe(
         Effect.provide(Layer.succeed(AudioBackendPort, refusingBackend)),
@@ -373,27 +432,24 @@ describe('Minecraft music player', () => {
         Effect.provide(Layer.succeed(AudioBackendPort, throwingBackend)),
       )
 
-      const result = yield* Effect.either(tickToStart(player))
+      const result = yield* tickToStart(player).pipe(Effect.catch((error) => Effect.succeed(error)))
 
-      expect(Either.isLeft(result)).toBe(true)
-      if (Either.isLeft(result)) {
-        expect(result.left).toMatchObject({
-          _tag: 'MinecraftMusicPlaybackError',
-          soundId: 'minecraft:music/free_game',
-        })
-      }
+      expect(result).toMatchObject({
+        _tag: 'MinecraftMusicPlaybackError',
+        soundId: 'minecraft:music/free_game',
+      })
       yield* player.stop
     }),
   )
 
-  it.effect('handles non-finite randomness at the player boundary', () =>
-    Effect.gen(function* () {
-      const { player, recorded } = yield* makeHarness('ready', () => Number.NaN)
-      const result = yield* tickToStart(player)
+  it.effect('rejects non-finite randomness before starting music', () =>
+  Effect.gen(function* () {
+    const { player, recorded } = yield* makeHarness('ready', () => Number.NaN)
+    const failure = yield* Effect.flip(tickToStart(player))
 
-      expect(result.played).toBe(true)
-      expect(yield* recorded.musicPlayed).toHaveLength(1)
-    }),
+    expect(failure).toBeDefined()
+    expect(yield* recorded.musicPlayed).toHaveLength(0)
+  }),
   )
 
   it.effect('forwards resolved volume, pitch, and streaming metadata', () =>

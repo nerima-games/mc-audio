@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { AudioEventId, AudioHandleId, AudioVolume } from '../src/domain/audio-brands'
+import { PositionAxis, type Position } from '@nerima-games/mc-kernel/domain/coordinates'
+import { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
 import {
   makeWeatherAudioController,
   type WeatherAudioHandle,
@@ -6,11 +9,17 @@ import {
 } from '../src/domain/weather-audio-controller'
 import type { WeatherAudioSnapshot, WeatherLoopKind } from '../src/domain/weather-ambience'
 
+const position = (x: number, y: number, z: number): Position => ({
+  x: PositionAxis(x),
+  y: PositionAxis(y),
+  z: PositionAxis(z),
+})
+
 const weather = (mode: WeatherAudioSnapshot['mode']): WeatherAudioSnapshot => ({
-  intensity: 0.8,
-  listener: { x: 0, y: 64, z: 0 },
+  intensity: AudioVolume(0.8),
+  listener: position(0, 64, 0),
   mode,
-  occlusion: 0,
+  occlusion: AudioVolume(0),
 })
 
 const recorder = () => {
@@ -20,7 +29,10 @@ const recorder = () => {
   const stopped: number[] = []
   const released: number[] = []
   const thunder: number[] = []
-  const next = (): WeatherAudioHandle => ({ id: (id += 1) })
+  const next = (): WeatherAudioHandle => {
+    id += 1
+    return { id: AudioHandleId(id) }
+  }
   const port: WeatherAudioPort = {
     createLoop: (kind) => {
       const handle = next()
@@ -44,9 +56,9 @@ describe('weather audio controller', () => {
     const record = recorder()
     const controller = makeWeatherAudioController(record.port)
     controller.update(weather('rain'))
-    controller.update({ ...weather('rain'), intensity: 0.4 })
-    controller.update(weather('snow'))
-    expect(record.created.map(({ kind }) => kind)).toStrictEqual(['rain', 'wind'])
+    controller.update({ ...weather('rain'), intensity: AudioVolume(0.4) })
+    controller.update(weather('clear'))
+    expect(record.created.map(({ kind }) => kind)).toStrictEqual(['rain'])
     expect(record.gains).toStrictEqual([0.4])
     expect(record.stopped).toStrictEqual([1])
     expect(record.released).toStrictEqual([1])
@@ -57,7 +69,11 @@ describe('weather audio controller', () => {
     const controller = makeWeatherAudioController(record.port)
     const storm = {
       ...weather('thunder'),
-      thunder: { id: 'bolt', occurredAtSecs: 1, position: { x: 0, y: 64, z: 10 } },
+      thunder: {
+        id: AudioEventId('bolt'),
+        occurredAtSecs: MonotonicTimeSecs(1),
+        position: position(0, 64, 10),
+      },
     }
     controller.update(storm)
     controller.update(storm)

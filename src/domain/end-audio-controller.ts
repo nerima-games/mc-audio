@@ -1,21 +1,30 @@
+import type { AudioDurationSecs, AudioGain, AudioHandleId } from './audio-brands.js'
 import {
   END_AMBIENCE_FADE_SECS,
+  type EndAudioClockFailure,
   type EndAudioEventPlan,
   type EndAudioFallbackPlan,
   type EndAudioLoopKind,
   type EndAudioLoopPlan,
+  type EndAudioPlan,
   type EndAudioSnapshot,
+  type EndAudioSoundLimitFailure,
   type EndAudioState,
   INITIAL_END_AUDIO_STATE,
   planEndAudio,
 } from './end-audio.js'
+import {
+  type MonotonicTimeSecs,
+  MonotonicTimeSecs as monotonicTimeSecs,
+} from '@nerima-games/mc-kernel/domain/quantities'
+import { Result } from 'effect'
 
-export type EndAudioHandle = { readonly id: number }
+export type EndAudioHandle = { readonly id: AudioHandleId }
 
 export type EndAudioPort = {
-  readonly createLoop: (kind: EndAudioLoopKind, initialGain: number) => EndAudioHandle | null
-  readonly setLoopGain: (handle: EndAudioHandle, gain: number, fadeSecs: number) => void
-  readonly stopLoop: (handle: EndAudioHandle, fadeSecs: number) => void
+  readonly createLoop: (kind: EndAudioLoopKind, initialGain: AudioGain) => EndAudioHandle | null
+  readonly setLoopGain: (handle: EndAudioHandle, gain: AudioGain, fadeSecs: AudioDurationSecs) => void
+  readonly stopLoop: (handle: EndAudioHandle, fadeSecs: AudioDurationSecs) => void
   /** Return null when the renderer has no primary asset for this event. */
   readonly playEvent: (request: EndAudioEventPlan) => EndAudioHandle | null
   readonly playFallback: (request: EndAudioFallbackPlan) => EndAudioHandle | null
@@ -23,24 +32,17 @@ export type EndAudioPort = {
 }
 
 export type EndAudioController = {
-  readonly update: (snapshot: EndAudioSnapshot) => void
+  readonly update: (
+    snapshot: EndAudioSnapshot,
+  ) => Result.Result<void, EndAudioClockFailure | EndAudioSoundLimitFailure>
   readonly dispose: () => void
   readonly state: () => EndAudioState
 }
 
-const ZERO_SECS = 0
-
-const sanitizedTime = (value: number): number => {
-  if (!Number.isFinite(value)) {
-    return ZERO_SECS
-  }
-  return Math.max(ZERO_SECS, value)
-}
-
 const releaseCompleted = (
   port: EndAudioPort,
-  transient: Map<EndAudioHandle, number>,
-  nowSecs: number,
+  transient: Map<EndAudioHandle, MonotonicTimeSecs>,
+  nowSecs: MonotonicTimeSecs,
 ): void => {
   for (const [handle, endsAtSecs] of transient) {
     if (endsAtSecs <= nowSecs) {
@@ -93,9 +95,9 @@ const syncLoops = (
 
 const playEvents = (
   playback: {
-    readonly nowSecs: number
+    readonly nowSecs: MonotonicTimeSecs
     readonly port: EndAudioPort
-    readonly transient: Map<EndAudioHandle, number>
+    readonly transient: Map<EndAudioHandle, MonotonicTimeSecs>
   },
   events: ReadonlyArray<EndAudioEventPlan>,
 ): void => {
@@ -103,7 +105,8 @@ const playEvents = (
     const primary = playback.port.playEvent(event)
     const handle = primary ?? playback.port.playFallback(event.fallback)
     if (handle) {
-      playback.transient.set(handle, playback.nowSecs + event.fallback.durationSecs)
+      const endSecs = Math.min(Number.MAX_VALUE, playback.nowSecs + event.fallback.durationSecs)
+      playback.transient.set(handle, monotonicTimeSecs(endSecs))
     }
   }
 }
@@ -111,7 +114,7 @@ const playEvents = (
 const releaseAll = (
   port: EndAudioPort,
   loops: ReadonlyMap<EndAudioLoopKind, EndAudioHandle>,
-  transient: ReadonlyMap<EndAudioHandle, number>,
+  transient: ReadonlyMap<EndAudioHandle, MonotonicTimeSecs>,
 ): void => {
   for (const handle of loops.values()) {
     port.stopLoop(handle, END_AMBIENCE_FADE_SECS)
@@ -124,19 +127,31 @@ const releaseAll = (
 
 export const makeEndAudioController = (port: EndAudioPort): EndAudioController => {
   const loops = new Map<EndAudioLoopKind, EndAudioHandle>()
-  const transient = new Map<EndAudioHandle, number>()
+  const transient = new Map<EndAudioHandle, MonotonicTimeSecs>()
   let currentState = INITIAL_END_AUDIO_STATE
   let disposed = false
 
-  const update = (snapshot: EndAudioSnapshot): void => {
-    if (!disposed) {
-      const nowSecs = sanitizedTime(snapshot.nowSecs)
-      releaseCompleted(port, transient, nowSecs)
-      const plan = planEndAudio({ ...snapshot, nowSecs }, currentState)
-      syncLoops(port, loops, plan.loops)
-      playEvents({ nowSecs, port, transient }, plan.events)
-      currentState = plan.nextState
+  const applyPlan = (plan: EndAudioPlan, nowSecs: MonotonicTimeSecs): void => {
+    releaseCompleted(port, transient, nowSecs)
+    syncLoops(port, loops, plan.loops)
+    playEvents({ nowSecs, port, transient }, plan.events)
+    currentState = plan.nextState
+  }
+
+  const update = (
+    snapshot: EndAudioSnapshot,
+  ): Result.Result<void, EndAudioClockFailure | EndAudioSoundLimitFailure> => {
+    const planned = planEndAudio(snapshot, currentState)
+    if (Result.isFailure(planned)) {
+      return Result.fail(planned.failure)
     }
+    if (disposed) {
+      return Result.succeed(globalThis.undefined)
+    }
+
+    const { nowSecs } = snapshot
+    applyPlan(planned.success, nowSecs)
+    return Result.succeed(globalThis.undefined)
   }
 
   const dispose = (): void => {

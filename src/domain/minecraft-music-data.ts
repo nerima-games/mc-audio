@@ -1,32 +1,56 @@
+import {
+  type AudioDelayTicks,
+  type AudioDiagnosticMessage,
+  type AudioDiagnosticPath,
+  type AudioWeight,
+  type MinecraftSoundEventId,
+  AudioDelayTicks as makeAudioDelayTicks,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
+  AudioWeight as makeAudioWeight,
+  MinecraftSoundEventId as makeMinecraftSoundEventId,
+} from './audio-brands.js'
+import { Result } from 'effect'
+
 export const MINECRAFT_MUSIC_STARTING_DELAY_TICKS = 100
-export const MINECRAFT_MUSIC_DEFAULT_MIN_DELAY_TICKS = 12_000
-export const MINECRAFT_MUSIC_DEFAULT_MAX_DELAY_TICKS = 24_000
+const DEFAULT_MIN_DELAY_TICKS = 12_000
+const DEFAULT_MAX_DELAY_TICKS = 24_000
+export const MINECRAFT_MUSIC_DEFAULT_MIN_DELAY_TICKS: AudioDelayTicks = makeAudioDelayTicks(DEFAULT_MIN_DELAY_TICKS)
+export const MINECRAFT_MUSIC_DEFAULT_MAX_DELAY_TICKS: AudioDelayTicks = makeAudioDelayTicks(DEFAULT_MAX_DELAY_TICKS)
 export const MINECRAFT_MUSIC_GAIN_STEP = 0.05
 
 const ZERO_TICKS = 0
 const ONE_TICK = 1
 const RANDOM_UNIT_UPPER_BOUND = ONE_TICK - Number.EPSILON
-const MINECRAFT_MUSIC_DEFINITION_KEYS = [
-  'max_delay',
-  'min_delay',
-  'replace_current_music',
-  'sound',
-] as const
+const MINECRAFT_MUSIC_DEFINITION_KEYS = ['max_delay', 'min_delay', 'replace_current_music', 'sound'] as const
 const MINECRAFT_BIOME_MUSIC_DEFINITION_KEYS = ['data', 'weight'] as const
 
-/** The background-music object used by Minecraft's data-driven audio format. */
+type JsonObject = Record<string, unknown>
+
+export type MinecraftMusicDataFailure = {
+  readonly _tag: 'MinecraftMusicDataFailure'
+  readonly path: AudioDiagnosticPath
+  readonly message: AudioDiagnosticMessage
+}
+
+const failure = (path: string, message: string): Result.Result<never, MinecraftMusicDataFailure> =>
+  Result.fail({
+    _tag: 'MinecraftMusicDataFailure',
+    message: makeAudioDiagnosticMessage(message),
+    path: makeAudioDiagnosticPath(path),
+  })
+
+/** The normalized background-music object used by Minecraft's data-driven audio format. */
 export type MinecraftMusicDefinition = {
-  readonly sound: string
-  readonly min_delay: number
-  readonly max_delay: number
+  readonly sound: MinecraftSoundEventId
+  readonly min_delay: AudioDelayTicks
+  readonly max_delay: AudioDelayTicks
   readonly replace_current_music?: boolean
 }
 
 export type MinecraftBackgroundMusicKey = 'default' | 'underwater' | 'creative'
 
-export type MinecraftBackgroundMusicInputEntry =
-  | MinecraftMusicDefinition
-  | Readonly<Record<string, never>>
+export type MinecraftBackgroundMusicInputEntry = unknown
 
 export type MinecraftBackgroundMusicInput = Readonly<
   Partial<Record<MinecraftBackgroundMusicKey, MinecraftBackgroundMusicInputEntry>>
@@ -34,21 +58,18 @@ export type MinecraftBackgroundMusicInput = Readonly<
 
 export type MinecraftBackgroundMusicEntry = MinecraftMusicDefinition | null
 
-/** The optional `background_music` component from Minecraft's audio settings. */
+/** The optional normalized `background_music` component from Minecraft's audio settings. */
 export type MinecraftBackgroundMusic = Readonly<
   Partial<Record<MinecraftBackgroundMusicKey, MinecraftBackgroundMusicEntry>>
 >
 
-/** A weighted entry from the biome effects `music` list. */
-export type MinecraftBiomeMusicDefinition = {
-  readonly data: MinecraftMusicDefinition
-  readonly weight: number
-}
+/** A raw weighted entry from the biome effects `music` list. */
+export type MinecraftBiomeMusicDefinition = unknown
 
-export type MinecraftBiomeMusic = readonly MinecraftBiomeMusicDefinition[]
+export type MinecraftBiomeMusic = readonly unknown[]
 
 export type NormalizedMinecraftBiomeMusicDefinition = NormalizedMinecraftMusicDefinition & {
-  readonly weight: number
+  readonly weight: AudioWeight
 }
 
 export type NormalizedMinecraftMusicDefinition = Omit<MinecraftMusicDefinition, 'replace_current_music'> & {
@@ -59,17 +80,17 @@ export const MINECRAFT_BACKGROUND_MUSIC: Readonly<Record<MinecraftBackgroundMusi
   creative: {
     max_delay: MINECRAFT_MUSIC_DEFAULT_MAX_DELAY_TICKS,
     min_delay: MINECRAFT_MUSIC_DEFAULT_MIN_DELAY_TICKS,
-    sound: 'minecraft:music.creative',
+    sound: makeMinecraftSoundEventId('minecraft:music.creative'),
   },
   default: {
     max_delay: MINECRAFT_MUSIC_DEFAULT_MAX_DELAY_TICKS,
     min_delay: MINECRAFT_MUSIC_DEFAULT_MIN_DELAY_TICKS,
-    sound: 'minecraft:music.game',
+    sound: makeMinecraftSoundEventId('minecraft:music.game'),
   },
   underwater: {
     max_delay: MINECRAFT_MUSIC_DEFAULT_MAX_DELAY_TICKS,
     min_delay: MINECRAFT_MUSIC_DEFAULT_MIN_DELAY_TICKS,
-    sound: 'minecraft:music.under_water',
+    sound: makeMinecraftSoundEventId('minecraft:music.under_water'),
   },
 }
 
@@ -78,9 +99,7 @@ export type MinecraftMusicContext = {
   readonly underwater: boolean
 }
 
-const minecraftBackgroundMusicKeyFor = function minecraftBackgroundMusicKeyFor(
-  context: MinecraftMusicContext,
-): MinecraftBackgroundMusicKey {
+const minecraftBackgroundMusicKeyFor = (context: MinecraftMusicContext): MinecraftBackgroundMusicKey => {
   if (context.underwater) {
     return 'underwater'
   }
@@ -90,88 +109,54 @@ const minecraftBackgroundMusicKeyFor = function minecraftBackgroundMusicKeyFor(
   return 'default'
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+const isRecord = (value: unknown): value is JsonObject =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const requireRecord = (value: unknown, label: string): Record<string, unknown> => {
-  if (!isRecord(value)) {
-    throw new TypeError(`${label} must be an object`)
+const record = (value: unknown, path: string, label: string): Result.Result<JsonObject, MinecraftMusicDataFailure> => {
+  if (isRecord(value)) {
+    return Result.succeed(value)
   }
-  return value
+  return failure(path, `${label} must be an object`)
 }
 
-const assertKnownKeys = (
-  value: Record<string, unknown>,
-  keys: readonly string[],
-  label: string,
-): void => {
+type KnownKeysOptions = {
+  readonly value: JsonObject
+  readonly keys: readonly string[]
+  readonly path: string
+  readonly label: string
+}
+
+const knownKeys = ({ value, keys, path, label }: KnownKeysOptions): Result.Result<void, MinecraftMusicDataFailure> => {
   for (const key of Object.keys(value)) {
-    if (!keys.some((knownKey) => knownKey === key)) {
-      throw new RangeError(`Unknown ${label} key: ${key}`)
+    if (!keys.includes(key)) {
+      return failure(path, `Unknown ${label} key: ${key}`)
     }
   }
+  return Result.succeed(globalThis.undefined)
 }
 
-type RawMinecraftMusicDefinition = {
-  readonly hasReplaceCurrentMusic: boolean
-  readonly maxDelay: unknown
-  readonly minDelay: unknown
-  readonly replaceCurrentMusic: unknown
-  readonly sound: unknown
-}
-
-const readMinecraftMusicDefinition = (
-  definition: unknown,
-): RawMinecraftMusicDefinition => {
-  const rawDefinition = requireRecord(definition, 'Minecraft music definition')
-  assertKnownKeys(rawDefinition, MINECRAFT_MUSIC_DEFINITION_KEYS, 'Minecraft music definition')
-  const {
-    max_delay: maxDelay,
-    min_delay: minDelay,
-    replace_current_music: replaceCurrentMusic,
-    sound,
-  } = rawDefinition
-  return {
-    hasReplaceCurrentMusic: Object.hasOwn(rawDefinition, 'replace_current_music'),
-    maxDelay,
-    minDelay,
-    replaceCurrentMusic,
-    sound,
-  }
-}
-
-const requireMinecraftMusicSound = (value: unknown): string => {
+const nonEmptySound = (value: unknown, path: string): Result.Result<MinecraftSoundEventId, MinecraftMusicDataFailure> => {
   if (typeof value !== 'string' || value.length === ZERO_TICKS) {
-    throw new RangeError('Minecraft music sound must not be empty')
+    return failure(path, 'Minecraft music sound must not be empty')
   }
-  return value
+  return Result.succeed(makeMinecraftSoundEventId(value))
 }
 
-const requireNonNegativeMinecraftMusicDelay = (value: unknown): number => {
+const nonNegativeDelay = (value: unknown, path: string, field: string): Result.Result<AudioDelayTicks, MinecraftMusicDataFailure> => {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < ZERO_TICKS) {
-    throw new RangeError('Minecraft music min_delay must be a non-negative integer')
+    return failure(path, `Minecraft music ${field} must be a non-negative integer`)
   }
-  return value
+  return Result.succeed(makeAudioDelayTicks(value))
 }
 
-const requireMinecraftMusicMaxDelay = (value: unknown, minDelay: number): number => {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < minDelay) {
-    throw new RangeError('Minecraft music max_delay must be an integer no smaller than min_delay')
-  }
-  return value
-}
-
-const normalizeMinecraftReplaceCurrentMusic = (
-  value: unknown,
-  isPresent: boolean,
-): boolean => {
+const normalizeReplaceCurrentMusic = (value: unknown, isPresent: boolean, path: string): Result.Result<boolean, MinecraftMusicDataFailure> => {
   if (isPresent && typeof value !== 'boolean') {
-    throw new TypeError('Minecraft music replace_current_music must be a boolean')
+    return failure(path, 'Minecraft music replace_current_music must be a boolean')
   }
   if (typeof value === 'boolean') {
-    return value
+    return Result.succeed(value)
   }
-  return false
+  return Result.succeed(false)
 }
 
 /** Resolves a data-driven `background_music` object; an omitted context entry means no music. */
@@ -185,16 +170,38 @@ export const resolveMinecraftMusicDefinition = (
   context: MinecraftMusicContext,
 ): MinecraftMusicDefinition => MINECRAFT_BACKGROUND_MUSIC[minecraftBackgroundMusicKeyFor(context)]
 
+type RawMinecraftMusicDefinition = {
+  readonly maxDelayValue: unknown
+  readonly minDelayValue: unknown
+  readonly replaceCurrentMusicValue: unknown
+  readonly hasReplaceCurrentMusic: boolean
+  readonly soundValue: unknown
+}
+
+const readMusicDefinition = (rawDefinition: JsonObject): RawMinecraftMusicDefinition => ({
+  hasReplaceCurrentMusic: Object.hasOwn(rawDefinition, 'replace_current_music'),
+  maxDelayValue: rawDefinition['max_delay'],
+  minDelayValue: rawDefinition['min_delay'],
+  replaceCurrentMusicValue: rawDefinition['replace_current_music'],
+  soundValue: rawDefinition['sound'],
+})
+
 export const normalizeMinecraftMusicDefinition = (
   definition: unknown,
-): NormalizedMinecraftMusicDefinition => {
-  const rawDefinition = readMinecraftMusicDefinition(definition)
-  const sound = requireMinecraftMusicSound(rawDefinition.sound)
-  const minDelay = requireNonNegativeMinecraftMusicDelay(rawDefinition.minDelay)
-  const maxDelay = requireMinecraftMusicMaxDelay(rawDefinition.maxDelay, minDelay)
-  const replaceCurrentMusic = normalizeMinecraftReplaceCurrentMusic(
-    rawDefinition.replaceCurrentMusic,
-    rawDefinition.hasReplaceCurrentMusic,
+): Result.Result<NormalizedMinecraftMusicDefinition, MinecraftMusicDataFailure> => Result.gen(function* normalizeMinecraftMusicDefinitionEffect() {
+  const rawDefinition = yield* record(definition, '$', 'Minecraft music definition')
+  yield* knownKeys({ keys: MINECRAFT_MUSIC_DEFINITION_KEYS, label: 'Minecraft music definition', path: '$', value: rawDefinition })
+  const rawValues = readMusicDefinition(rawDefinition)
+  const sound = yield* nonEmptySound(rawValues.soundValue, 'sound')
+  const minDelay = yield* nonNegativeDelay(rawValues.minDelayValue, 'min_delay', 'min_delay')
+  const maxDelay = yield* nonNegativeDelay(rawValues.maxDelayValue, 'max_delay', 'max_delay')
+  if (maxDelay < minDelay) {
+    return yield* failure('max_delay', 'Minecraft music max_delay must be no smaller than min_delay')
+  }
+  const replaceCurrentMusic = yield* normalizeReplaceCurrentMusic(
+    rawValues.replaceCurrentMusicValue,
+    rawValues.hasReplaceCurrentMusic,
+    'replace_current_music',
   )
   return {
     max_delay: maxDelay,
@@ -202,60 +209,71 @@ export const normalizeMinecraftMusicDefinition = (
     replace_current_music: replaceCurrentMusic,
     sound,
   }
-}
+})
 
 export const normalizeMinecraftBiomeMusicDefinition = (
   definition: unknown,
-): NormalizedMinecraftBiomeMusicDefinition => {
-  const rawDefinition = requireRecord(definition, 'Minecraft biome music definition')
-  assertKnownKeys(
-    rawDefinition,
-    MINECRAFT_BIOME_MUSIC_DEFINITION_KEYS,
-    'Minecraft biome music definition',
-  )
+): Result.Result<NormalizedMinecraftBiomeMusicDefinition, MinecraftMusicDataFailure> => Result.gen(function* normalizeMinecraftBiomeMusicDefinitionEffect() {
+  const rawDefinition = yield* record(definition, '$', 'Minecraft biome music definition')
+  yield* knownKeys({ keys: MINECRAFT_BIOME_MUSIC_DEFINITION_KEYS, label: 'Minecraft biome music definition', path: '$', value: rawDefinition })
   const { data, weight } = rawDefinition
-  const normalized = normalizeMinecraftMusicDefinition(requireRecord(data, 'Minecraft biome music data'))
+  const normalized = yield* normalizeMinecraftMusicDefinition(data)
   if (typeof weight !== 'number' || !Number.isInteger(weight) || weight < ONE_TICK) {
-    throw new RangeError('Minecraft biome music weight must be a positive integer')
+    return yield* failure('weight', 'Minecraft biome music weight must be a positive integer')
   }
-  return { ...normalized, weight }
-}
+  return { ...normalized, weight: makeAudioWeight(weight) }
+})
 
 export const normalizeMinecraftBiomeMusic = (
   music: readonly unknown[],
-): readonly NormalizedMinecraftBiomeMusicDefinition[] => music.map(normalizeMinecraftBiomeMusicDefinition)
-
-const randomUnitInterval = (random: number): number => {
-  if (!Number.isFinite(random)) {
-    return ZERO_TICKS
+): Result.Result<readonly NormalizedMinecraftBiomeMusicDefinition[], MinecraftMusicDataFailure> => Result.gen(function* normalizeMinecraftBiomeMusicEffect() {
+  const normalized: NormalizedMinecraftBiomeMusicDefinition[] = []
+  for (const definition of music) {
+    normalized.push(yield* normalizeMinecraftBiomeMusicDefinition(definition))
   }
-  return Math.min(RANDOM_UNIT_UPPER_BOUND, Math.max(ZERO_TICKS, random))
+  return normalized
+})
+
+const randomUnitInterval = (
+  random: unknown,
+): Result.Result<number, MinecraftMusicDataFailure> => {
+  if (typeof random !== 'number' || !Number.isFinite(random)) {
+    return failure('random', 'Minecraft music random value must be finite')
+  }
+  return Result.succeed(Math.min(RANDOM_UNIT_UPPER_BOUND, Math.max(ZERO_TICKS, random)))
 }
 
 const withoutBiomeMusicWeight = (
   definition: NormalizedMinecraftBiomeMusicDefinition,
-): NormalizedMinecraftMusicDefinition => ({
-  max_delay: definition.max_delay,
-  min_delay: definition.min_delay,
-  replace_current_music: definition.replace_current_music,
-  sound: definition.sound,
-})
+): NormalizedMinecraftMusicDefinition => {
+  const { max_delay, min_delay, replace_current_music, sound } = definition
+  return { max_delay, min_delay, replace_current_music, sound }
+}
+
+const selectNormalizedBiomeMusic = (
+  normalized: ReadonlyArray<NormalizedMinecraftBiomeMusicDefinition>,
+  random: unknown,
+): Result.Result<NormalizedMinecraftMusicDefinition | null, MinecraftMusicDataFailure> => {
+  if (normalized.length === ZERO_TICKS) {
+    return Result.succeed(null)
+  }
+  return Result.map(randomUnitInterval(random), (randomUnit) => {
+    const totalWeight = normalized.reduce((total, definition) => total + definition.weight, ZERO_TICKS)
+    let target = randomUnit * totalWeight
+    for (const definition of normalized) {
+      if (target < definition.weight) {
+        return withoutBiomeMusicWeight(definition)
+      }
+      target -= definition.weight
+    }
+    return withoutBiomeMusicWeight(normalized.reduce((_previousDefinition, definition) => definition))
+  })
+}
 
 export const selectMinecraftBiomeMusicDefinition = (
   music: MinecraftBiomeMusic,
-  random: number,
-): NormalizedMinecraftMusicDefinition | null => {
-  const normalized = normalizeMinecraftBiomeMusic(music)
-  if (normalized.length === ZERO_TICKS) {
-    return null
-  }
-  const totalWeight = normalized.reduce((total, definition) => total + definition.weight, ZERO_TICKS)
-  let target = randomUnitInterval(random) * totalWeight
-  for (const definition of normalized) {
-    if (target < definition.weight) {
-      return withoutBiomeMusicWeight(definition)
-    }
-    target -= definition.weight
-  }
-  return withoutBiomeMusicWeight(normalized.reduce((_previousDefinition, definition) => definition))
-}
+  random: unknown,
+): Result.Result<NormalizedMinecraftMusicDefinition | null, MinecraftMusicDataFailure> =>
+  Result.flatMap(normalizeMinecraftBiomeMusic(music), (normalized) =>
+    selectNormalizedBiomeMusic(normalized, random),
+  )

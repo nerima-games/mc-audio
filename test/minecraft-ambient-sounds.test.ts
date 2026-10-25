@@ -1,7 +1,10 @@
 /* oxlint-disable max-statements, no-magic-numbers */
 import { describe, expect, it } from '@effect/vitest'
-import { Effect, Layer } from 'effect'
-import { MonotonicTimeSecs } from '@nerima-games/mc-kernel'
+import { Effect, Layer, Option, Result } from 'effect'
+import { AngleRadians } from '@nerima-games/mc-kernel/domain/shared-vocabulary'
+import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
+import { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
+import { AudioHandleId, AudioTick, AudioVolume, MinecraftSoundEventId, MinecraftSoundNamespace } from '../src/domain/audio-brands.js'
 import {
   type AudioAvailability,
   AudioBackendPort,
@@ -17,7 +20,7 @@ import {
 import { makeMinecraftAmbientSoundsPlayer } from '../src/domain/minecraft-ambient-sounds-player.js'
 import { parseMinecraftSoundsJson } from '../src/domain/minecraft-sounds.js'
 
-const REGISTRY = parseMinecraftSoundsJson(
+const registryResult = parseMinecraftSoundsJson(
   {
     'ambient.addition': { sounds: ['ambient/addition'] },
     'ambient.loop': {
@@ -37,37 +40,80 @@ const REGISTRY = parseMinecraftSoundsJson(
     },
     'ambient.loud': { sounds: [{ name: 'ambient/loud', volume: 4 }] },
   },
-  { namespace: 'minecraft' },
+  { namespace: MinecraftSoundNamespace('minecraft') },
 )
+if (Result.isFailure(registryResult)) {
+  throw new Error('Expected the ambient sound fixture to parse')
+}
+const REGISTRY = registryResult.success
 
-const LISTENER = { x: 0, y: 64, z: 0 }
+const LISTENER = { x: PositionAxis(0), y: PositionAxis(64), z: PositionAxis(0) }
 const CAMERA = {
   capturedAtSecs: MonotonicTimeSecs(5),
-  pitchRadians: 0,
+  pitchRadians: AngleRadians(0),
   position: LISTENER,
-  yawRadians: 0,
+  yawRadians: AngleRadians(0),
 }
-const MOOD_POSITION = { x: 6, y: 64, z: 0 }
-const LISTENER_FORWARD = { x: 0, y: 0, z: -1 }
+const MOOD_POSITION = { x: PositionAxis(6), y: PositionAxis(64), z: PositionAxis(0) }
+const LISTENER_FORWARD = { x: PositionAxis(0), y: PositionAxis(0), z: PositionAxis(-1) }
 
-const normalizeUnknown = (value: unknown): unknown => normalizeMinecraftAmbientSoundsDefinition(value)
-const invalidDefinition = (value: unknown): (() => unknown) => () => normalizeUnknown(value)
+const normalizeUnknown = (value?: unknown): unknown => {
+  const result = normalizeMinecraftAmbientSoundsDefinition(value)
+  if (Result.isFailure(result)) {
+    throw result.failure
+  }
+  return result.success
+}
+type StateOverrides = Omit<Partial<MinecraftAmbientSoundsState>, 'loopSound' | 'nextMoodTick'> & {
+  readonly loopSound?: string | null
+  readonly nextMoodTick?: number
+}
 
-const state = (overrides: Partial<MinecraftAmbientSoundsState> = {}): MinecraftAmbientSoundsState => ({
-  ...initialMinecraftAmbientSoundsState(),
-  ...overrides,
-})
+const requiredTick = (value: number): AudioTick => {
+  const tick = AudioTick.option(value)
+  if (Option.isNone(tick)) {
+    throw new Error(`Test fixture tick is invalid: ${value}`)
+  }
+  return tick.value
+}
+const tick = requiredTick
+const toneHandle = (id: number) => ({ id: AudioHandleId(id) })
+const requiredSound = (value: string): MinecraftSoundEventId => {
+  const sound = MinecraftSoundEventId.option(value)
+  if (Option.isNone(sound)) {
+    throw new Error(`Test fixture sound id is invalid: ${value}`)
+  }
+  return sound.value
+}
 
-const plan = (overrides: Partial<MinecraftAmbientSoundsPlannerInput> = {}) =>
-  planMinecraftAmbientSounds({
+const state = (overrides: StateOverrides = {}): MinecraftAmbientSoundsState => {
+  const initial = initialMinecraftAmbientSoundsState()
+  const loopSound = overrides.loopSound ?? initial.loopSound
+  return {
+    ...initial,
+    ...overrides,
+    loopSound: loopSound === null ? null : requiredSound(loopSound),
+    nextMoodTick: requiredTick(overrides.nextMoodTick ?? initial.nextMoodTick),
+  }
+}
+
+type PlannerOverrides = Omit<Partial<MinecraftAmbientSoundsPlannerInput>, 'tick'> & { readonly tick?: number }
+
+const plan = (overrides: PlannerOverrides = {}) => {
+  const result = planMinecraftAmbientSounds({
     cameraPosition: LISTENER,
     definition: null,
     moodPosition: null,
     randomSource: () => 0,
-    state: state(),
-    tick: 0,
     ...overrides,
+    state: overrides.state ?? state(),
+    tick: requiredTick(overrides.tick ?? 0),
   })
+  if (Result.isFailure(result)) {
+    throw result.failure
+  }
+  return result.success
+}
 
 const makeHarness = (
   availability: AudioAvailability = 'ready',
@@ -83,12 +129,12 @@ const makeHarness = (
 
 describe('Minecraft ambient sound definitions', () => {
   it('normalizes the official defaults and fields', () => {
-    expect(normalizeMinecraftAmbientSoundsDefinition()).toStrictEqual({
+    expect(normalizeUnknown()).toStrictEqual({
       additions: [],
       loop: null,
       mood: null,
     })
-    expect(normalizeMinecraftAmbientSoundsDefinition(null)).toStrictEqual({
+    expect(normalizeUnknown(null)).toStrictEqual({
       additions: [],
       loop: null,
       mood: null,
@@ -120,15 +166,15 @@ describe('Minecraft ambient sound definitions', () => {
   })
 
   it('rejects malformed loop, mood, addition, and probability fields', () => {
-    for (const invalid of [
-      invalidDefinition([]),
-      invalidDefinition({ unknown: true }),
-      invalidDefinition({ loop: 1 }),
-      invalidDefinition({ loop: '' }),
-      invalidDefinition({ mood: [] }),
-      invalidDefinition({ mood: 1 }),
-      invalidDefinition({ mood: {} }),
-      invalidDefinition({
+    const invalidDefinitions: readonly unknown[] = [
+      [],
+      { unknown: true },
+      { loop: 1 },
+      { loop: '' },
+      { mood: [] },
+      { mood: 1 },
+      { mood: {} },
+      {
         mood: {
           block_search_extent: 0,
           offset: 0,
@@ -136,26 +182,28 @@ describe('Minecraft ambient sound definitions', () => {
           tick_delay: 1,
           unknown: true,
         },
-      }),
-      invalidDefinition({ mood: { block_search_extent: 0, offset: 0, sound: '', tick_delay: 1 } }),
-      invalidDefinition({ mood: { block_search_extent: 0, offset: 0, sound: 'mood', tick_delay: '1' } }),
-      invalidDefinition({ mood: { block_search_extent: 0, offset: 0, sound: 'mood', tick_delay: 0 } }),
-      invalidDefinition({ mood: { block_search_extent: 0, offset: 0, sound: 'mood', tick_delay: 0.5 } }),
-      invalidDefinition({ mood: { block_search_extent: -1, offset: 0, sound: 'mood', tick_delay: 1 } }),
-      invalidDefinition({ mood: { block_search_extent: 0.5, offset: 0, sound: 'mood', tick_delay: 1 } }),
-      invalidDefinition({ mood: { block_search_extent: 0, offset: '0', sound: 'mood', tick_delay: 1 } }),
-      invalidDefinition({ mood: { block_search_extent: 0, offset: Number.NaN, sound: 'mood', tick_delay: 1 } }),
-      invalidDefinition({ additions: 1 }),
-      invalidDefinition({ additions: [1] }),
-      invalidDefinition({ additions: [{}] }),
-      invalidDefinition({ additions: [[]] }),
-      invalidDefinition({ additions: [{ sound: 'addition', tick_chance: 1, unknown: true }] }),
-      invalidDefinition({ additions: [{ sound: 'addition', tick_chance: '0' }] }),
-      invalidDefinition({ additions: [{ sound: 'addition', tick_chance: Number.NaN }] }),
-      invalidDefinition({ additions: [{ sound: 'addition', tick_chance: -0.1 }] }),
-      invalidDefinition({ additions: [{ sound: 'addition', tick_chance: 1.1 }] }),
-    ]) {
-      expect(invalid).toThrow()
+      },
+      { mood: { block_search_extent: 0, offset: 0, sound: '', tick_delay: 1 } },
+      { mood: { block_search_extent: 0, offset: 0, sound: 'mood', tick_delay: '1' } },
+      { mood: { block_search_extent: 0, offset: 0, sound: 'mood', tick_delay: 0 } },
+      { mood: { block_search_extent: 0, offset: 0, sound: 'mood', tick_delay: 0.5 } },
+      { mood: { block_search_extent: -1, offset: 0, sound: 'mood', tick_delay: 1 } },
+      { mood: { block_search_extent: 0.5, offset: 0, sound: 'mood', tick_delay: 1 } },
+      { mood: { block_search_extent: 0, offset: '0', sound: 'mood', tick_delay: 1 } },
+      { mood: { block_search_extent: 0, offset: Number.NaN, sound: 'mood', tick_delay: 1 } },
+      { additions: 1 },
+      { additions: [1] },
+      { additions: [{}] },
+      { additions: [[]] },
+      { additions: [{ sound: 'addition', tick_chance: 1, unknown: true }] },
+      { additions: [{ sound: 'addition', tick_chance: '0' }] },
+      { additions: [{ sound: 'addition', tick_chance: Number.NaN }] },
+      { additions: [{ sound: 'addition', tick_chance: -0.1 }] },
+      { additions: [{ sound: 'addition', tick_chance: 1.1 }] },
+    ]
+    for (const definition of invalidDefinitions) {
+      const result = normalizeMinecraftAmbientSoundsDefinition(definition)
+      expect(Result.isFailure(result)).toBe(true)
     }
   })
 })
@@ -268,12 +316,15 @@ describe('Minecraft ambient sound planning', () => {
         randomSource: () => 2,
       }).commands,
     ).toStrictEqual([])
-    expect(
-      plan({
-        definition: { additions: [{ sound: 'minecraft:ambient.half', tick_chance: 0.5 }] },
-        randomSource: () => Number.NaN,
-      }).commands,
-    ).toHaveLength(1)
+    const invalidRandom = planMinecraftAmbientSounds({
+      cameraPosition: LISTENER,
+      definition: { additions: [{ sound: 'minecraft:ambient.half', tick_chance: 0.5 }] },
+      moodPosition: null,
+      randomSource: () => Number.NaN,
+      state: state(),
+      tick: AudioTick(0),
+    })
+    expect(Result.isFailure(invalidRandom)).toBe(true)
   })
 
   it('rejects invalid game ticks', () => {
@@ -299,13 +350,13 @@ describe('Minecraft ambient sound player', () => {
       }
 
       const first = yield* player.tick({
-        ambientVolume: 0.5,
+        ambientVolume: AudioVolume(0.5),
         camera: CAMERA,
         definition,
-        listener: { x: 100, y: 64, z: 0 },
+        listener: { x: PositionAxis(100), y: PositionAxis(64), z: PositionAxis(0) },
         listenerForward: LISTENER_FORWARD,
         moodPosition: MOOD_POSITION,
-        tick: 0,
+        tick: tick(0),
       })
       expect(first.playedSoundIds).toStrictEqual([
         'minecraft:ambient/loop',
@@ -339,7 +390,7 @@ describe('Minecraft ambient sound player', () => {
       ])
       expect(played[1]?.gain).toBeCloseTo(0.2903225806, 10)
 
-      const second = yield* player.tick({ definition, listener: LISTENER, tick: 1 })
+      const second = yield* player.tick({ definition, listener: LISTENER, tick: tick(1) })
       expect(second.plan.commands).toStrictEqual([
         { category: 'addition', kind: 'play', sound: 'minecraft:ambient.addition' },
       ])
@@ -353,7 +404,7 @@ describe('Minecraft ambient sound player', () => {
       const result = yield* player.tick({
         definition: { additions: [{ sound: 'minecraft:ambient.loud', tick_chance: 1 }] },
         listener: LISTENER,
-        tick: 0,
+        tick: tick(0),
       })
 
       expect(result.playedSoundIds).toStrictEqual(['minecraft:ambient/loud'])
@@ -365,29 +416,29 @@ describe('Minecraft ambient sound player', () => {
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness()
       yield* player.stop
-      yield* player.tick({ definition: { loop: 'minecraft:ambient.loop' }, listener: LISTENER, tick: 0 })
-      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(true)
+      yield* player.tick({ definition: { loop: 'minecraft:ambient.loop' }, listener: LISTENER, tick: tick(0) })
+      expect(yield* recorded.backend.isToneActive(toneHandle(1))).toBe(true)
 
       const changed = yield* player.tick({
         definition: { loop: 'minecraft:ambient.loop.other' },
         listener: LISTENER,
-        tick: 1,
+        tick: tick(1),
       })
       expect(changed.plan.commands).toStrictEqual([
         { kind: 'stop-loop' },
         { kind: 'start-loop', sound: 'minecraft:ambient.loop.other' },
       ])
-      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(false)
-      expect(yield* recorded.backend.isToneActive({ id: 2 })).toBe(true)
+      expect(yield* recorded.backend.isToneActive(toneHandle(1))).toBe(false)
+      expect(yield* recorded.backend.isToneActive(toneHandle(2))).toBe(true)
 
       const disabled = yield* player.tick({
         definition: { loop: 'minecraft:ambient.loop.other' },
         enabled: false,
         listener: LISTENER,
-        tick: 2,
+        tick: tick(2),
       })
       expect(disabled.plan.commands).toStrictEqual([{ kind: 'stop-loop' }])
-      expect(yield* recorded.backend.isToneActive({ id: 2 })).toBe(false)
+      expect(yield* recorded.backend.isToneActive(toneHandle(2))).toBe(false)
       yield* player.stop
     }),
   )
@@ -399,7 +450,7 @@ describe('Minecraft ambient sound player', () => {
         const result = yield* player.tick({
           definition: { loop: 'minecraft:ambient.loop' },
           listener: LISTENER,
-          tick: 0,
+          tick: tick(0),
         })
         expect(result).toStrictEqual({
           plan: { commands: [], state: initialMinecraftAmbientSoundsState() },
@@ -414,16 +465,12 @@ describe('Minecraft ambient sound player', () => {
   it.effect('returns a typed error for an unknown sound event', () =>
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness()
-      const result = yield* Effect.either(
-        player.tick({ definition: { loop: 'minecraft:ambient.missing' }, listener: LISTENER, tick: 0 }),
-      )
+      const result = yield* player.tick({ definition: { loop: 'minecraft:ambient.missing' }, listener: LISTENER, tick: tick(0) })
+        .pipe(Effect.catch((error) => Effect.succeed(error)))
 
       expect(result).toMatchObject({
-        _tag: 'Left',
-        left: {
-          _tag: 'MinecraftAmbientSoundsPlaybackError',
-          soundId: 'minecraft:ambient.missing',
-        },
+        _tag: 'MinecraftAmbientSoundsPlaybackError',
+        soundId: 'minecraft:ambient.missing',
       })
       expect(yield* recorded.played).toHaveLength(0)
     }),
@@ -443,7 +490,7 @@ describe('Minecraft ambient sound player', () => {
         },
         listener: LISTENER,
         moodPosition: MOOD_POSITION,
-        tick: 0,
+        tick: tick(0),
       })
 
       expect(yield* recorded.played).toMatchObject([{ soundId: 'minecraft:ambient/mood' }])
@@ -456,13 +503,13 @@ describe('Minecraft ambient sound player', () => {
       const result = yield* player.tick({
         definition: { additions: [{ sound: 'minecraft:ambient.addition', tick_chance: 1 }] },
         listener: LISTENER,
-        tick: 0,
+        tick: tick(0),
       })
 
       expect(result.playedSoundIds).toStrictEqual(['minecraft:ambient/addition'])
       expect(yield* recorded.played).toMatchObject([{ gain: 1, soundId: 'minecraft:ambient/addition' }])
 
-      const empty = yield* player.tick({ listener: LISTENER, tick: 1 })
+      const empty = yield* player.tick({ listener: LISTENER, tick: tick(1) })
       expect(empty.plan.commands).toStrictEqual([])
     }),
   )
@@ -470,8 +517,7 @@ describe('Minecraft ambient sound player', () => {
   it.effect('rolls back started loops when a later ambient command fails', () =>
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness()
-      const result = yield* Effect.either(
-        player.tick({
+      const result = yield* player.tick({
           definition: {
             loop: 'minecraft:ambient.loop',
             mood: {
@@ -483,27 +529,23 @@ describe('Minecraft ambient sound player', () => {
           },
           listener: LISTENER,
           moodPosition: MOOD_POSITION,
-          tick: 0,
-        }),
-      )
+          tick: tick(0),
+        }).pipe(Effect.catch((error) => Effect.succeed(error)))
 
       expect(result).toMatchObject({
-        _tag: 'Left',
-        left: {
-          _tag: 'MinecraftAmbientSoundsPlaybackError',
-          soundId: 'minecraft:ambient.missing',
-        },
+        _tag: 'MinecraftAmbientSoundsPlaybackError',
+        soundId: 'minecraft:ambient.missing',
       })
-      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(false)
+      expect(yield* recorded.backend.isToneActive(toneHandle(1))).toBe(false)
 
       yield* player.tick({
         definition: { loop: 'minecraft:ambient.loop' },
         listener: LISTENER,
-        tick: 0,
+        tick: tick(0),
       })
-      expect(yield* recorded.backend.isToneActive({ id: 2 })).toBe(true)
+      expect(yield* recorded.backend.isToneActive(toneHandle(2))).toBe(true)
       yield* player.stop
-      expect(yield* recorded.backend.isToneActive({ id: 2 })).toBe(false)
+      expect(yield* recorded.backend.isToneActive(toneHandle(2))).toBe(false)
     }),
   )
 
@@ -513,11 +555,10 @@ describe('Minecraft ambient sound player', () => {
       yield* player.tick({
         definition: { loop: 'minecraft:ambient.loop' },
         listener: LISTENER,
-        tick: 0,
+        tick: tick(0),
       })
 
-      const result = yield* Effect.either(
-        player.tick({
+      const result = yield* player.tick({
           definition: {
             loop: 'minecraft:ambient.loop.other',
             mood: {
@@ -529,19 +570,15 @@ describe('Minecraft ambient sound player', () => {
           },
           listener: LISTENER,
           moodPosition: MOOD_POSITION,
-          tick: 1,
-        }),
-      )
+          tick: tick(1),
+        }).pipe(Effect.catch((error) => Effect.succeed(error)))
 
       expect(result).toMatchObject({
-        _tag: 'Left',
-        left: {
-          _tag: 'MinecraftAmbientSoundsPlaybackError',
-          soundId: 'minecraft:ambient.missing',
-        },
+        _tag: 'MinecraftAmbientSoundsPlaybackError',
+        soundId: 'minecraft:ambient.missing',
       })
-      expect(yield* recorded.backend.isToneActive({ id: 1 })).toBe(false)
-      expect(yield* recorded.backend.isToneActive({ id: 2 })).toBe(false)
+      expect(yield* recorded.backend.isToneActive(toneHandle(1))).toBe(false)
+      expect(yield* recorded.backend.isToneActive(toneHandle(2))).toBe(false)
       yield* player.stop
     }),
   )

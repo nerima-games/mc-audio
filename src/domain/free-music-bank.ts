@@ -1,31 +1,49 @@
 /* oxlint-disable max-statements, no-bitwise, no-magic-numbers, no-nested-ternary, no-ternary, prefer-destructuring -- PCM/WAV synthesis is intentionally numeric and stateful. */
 import {
+  type AudioDiagnosticMessage,
+  type AudioDiagnosticPath,
+  type AudioDurationSecs,
+  type AudioSampleId,
+  type AudioSampleRate,
+  type MinecraftSoundEventId,
+  MinecraftSoundResourceId,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioDiagnosticPath as makeAudioDiagnosticPath,
+  AudioDistance as makeAudioDistance,
+  AudioDurationSecs as makeAudioDurationSecs,
+  AudioPlaybackRate as makeAudioPlaybackRate,
+  AudioSampleId as makeAudioSampleId,
+  AudioSampleRate as makeAudioSampleRate,
+} from './audio-brands.js'
+import type { AudioSampleManifest, AudioSampleManifestFailure, AudioSampleSource } from './audio-sample.js'
+import {
   FREE_MINECRAFT_MUSIC_EVENT_VARIANTS,
   FREE_MINECRAFT_MUSIC_TRACKS,
   type FreeMusicTrack,
 } from './free-music-data.js'
-import type { AudioSampleManifest } from './audio-sample.js'
-import type { MinecraftSoundRegistry } from './minecraft-sounds.js'
+import type { MinecraftSoundEvent, MinecraftSoundRegistry } from './minecraft-sounds-types.js'
+import { Option, Result } from 'effect'
 
-export {
-  FREE_MINECRAFT_MUSIC_EVENT_VARIANTS,
-  FREE_MINECRAFT_MUSIC_TRACKS,
-} from './free-music-data.js'
-export type {
-  FreeMusicEventId,
-  FreeMusicEventVariant,
-  FreeMusicTrack,
-} from './free-music-data.js'
+export { FREE_MINECRAFT_MUSIC_EVENT_VARIANTS, FREE_MINECRAFT_MUSIC_TRACKS } from './free-music-data.js'
+export type { FreeMusicEventId, FreeMusicEventVariant, FreeMusicTrack } from './free-music-data.js'
 
-export const FREE_MUSIC_SAMPLE_RATE = 22_050
-export const FREE_MUSIC_DURATION_SECS = 8
+export const FREE_MUSIC_SAMPLE_RATE: AudioSampleRate = makeAudioSampleRate(22_050)
+export const FREE_MUSIC_DURATION_SECS: AudioDurationSecs = makeAudioDurationSecs(8)
 const FREE_MUSIC_MAX_DURATION_SECS = 60
+const MIN_FREE_MUSIC_SAMPLE_RATE = 8_000
+const MAX_FREE_MUSIC_SAMPLE_RATE = 48_000
+
+export type FreeMusicBankFailure = {
+  readonly _tag: 'FreeMusicBankFailure'
+  readonly path: AudioDiagnosticPath
+  readonly message: AudioDiagnosticMessage
+}
 
 export type FreeMusicBankOptions = {
   /** Samples per second. Defaults to 22.05 kHz; values outside 8-48 kHz are clamped. */
-  readonly sampleRate?: number
+  readonly sampleRate?: AudioSampleRate
   /** Track length in seconds. Defaults to eight seconds; values above one minute are rejected. */
-  readonly durationSecs?: number
+  readonly durationSecs?: AudioDurationSecs
 }
 
 export type FreeMinecraftMusicPack = {
@@ -33,24 +51,41 @@ export type FreeMinecraftMusicPack = {
   readonly registry: MinecraftSoundRegistry
 }
 
-const sampleRateFor = (requestedSampleRate: number | undefined): number => {
-  const sampleRate = requestedSampleRate ?? FREE_MUSIC_SAMPLE_RATE
-  return Number.isFinite(sampleRate)
-    ? Math.round(Math.min(48_000, Math.max(8_000, sampleRate)))
-    : FREE_MUSIC_SAMPLE_RATE
+const failure = (path: string, message: string): Result.Result<never, FreeMusicBankFailure> =>
+  Result.fail({
+    _tag: 'FreeMusicBankFailure',
+    message: makeAudioDiagnosticMessage(message),
+    path: makeAudioDiagnosticPath(path),
+  })
+
+const sampleRateFor = (
+  requestedSampleRate: AudioSampleRate = FREE_MUSIC_SAMPLE_RATE,
+): Result.Result<number, FreeMusicBankFailure> => {
+  const validSampleRate = makeAudioSampleRate.option(requestedSampleRate)
+  if (Option.isNone(validSampleRate)) {
+    return failure('sampleRate', 'Free Minecraft music sample rate must be a positive integer')
+  }
+  return Result.succeed(
+    Math.round(
+      Math.min(
+        MAX_FREE_MUSIC_SAMPLE_RATE,
+        Math.max(MIN_FREE_MUSIC_SAMPLE_RATE, validSampleRate.value),
+      ),
+    ),
+  )
 }
 
-const durationFor = (requestedDurationSecs: number | undefined): number => {
-  const durationSecs = requestedDurationSecs ?? FREE_MUSIC_DURATION_SECS
-  if (!Number.isFinite(durationSecs) || durationSecs <= 0) {
-    return FREE_MUSIC_DURATION_SECS
+const durationFor = (
+  requestedDurationSecs: AudioDurationSecs = FREE_MUSIC_DURATION_SECS,
+): Result.Result<AudioDurationSecs, FreeMusicBankFailure> => {
+  const validDurationSecs = makeAudioDurationSecs.option(requestedDurationSecs)
+  if (Option.isNone(validDurationSecs) || validDurationSecs.value <= 0) {
+    return failure('durationSecs', 'Free Minecraft music duration must be finite and positive')
   }
-  if (durationSecs > FREE_MUSIC_MAX_DURATION_SECS) {
-    throw new RangeError(
-      `Free Minecraft music duration must be at most ${FREE_MUSIC_MAX_DURATION_SECS} seconds`,
-    )
+  if (validDurationSecs.value > FREE_MUSIC_MAX_DURATION_SECS) {
+    return failure('durationSecs', `Free Minecraft music duration must be at most ${FREE_MUSIC_MAX_DURATION_SECS} seconds`)
   }
-  return durationSecs
+  return Result.succeed(validDurationSecs.value)
 }
 
 const writeHeader = (view: DataView, sampleRate: number, sampleCount: number): void => {
@@ -75,10 +110,10 @@ const writeHeader = (view: DataView, sampleRate: number, sampleCount: number): v
 
 const renderFreeMusicWav = (
   track: FreeMusicTrack,
-  options: FreeMusicBankOptions = {},
-): ArrayBuffer => {
-  const sampleRate = sampleRateFor(options.sampleRate)
-  const durationSecs = durationFor(options.durationSecs)
+  options: FreeMusicBankOptions,
+): Result.Result<ArrayBuffer, FreeMusicBankFailure> => Result.gen(function* renderFreeMusicWavEffect() {
+  const durationSecs = yield* durationFor(options.durationSecs)
+  const sampleRate = yield* sampleRateFor(options.sampleRate)
   const sampleCount = Math.max(1, Math.round(durationSecs * sampleRate))
   const buffer = new ArrayBuffer(44 + sampleCount * 2)
   const view = new DataView(buffer)
@@ -105,16 +140,20 @@ const renderFreeMusicWav = (
     view.setInt16(44 + index * 2, Math.round(sample * 32_767), true)
   }
   return buffer
-}
+})
 
 /** Generate the original, dependency-free music sample for one built-in track. */
 export const generateFreeMusicWav = (
-  soundId: string,
+  soundId: FreeMusicTrack['soundId'],
   options: FreeMusicBankOptions = {},
-): ArrayBuffer => {
-  const track = FREE_MINECRAFT_MUSIC_TRACKS.find((candidate) => candidate.soundId === soundId) ?? null
+): Result.Result<ArrayBuffer, FreeMusicBankFailure> => {
+  const verifiedSoundId = MinecraftSoundResourceId.option(soundId)
+  if (Option.isNone(verifiedSoundId)) {
+    return failure('soundId', `Unknown free Minecraft music sound: ${soundId}`)
+  }
+  const track = FREE_MINECRAFT_MUSIC_TRACKS.find((candidate) => candidate.soundId === verifiedSoundId.value) ?? null
   if (track === null) {
-    throw new Error(`Unknown free Minecraft music sound: ${soundId}`)
+    return failure('soundId', `Unknown free Minecraft music sound: ${soundId}`)
   }
   return renderFreeMusicWav(track, options)
 }
@@ -122,45 +161,55 @@ export const generateFreeMusicWav = (
 /** A free additive bank with Minecraft-compatible event and sound identifiers. */
 export const createFreeMinecraftMusicManifest = (
   options: FreeMusicBankOptions = {},
-): AudioSampleManifest => Object.fromEntries(
-  FREE_MINECRAFT_MUSIC_TRACKS.map((track) => [
-    track.soundId,
-    {
-      data: renderFreeMusicWav(track, options),
+): Result.Result<AudioSampleManifest, FreeMusicBankFailure | AudioSampleManifestFailure> => Result.gen(function* createFreeMinecraftMusicManifestEffect() {
+  const manifest = new Map<AudioSampleId, AudioSampleSource>()
+  for (const track of FREE_MINECRAFT_MUSIC_TRACKS) {
+    const sampleId = makeAudioSampleId(track.soundId)
+    const data = yield* renderFreeMusicWav(track, options)
+    manifest.set(sampleId, {
+      data,
       kind: 'array-buffer' as const,
       preload: true,
       stream: true,
-    },
-  ]),
-)
+    })
+  }
+  return manifest
+})
+
+const freeEvent = (
+  eventId: MinecraftSoundEventId,
+  variants: NonNullable<ReturnType<typeof FREE_MINECRAFT_MUSIC_EVENT_VARIANTS.get>>,
+): MinecraftSoundEvent => ({
+  id: eventId,
+  replace: false,
+  sounds: variants.map((variant) => {
+    const common = {
+      attenuationDistance: makeAudioDistance(16),
+      pitch: makeAudioPlaybackRate(1),
+      preload: true,
+      stream: variant.stream,
+      volume: variant.volume,
+      weight: variant.weight,
+    }
+    if (variant.type === 'event') {
+      return { ...common, name: variant.soundId, type: 'event' }
+    }
+    return { ...common, name: variant.soundId, type: 'sound' }
+  }),
+  subtitle: null,
+})
 
 /** Sound events matching Minecraft's built-in, biome, and music-disc names. */
 export const createFreeMinecraftMusicRegistry = (): MinecraftSoundRegistry => ({
-  events: Object.fromEntries(
-    Object.entries(FREE_MINECRAFT_MUSIC_EVENT_VARIANTS).map(([eventId, variants]) => [
-      eventId,
-      {
-        id: eventId,
-        replace: false,
-        sounds: variants.map((variant) => ({
-          attenuationDistance: 16,
-          name: variant.soundId,
-          pitch: 1,
-          preload: true,
-          stream: variant.stream,
-          type: variant.type,
-          volume: variant.volume,
-          weight: variant.weight,
-        })),
-        subtitle: null,
-      },
-    ]),
+  events: new Map(
+    [...FREE_MINECRAFT_MUSIC_EVENT_VARIANTS].map(([eventId, variants]) => [eventId, freeEvent(eventId, variants)]),
   ),
 })
 
 export const createFreeMinecraftMusicPack = (
   options: FreeMusicBankOptions = {},
-): FreeMinecraftMusicPack => ({
-  manifest: createFreeMinecraftMusicManifest(options),
-  registry: createFreeMinecraftMusicRegistry(),
-})
+): Result.Result<FreeMinecraftMusicPack, FreeMusicBankFailure | AudioSampleManifestFailure> =>
+  Result.map(createFreeMinecraftMusicManifest(options), (manifest) => ({
+    manifest,
+    registry: createFreeMinecraftMusicRegistry(),
+  }))

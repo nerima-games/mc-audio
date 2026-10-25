@@ -1,3 +1,15 @@
+import {
+  type AudioDiagnosticMessage,
+  type AudioSampleId,
+  type AudioSampleUrl,
+  type MinecraftSoundEventId,
+  type MinecraftSoundResourceId,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
+  AudioGain as makeAudioGain,
+  AudioPlaybackRate as makeAudioPlaybackRate,
+  AudioSampleId as makeAudioSampleId,
+  AudioSampleUrl as makeAudioSampleUrl,
+} from './audio-brands.js'
 import type { AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
 import type {
   MinecraftSoundEvent,
@@ -5,24 +17,32 @@ import type {
   MinecraftSoundVariant,
   ResolvedMinecraftSound,
 } from './minecraft-sounds-types.js'
-import { normalizeMinecraftSoundId } from './minecraft-sounds-parser.js'
+import { Result } from 'effect'
 
 const DEFAULT_RANDOM = 0
 const MIN_RANDOM = 0
 const MAX_RANDOM_BOUND = 1
 const MAX_RANDOM = MAX_RANDOM_BOUND - Number.EPSILON
-const EMPTY_LENGTH = 0
 const INDEX_STEP = 1
-const DEFAULT_NAMESPACE = 'minecraft'
 const RESOURCE_SEPARATOR = ':'
 
-type ResolveEventOptions = {
-  readonly eventId: string
-  readonly random: number
-  readonly registry: MinecraftSoundRegistry
-  readonly rootEventId: string
-  readonly visited: ReadonlySet<string>
+export type MinecraftSoundResolutionFailure = {
+  readonly _tag: 'MinecraftSoundResolutionFailure'
+  readonly eventId: MinecraftSoundEventId
+  readonly message: AudioDiagnosticMessage
 }
+
+type ResolveEventOptions = {
+  readonly eventId: MinecraftSoundEventId
+  readonly random: unknown
+  readonly registry: MinecraftSoundRegistry
+  readonly rootEventId: MinecraftSoundEventId
+  readonly visited: ReadonlySet<MinecraftSoundEventId>
+}
+
+type ResolveEvent = (
+  options: ResolveEventOptions,
+) => Result.Result<ResolvedMinecraftSound, MinecraftSoundResolutionFailure>
 
 type SoundManifestMetadata = {
   readonly preload: boolean
@@ -30,58 +50,104 @@ type SoundManifestMetadata = {
 }
 
 type CollectSoundSourcesOptions = {
-  readonly eventId: string
+  readonly eventId: MinecraftSoundEventId
   readonly registry: MinecraftSoundRegistry
-  readonly soundSources: Map<string, SoundManifestMetadata>
-  readonly visited: ReadonlySet<string>
+  readonly soundSources: Map<MinecraftSoundResourceId, SoundManifestMetadata>
+  readonly visited: ReadonlySet<MinecraftSoundEventId>
   readonly inherited: SoundManifestMetadata
 }
 
-const normalizeRandom = (random: number): number => {
-  if (!Number.isFinite(random)) {
-    return DEFAULT_RANDOM
+const failure = (eventId: MinecraftSoundEventId, message: string): Result.Result<never, MinecraftSoundResolutionFailure> =>
+  Result.fail({ _tag: 'MinecraftSoundResolutionFailure', eventId, message: makeAudioDiagnosticMessage(message) })
+
+const normalizeRandom = (
+  random: unknown,
+  eventId: MinecraftSoundEventId,
+): Result.Result<number, MinecraftSoundResolutionFailure> => {
+  if (typeof random !== 'number' || !Number.isFinite(random)) {
+    return failure(eventId, 'Minecraft sound selection random value must be finite')
   }
-  return Math.min(MAX_RANDOM, Math.max(MIN_RANDOM, random))
+  return Result.succeed(Math.min(MAX_RANDOM, Math.max(MIN_RANDOM, random)))
 }
 
-export const selectMinecraftSoundVariant = (
-  event: MinecraftSoundEvent,
-  random: number = DEFAULT_RANDOM,
+const selectWeightedVariant = (
+  variants: readonly [MinecraftSoundVariant, ...MinecraftSoundVariant[]],
+  initialWeight: number,
 ): MinecraftSoundVariant => {
-  if (event.sounds.length === EMPTY_LENGTH) {
-    throw new RangeError(`Sound event ${event.id} has no sound variants`)
-  }
-
-  const totalWeight = event.sounds.reduce((total, variant) => total + variant.weight, DEFAULT_RANDOM)
-  let remaining = normalizeRandom(random) * totalWeight
-  for (const variant of event.sounds) {
+  let remaining = initialWeight
+  const [firstVariant] = variants
+  let lastVariant = firstVariant
+  for (const variant of variants) {
+    lastVariant = variant
     if (remaining < variant.weight) {
       return variant
     }
     remaining -= variant.weight
   }
 
-  return event.sounds.reduce((_previousVariant, variant) => variant)
+  return lastVariant
 }
 
-const eventOrThrow = (registry: MinecraftSoundRegistry, eventId: string): MinecraftSoundEvent => {
-  const event = registry.events[eventId] ?? null
-  if (event === null) {
-    throw new Error(`Unknown Minecraft sound event: ${eventId}`)
+const selectFromNonEmptyVariants = (
+  variants: readonly [MinecraftSoundVariant, ...MinecraftSoundVariant[]],
+  random: unknown,
+  eventId: MinecraftSoundEventId,
+): Result.Result<MinecraftSoundVariant, MinecraftSoundResolutionFailure> => {
+  const normalizedRandom = normalizeRandom(random, eventId)
+  if (Result.isFailure(normalizedRandom)) {
+    return Result.fail(normalizedRandom.failure)
   }
-  return event
+  const totalWeight = variants.reduce((total, variant) => total + variant.weight, DEFAULT_RANDOM)
+  return Result.succeed(selectWeightedVariant(variants, normalizedRandom.success * totalWeight))
 }
 
-const resolveEvent = ({ eventId, random, registry, rootEventId, visited }: ResolveEventOptions): ResolvedMinecraftSound => {
-  if (visited.has(eventId)) {
-    throw new Error(`Cyclic Minecraft sound event reference: ${[...visited, eventId].join(' -> ')}`)
+export const selectMinecraftSoundVariant = (
+  event: MinecraftSoundEvent,
+  random: unknown = DEFAULT_RANDOM,
+): Result.Result<MinecraftSoundVariant, MinecraftSoundResolutionFailure> => {
+  const [firstVariant] = event.sounds
+  if (firstVariant === globalThis.undefined) {
+    return failure(event.id, `Sound event ${event.id} has no sound variants`)
   }
 
-  const event = eventOrThrow(registry, eventId)
-  const nextVisited = new Set(visited).add(eventId)
-  const variant = selectMinecraftSoundVariant(event, random)
+  const variants: readonly [MinecraftSoundVariant, ...MinecraftSoundVariant[]] = [
+    firstVariant,
+    ...event.sounds.slice(INDEX_STEP),
+  ]
+  return selectFromNonEmptyVariants(variants, random, event.id)
+}
+
+const combineResolvedSound = (
+  rootEventId: MinecraftSoundEventId,
+  variant: MinecraftSoundVariant,
+  resolved: ResolvedMinecraftSound,
+): Result.Result<ResolvedMinecraftSound, MinecraftSoundResolutionFailure> => {
+  const pitch = makeAudioPlaybackRate.result(variant.pitch * resolved.pitch)
+  if (Result.isFailure(pitch)) {
+    return failure(rootEventId, pitch.failure.message)
+  }
+  const volume = makeAudioGain.result(variant.volume * resolved.volume)
+  if (Result.isFailure(volume)) {
+    return failure(rootEventId, volume.failure.message)
+  }
+  return Result.succeed({
+    ...resolved,
+    attenuationDistance: variant.attenuationDistance,
+    pitch: pitch.success,
+    preload: variant.preload || resolved.preload,
+    stream: variant.stream || resolved.stream,
+    volume: volume.success,
+  })
+}
+
+const resolveSelectedVariant = (
+  variant: MinecraftSoundVariant,
+  options: ResolveEventOptions,
+  resolveEvent: ResolveEvent,
+): Result.Result<ResolvedMinecraftSound, MinecraftSoundResolutionFailure> => {
+  const { random, registry, rootEventId, visited } = options
   if (variant.type === 'sound') {
-    return {
+    return Result.succeed({
       attenuationDistance: variant.attenuationDistance,
       eventId: rootEventId,
       pitch: variant.pitch,
@@ -89,7 +155,7 @@ const resolveEvent = ({ eventId, random, registry, rootEventId, visited }: Resol
       soundId: variant.name,
       stream: variant.stream,
       volume: variant.volume,
-    }
+    })
   }
 
   const resolved = resolveEvent({
@@ -97,91 +163,151 @@ const resolveEvent = ({ eventId, random, registry, rootEventId, visited }: Resol
     random,
     registry,
     rootEventId,
-    visited: nextVisited,
+    visited,
   })
-  return {
-    ...resolved,
-    attenuationDistance: variant.attenuationDistance,
-    pitch: variant.pitch * resolved.pitch,
-    preload: variant.preload || resolved.preload,
-    stream: variant.stream || resolved.stream,
-    volume: variant.volume * resolved.volume,
+  if (Result.isFailure(resolved)) {
+    return resolved
   }
+  return combineResolvedSound(rootEventId, variant, resolved.success)
+}
+
+const resolveEvent = ({ eventId, random, registry, rootEventId, visited }: ResolveEventOptions): Result.Result<ResolvedMinecraftSound, MinecraftSoundResolutionFailure> => {
+  if (visited.has(eventId)) {
+    return failure(eventId, `Cyclic Minecraft sound event reference: ${[...visited, eventId].join(' -> ')}`)
+  }
+  const event = registry.events.get(eventId)
+  if (event === globalThis.undefined) {
+    return failure(eventId, `Unknown Minecraft sound event: ${eventId}`)
+  }
+  const nextVisited = new Set(visited).add(eventId)
+  const selected = selectMinecraftSoundVariant(event, random)
+  if (Result.isFailure(selected)) {
+    return Result.fail(selected.failure)
+  }
+  return resolveSelectedVariant(selected.success, { eventId, random, registry, rootEventId, visited: nextVisited }, resolveEvent)
 }
 
 export const resolveMinecraftSound = (
   registry: MinecraftSoundRegistry,
-  eventId: string,
-  random: number = DEFAULT_RANDOM,
-): ResolvedMinecraftSound => resolveEvent({
+  eventId: MinecraftSoundEventId,
+  random: unknown = DEFAULT_RANDOM,
+): Result.Result<ResolvedMinecraftSound, MinecraftSoundResolutionFailure> => resolveEvent({
   eventId,
   random,
   registry,
   rootEventId: eventId,
-  visited: new Set<string>(),
+  visited: new Set<MinecraftSoundEventId>(),
 })
 
-const collectSoundSources = ({ eventId, registry, soundSources, visited, inherited }: CollectSoundSourcesOptions): void => {
-  if (visited.has(eventId)) {
-    throw new Error(`Cyclic Minecraft sound event reference: ${[...visited, eventId].join(' -> ')}`)
+type CollectSoundSources = (
+  options: CollectSoundSourcesOptions,
+) => Result.Result<void, MinecraftSoundResolutionFailure>
+
+type CollectVariantSoundSourceOptions = Pick<CollectSoundSourcesOptions, 'registry' | 'soundSources' | 'visited'> & {
+  readonly collectSources: CollectSoundSources
+}
+
+const collectVariantSoundSource = (
+  variant: MinecraftSoundVariant,
+  metadata: SoundManifestMetadata,
+  options: CollectVariantSoundSourceOptions,
+): Result.Result<void, MinecraftSoundResolutionFailure> => {
+  const { registry, soundSources, visited, collectSources } = options
+  if (variant.type === 'event') {
+    return collectSources({ eventId: variant.name, inherited: metadata, registry, soundSources, visited })
   }
-  const event = eventOrThrow(registry, eventId)
-  const nextVisited = new Set(visited).add(eventId)
-  for (const variant of event.sounds) {
+
+  const previous = soundSources.get(variant.name)
+  soundSources.set(variant.name, {
+    preload: metadata.preload || previous?.preload === true,
+    stream: metadata.stream || previous?.stream === true,
+  })
+  return Result.succeed(globalThis.undefined)
+}
+
+const collectEventSoundSources = (
+  variants: readonly MinecraftSoundVariant[],
+  options: Omit<CollectSoundSourcesOptions, 'eventId'>,
+  collectSources: CollectSoundSources,
+): Result.Result<void, MinecraftSoundResolutionFailure> => {
+  const { registry, soundSources, visited, inherited } = options
+  for (const variant of variants) {
     const metadata = {
       preload: inherited.preload || variant.preload,
       stream: inherited.stream || variant.stream,
     }
-    if (variant.type === 'sound') {
-      const previous = soundSources.get(variant.name)
-      soundSources.set(variant.name, {
-        preload: metadata.preload || previous?.preload === true,
-        stream: metadata.stream || previous?.stream === true,
-      })
-    } else {
-      collectSoundSources({
-        eventId: variant.name,
-        inherited: metadata,
-        registry,
-        soundSources,
-        visited: nextVisited,
-      })
+    const collected = collectVariantSoundSource(variant, metadata, { collectSources, registry, soundSources, visited })
+    if (Result.isFailure(collected)) {
+      return Result.fail(collected.failure)
     }
   }
+  return Result.succeed(globalThis.undefined)
 }
 
-export const minecraftSoundAssetUrl = (soundId: string, baseUrl: string): string => {
-  const normalizedId = normalizeMinecraftSoundId(soundId, DEFAULT_NAMESPACE, 'soundId')
-  const separator = normalizedId.indexOf(RESOURCE_SEPARATOR)
-  const namespace = normalizedId.slice(DEFAULT_RANDOM, separator)
-  const soundPath = normalizedId.slice(separator + INDEX_STEP)
+const collectSoundSources = ({ eventId, registry, soundSources, visited, inherited }: CollectSoundSourcesOptions): Result.Result<void, MinecraftSoundResolutionFailure> => {
+  if (visited.has(eventId)) {
+    return failure(eventId, `Cyclic Minecraft sound event reference: ${[...visited, eventId].join(' -> ')}`)
+  }
+  const event = registry.events.get(eventId)
+  if (event === globalThis.undefined) {
+    return failure(eventId, `Unknown Minecraft sound event: ${eventId}`)
+  }
+  const nextVisited = new Set(visited).add(eventId)
+  return collectEventSoundSources(event.sounds, { inherited, registry, soundSources, visited: nextVisited }, collectSoundSources)
+}
+
+export const minecraftSoundAssetUrl = (
+  soundId: MinecraftSoundResourceId,
+  baseUrl: AudioSampleUrl,
+): AudioSampleUrl => {
+  const separator = soundId.indexOf(RESOURCE_SEPARATOR)
+  const namespace = soundId.slice(DEFAULT_RANDOM, separator)
+  const soundPath = soundId.slice(separator + INDEX_STEP)
   const prefix = baseUrl.replace(/\/+$/u, '')
-  return `${prefix}/assets/${namespace}/sounds/${soundPath}.ogg`
+  return makeAudioSampleUrl(`${prefix}/assets/${namespace}/sounds/${soundPath}.ogg`)
 }
 
-export const minecraftSoundManifest = (
+const collectRegistrySoundSources = (
   registry: MinecraftSoundRegistry,
-  baseUrl: string,
-): AudioSampleManifest => {
-  const soundSources = new Map<string, SoundManifestMetadata>()
-  for (const eventId of Object.keys(registry.events)) {
-    collectSoundSources({
+): Result.Result<Map<MinecraftSoundResourceId, SoundManifestMetadata>, MinecraftSoundResolutionFailure> => {
+  const soundSources = new Map<MinecraftSoundResourceId, SoundManifestMetadata>()
+  for (const eventId of registry.events.keys()) {
+    const collected = collectSoundSources({
       eventId,
       inherited: { preload: false, stream: false },
       registry,
       soundSources,
-      visited: new Set<string>(),
+      visited: new Set<MinecraftSoundEventId>(),
     })
+    if (Result.isFailure(collected)) {
+      return Result.fail(collected.failure)
+    }
   }
+  return Result.succeed(soundSources)
+}
 
-  const manifest: Record<string, AudioSampleSource> = {}
-  for (const [soundId, metadata] of [...soundSources.entries()].sort(([left], [right]) => left.localeCompare(right))) {
-    manifest[soundId] = {
+const manifestFromSoundSources = (
+  soundSources: ReadonlyMap<MinecraftSoundResourceId, SoundManifestMetadata>,
+  baseUrl: AudioSampleUrl,
+): AudioSampleManifest => {
+  const manifest = new Map<AudioSampleId, AudioSampleSource>()
+  const sortedSources = [...soundSources.entries()].sort(([left], [right]) => left.localeCompare(right))
+  for (const [soundId, metadata] of sortedSources) {
+    const id = makeAudioSampleId(soundId)
+    manifest.set(id, {
       kind: 'url',
       preload: metadata.preload,
       stream: metadata.stream,
       url: minecraftSoundAssetUrl(soundId, baseUrl),
-    }
+    })
   }
   return manifest
 }
+
+export const minecraftSoundManifest = (
+  registry: MinecraftSoundRegistry,
+  baseUrl: AudioSampleUrl,
+): Result.Result<AudioSampleManifest, MinecraftSoundResolutionFailure> => Result.map(
+  collectRegistrySoundSources(registry),
+  (soundSources) => manifestFromSoundSources(soundSources, baseUrl),
+)

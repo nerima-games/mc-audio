@@ -1,28 +1,47 @@
 /* oxlint-disable id-length, no-magic-numbers, no-ternary, sort-imports -- Compact spatial fixtures and gate matrices keep these planner tests readable. */
 import { describe, expect, it } from 'vitest'
+import { Option, Result } from 'effect'
 import {
   END_EVENT_HISTORY_LIMIT,
   type EndAudioEvent,
   type EndAudioEventKind,
+  type EndAudioPlan,
   type EndAudioSnapshot,
+  type EndAudioState,
   INITIAL_END_AUDIO_STATE,
-  planEndAudio,
+  planEndAudio as planEndAudioResult,
 } from '../src/domain/end-audio'
+import { AudioCount, AudioEventId } from '../src/domain/audio-brands'
+import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
+import { MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
+
+const position = (x = 0) => ({ x: PositionAxis(x), y: PositionAxis(64), z: PositionAxis(0) })
 
 const event = (kind: EndAudioEventKind, id: string = kind, x = 0): EndAudioEvent => ({
-  id,
+  id: AudioEventId(id),
   kind,
-  position: { x, y: 64, z: 0 },
+  position: position(x),
 })
 
 const snapshot = (overrides: Partial<EndAudioSnapshot> = {}): EndAudioSnapshot => ({
   dimension: 'end',
   events: [],
-  listener: { x: 0, y: 64, z: 0 },
-  nowSecs: 10,
+  listener: position(),
+  nowSecs: MonotonicTimeSecs(10),
   phase: 'active',
   ...overrides,
 })
+
+const planEndAudio = (
+  input: EndAudioSnapshot,
+  previous?: EndAudioState,
+): EndAudioPlan => {
+  const result = planEndAudioResult(input, previous)
+  if (Result.isFailure(result)) {
+    throw new Error('Expected a valid End audio plan')
+  }
+  return result.success
+}
 
 describe('End audio planning', () => {
   it('runs End ambience only in the End and honours a zero sound limit', () => {
@@ -30,7 +49,7 @@ describe('End audio planning', () => {
       { fadeSecs: 1.25, gain: 0.18, kind: 'endAmbience' },
     ])
     expect(planEndAudio(snapshot({ dimension: 'overworld', phase: 'unstarted' })).loops).toStrictEqual([])
-    expect(planEndAudio(snapshot({ maxSimultaneousSounds: 0 })).loops).toStrictEqual([])
+    expect(planEndAudio(snapshot({ maxSimultaneousSounds: AudioCount(0) })).loops).toStrictEqual([])
   })
 
   it('spatialises deterministically with the shared distance attenuation policy', () => {
@@ -70,19 +89,19 @@ describe('End audio planning', () => {
     expect(first.events).toHaveLength(1)
     expect(
       planEndAudio(
-        snapshot({ events: [event('dragonFlap', 'flap-1')], nowSecs: 10.1 }),
+        snapshot({ events: [event('dragonFlap', 'flap-1')], nowSecs: MonotonicTimeSecs(10.1) }),
         first.nextState,
       ).events,
     ).toStrictEqual([])
 
     const coolingDown = planEndAudio(
-      snapshot({ events: [event('dragonFlap', 'flap-2')], nowSecs: 10.1 }),
+      snapshot({ events: [event('dragonFlap', 'flap-2')], nowSecs: MonotonicTimeSecs(10.1) }),
       first.nextState,
     )
     expect(coolingDown.events).toStrictEqual([])
     expect(
       planEndAudio(
-        snapshot({ events: [event('dragonFlap', 'flap-3')], nowSecs: 10.22 }),
+        snapshot({ events: [event('dragonFlap', 'flap-3')], nowSecs: MonotonicTimeSecs(10.22) }),
         coolingDown.nextState,
       ).events,
     ).toHaveLength(1)
@@ -97,7 +116,7 @@ describe('End audio planning', () => {
           event('dragonRoar'),
           event('playerHit'),
         ],
-        maxSimultaneousSounds: 3,
+        maxSimultaneousSounds: AudioCount(3),
       }),
     )
     expect(plan.events.map((planned) => planned.kind)).toStrictEqual(['playerHit', 'dragonRoar'])
@@ -106,24 +125,24 @@ describe('End audio planning', () => {
   it('reserves active sound slots until their deterministic end time', () => {
     const busyState = {
       ...INITIAL_END_AUDIO_STATE,
-      activeUntilSecs: [11],
+      activeUntilSecs: [MonotonicTimeSecs(11)],
     }
     expect(
       planEndAudio(
-        snapshot({ events: [event('dragonRoar')], maxSimultaneousSounds: 2 }),
+        snapshot({ events: [event('dragonRoar')], maxSimultaneousSounds: AudioCount(2) }),
         busyState,
       ).events,
     ).toStrictEqual([])
     expect(
       planEndAudio(
-        snapshot({ events: [event('dragonRoar')], maxSimultaneousSounds: 2, nowSecs: 11 }),
+        snapshot({ events: [event('dragonRoar')], maxSimultaneousSounds: AudioCount(2), nowSecs: MonotonicTimeSecs(11) }),
         busyState,
       ).events,
     ).toHaveLength(1)
   })
 
   it('bounds deduplication history and consumes gated event ids', () => {
-    const oldIds = Array.from({ length: END_EVENT_HISTORY_LIMIT }, (_, index) => `old-${index}`)
+    const oldIds = Array.from({ length: END_EVENT_HISTORY_LIMIT }, (_, index) => AudioEventId(`old-${index}`))
     const gated = planEndAudio(
       snapshot({ dimension: 'overworld', events: [event('dragonDeath', 'death')], phase: 'unstarted' }),
       { ...INITIAL_END_AUDIO_STATE, recentEventIds: oldIds },
@@ -139,21 +158,34 @@ describe('End audio planning', () => {
     ).toStrictEqual([])
   })
 
-  it('floors a non-finite nowSecs and a non-finite sound limit rather than propagating NaN', () => {
-    const plan = planEndAudio(
-      snapshot({ events: [event('dragonRoar', 'roar')], nowSecs: Number.NaN }),
-    )
-    expect(plan.events).toHaveLength(1)
-    expect(plan.nextState.lastPlayedAtSecs.dragonRoar).toBe(0)
+  it('rejects unbranded non-finite time and sound counts at their constructors', () => {
+    expect(Option.isNone(MonotonicTimeSecs.option(Number.NaN))).toBe(true)
+    expect(Option.isNone(AudioCount.option(Number.NaN))).toBe(true)
+  })
 
-    const noSlots = planEndAudio(
+  it('rejects a malformed clock and disables sounds for a malformed limit', () => {
+    // @ts-expect-error Simulate an invalid value from an untyped JavaScript caller.
+    const malformedTime: MonotonicTimeSecs = Number.NaN
+    const invalidTime = planEndAudioResult(
+      snapshot({ events: [event('dragonFlap', 'malformed-clock')], nowSecs: malformedTime }),
+    )
+    expect(Result.isFailure(invalidTime)).toBe(true)
+
+    // @ts-expect-error Simulate an invalid value from an untyped JavaScript caller.
+    const malformedLimit: AudioCount = Number.NaN
+    const invalidLimit = planEndAudioResult(
+      snapshot({ events: [event('dragonRoar', 'malformed-limit')], maxSimultaneousSounds: malformedLimit }),
+    )
+    expect(Result.isFailure(invalidLimit)).toBe(true)
+
+    const nullLimit = planEndAudioResult(
       snapshot({
-        events: [event('dragonRoar', 'roar')],
-        maxSimultaneousSounds: Number.NaN,
+        events: [event('dragonRoar', 'null-limit')],
+        // @ts-expect-error Explicit null is invalid and must not select the default limit.
+        maxSimultaneousSounds: null,
       }),
     )
-    expect(noSlots.loops).toStrictEqual([])
-    expect(noSlots.events).toStrictEqual([])
+    expect(Result.isFailure(nullLimit)).toBe(true)
   })
 
   it('keeps the earlier of two same-priority (same-kind) events on a sort tie', () => {

@@ -18,7 +18,8 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Layer, Option, Ref } from 'effect'
-import { ClockPort, EpochMillis } from '@nerima-games/mc-kernel'
+import { ClockPort } from '@nerima-games/mc-kernel/domain/clock'
+import { EpochMillis } from '@nerima-games/mc-kernel/domain/quantities'
 import { AudioBackendPort } from '../src/domain/backend-port'
 import { type CaptionEvent, CaptionStream } from '../src/domain/caption'
 import { SOUND_CUE_IDS } from '../src/domain/cue'

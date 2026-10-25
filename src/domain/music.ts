@@ -15,29 +15,32 @@
  * the environment "changed" from `day` to `day` is the obvious bug here, and
  * it is silent — you would hear a permanently retriggering note, not an error.
  */
+import type { AudioGain, AudioVolume } from './audio-brands.js'
 import {
   MUSIC_ENVIRONMENTS,
   MUSIC_TRACKS,
   type MusicEnvironment,
   type MusicTrack,
 } from '../data/music-tracks.js'
+import { type Position, type PositionAxis, PositionAxis as positionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
 import { clamp01, effectiveMusicGain } from './volume.js'
 import { Option } from 'effect'
-import type { Position } from '@nerima-games/mc-kernel'
 
 export { MUSIC_ENVIRONMENTS, MUSIC_TRACKS }
 export type { MusicEnvironment, MusicTrack }
 
-export const DEFAULT_CAVE_THRESHOLD_Y = 40
+const DEFAULT_CAVE_THRESHOLD_Y_BLOCKS = 40
+export const DEFAULT_CAVE_THRESHOLD_Y: Position['y'] = positionAxis(DEFAULT_CAVE_THRESHOLD_Y_BLOCKS)
 
 export type MusicEnvironmentContext = {
   readonly playerPosition: Position
   readonly isNight: boolean
-  readonly caveThresholdY?: number
+  readonly caveThresholdY?: PositionAxis
 }
 
 export const resolveMusicEnvironment = (context: MusicEnvironmentContext): MusicEnvironment => {
-  const threshold = context.caveThresholdY ?? DEFAULT_CAVE_THRESHOLD_Y
+  const { caveThresholdY = DEFAULT_CAVE_THRESHOLD_Y } = context
+  const threshold = caveThresholdY
   if (context.playerPosition.y < threshold) {
     return 'cave'
   }
@@ -74,7 +77,7 @@ export const resolveMusicPlan = (input: {
   }
 }
 
-export const musicTrackGain = (environment: MusicEnvironment, musicVolume: number): number =>
+export const musicTrackGain = (environment: MusicEnvironment, musicVolume: AudioVolume): AudioGain =>
   effectiveMusicGain({
     baseGain: MUSIC_TRACKS[environment].baseGain,
     musicVolume: clamp01(musicVolume),
