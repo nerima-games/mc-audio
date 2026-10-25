@@ -95,19 +95,33 @@ const resolveThunder = (
     return { lastThunderEventId: event.id, plan: null }
   }
 
-  const spatial = spatialise(snapshot.listener, event.position, {
+  const listener = {
+    x: snapshot.listener.x,
+    y: snapshot.listener.y,
+    z: snapshot.listener.z,
+  }
+  const source = {
+    x: event.position.x,
+    y: event.position.y,
+    z: event.position.z,
+  }
+  if (![listener.x, listener.y, listener.z, source.x, source.y, source.z].every(Number.isFinite)) {
+    return { lastThunderEventId: previous.lastThunderEventId, plan: null }
+  }
+
+  const dx = source.x - listener.x
+  const dy = source.y - listener.y
+  const dz = source.z - listener.z
+  const distance = Math.hypot(dx, dy, dz)
+  const delaySecs = Number.isFinite(distance) ? distance / SOUND_SPEED_BLOCKS_PER_SEC : Number.MAX_VALUE
+  const spatial = spatialise(listener, source, {
     listenerForward: snapshot.listenerForward,
   })
-  const distance = Math.hypot(
-    event.position.x - snapshot.listener.x,
-    event.position.y - snapshot.listener.y,
-    event.position.z - snapshot.listener.z,
-  )
 
   return {
     lastThunderEventId: event.id,
     plan: {
-      delaySecs: audioDurationSecs(distance / SOUND_SPEED_BLOCKS_PER_SEC),
+      delaySecs: audioDurationSecs(delaySecs),
       eventId: event.id,
       gain: audioGain(clamp01(spatial.gain * (FULL - THUNDER_OCCLUSION_ATTENUATION * clamp01(snapshot.occlusion)))),
       pan: spatial.pan,

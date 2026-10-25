@@ -19,6 +19,38 @@ const snapshot = (overrides: Partial<WeatherAudioSnapshot> = {}): WeatherAudioSn
 })
 
 describe('weather ambience planning', () => {
+  it('caps thunder delay when finite coordinates overflow distance arithmetic', () => {
+    const positiveExtreme = PositionAxis(Number.MAX_VALUE)
+    const negativeExtreme = PositionAxis(-Number.MAX_VALUE)
+    const plan = planWeatherAmbience(snapshot({
+      listener: { x: positiveExtreme, y: positiveExtreme, z: positiveExtreme },
+      mode: 'thunder',
+      thunder: {
+        id: AudioEventId('bolt-extreme'),
+        occurredAtSecs: MonotonicTimeSecs(10),
+        position: { x: negativeExtreme, y: negativeExtreme, z: negativeExtreme },
+      },
+    }))
+
+    expect(Number.isFinite(plan.thunder?.delaySecs)).toBe(true)
+    expect(plan.thunder?.delaySecs).toBe(Number.MAX_VALUE)
+  })
+
+  it('skips a thunder event with a non-finite position axis', () => {
+    const position = { x: PositionAxis(0), y: PositionAxis(64), z: PositionAxis(0) }
+    expect(Reflect.set(position, 'x', Number.NaN)).toBe(true)
+    const plan = planWeatherAmbience(snapshot({
+      mode: 'thunder',
+      thunder: {
+        id: AudioEventId('bolt-invalid-position'),
+        occurredAtSecs: MonotonicTimeSecs(10),
+        position,
+      },
+    }))
+
+    expect(plan.thunder).toBeNull()
+  })
+
   it('is deterministic and attenuates normalized intensity and occlusion boundaries', () => {
     const input = snapshot({ intensity: AudioVolume(1), occlusion: AudioVolume(0) })
     expect(planWeatherAmbience(input)).toStrictEqual(planWeatherAmbience(input))
