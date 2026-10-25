@@ -744,7 +744,7 @@ describe('decoded sample playback', () => {
     }),
   )
 
-  it.effect('uses the requested duration when a sample duration is invalid', () =>
+  it.effect('refuses playback when the resolved sample duration is invalid', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()
       const audio = yield* makeWebAudioBackend({
@@ -753,13 +753,16 @@ describe('decoded sample playback', () => {
       })
 
       yield* audio.unlock
-      yield* audio.playTone({ ...CUE, durationSecs: AudioDurationSecs(0.2), soundId: sampleId('block.break') })
+      const playback = yield* audio.playTone({ ...CUE, durationSecs: AudioDurationSecs(0.2), soundId: sampleId('block.break') })
 
-      expect(fake.context()?.log.stopped).toEqual([{ atSecs: 0.2, node: 'buffer#2' }])
+      expect(playback.accepted).toBe(false)
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+      expect(yield* audio.report).toMatchObject({ refusedTones: 1 })
     }),
   )
 
-  it.effect('uses the requested duration when playback makes a valid sample duration overflow', () =>
+  it.effect('refuses playback when sample duration overflows at its playback rate', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()
       const audio = yield* makeWebAudioBackend({
@@ -768,14 +771,17 @@ describe('decoded sample playback', () => {
       })
 
       yield* audio.unlock
-      yield* audio.playTone({
+      const playback = yield* audio.playTone({
         ...CUE,
         durationSecs: AudioDurationSecs(0.2),
         playbackRate: AudioPlaybackRate(Number.MIN_VALUE),
         soundId: sampleId('sample'),
       })
 
-      expect(fake.context()?.log.stopped).toEqual([{ atSecs: 0.2, node: 'buffer#2' }])
+      expect(playback.accepted).toBe(false)
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+      expect(yield* audio.report).toMatchObject({ refusedTones: 1 })
     }),
   )
 

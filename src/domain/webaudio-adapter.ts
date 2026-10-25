@@ -209,16 +209,12 @@ const playbackAdmission = (
 const sampleDurationSecs = (
   buffer: AudioBufferSurface,
   playbackRate: AudioPlaybackRate,
-  fallbackDurationSecs: AudioDurationSecs,
-): AudioDurationSecs => {
+): Option.Option<AudioDurationSecs> => {
   const { duration } = buffer
-  if (typeof duration === 'number' && Number.isFinite(duration) && duration >= 0) {
-    const sampleDuration = AudioDurationSecs.option(duration / playbackRate)
-    if (Option.isSome(sampleDuration)) {
-      return sampleDuration.value
-    }
+  if (typeof duration !== 'number' || !Number.isFinite(duration) || duration < 0) {
+    return Option.none<AudioDurationSecs>()
   }
-  return fallbackDurationSecs
+  return AudioDurationSecs.option(duration / playbackRate)
 }
 
 const audioTime = (value: unknown): Option.Option<AudioDurationSecs> =>
@@ -500,13 +496,15 @@ export const makeWebAudioBackend = (
 
         const sampleBuffer = yield* resolveSampleBuffer(playbackRequest, options, sampleCache)
         const canUseSample = sampleBuffer !== null && context.createBufferSource !== undefined
-        const scheduledRequest =
+        const sampleDuration =
           canUseSample && sampleBuffer !== null && !playbackRequest.loop
-            ? {
-                ...playbackRequest,
-                durationSecs: sampleDurationSecs(sampleBuffer, playbackRate, playbackRequest.durationSecs),
-              }
-            : playbackRequest
+            ? sampleDurationSecs(sampleBuffer, playbackRate)
+            : Option.some(playbackRequest.durationSecs)
+        if (Option.isNone(sampleDuration)) {
+          yield* Ref.update(refusedTonesRef, (count) => count + 1)
+          return refusedPlayback()
+        }
+        const scheduledRequest = { ...playbackRequest, durationSecs: sampleDuration.value }
         const startSecs = audioTime(context.currentTime)
         if (Option.isNone(startSecs)) {
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
