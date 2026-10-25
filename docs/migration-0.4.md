@@ -112,17 +112,18 @@ to the synchronous QA API at an allowed package entrypoint.
 
 This inventory compares the generated package-root declaration graphs for base
 commit `1d87499e082f146cba3292703bb115f3e38331e6` and API source commit
-`b6830cfada7a0149e2c2e85ebced5b7e7d3d724b`. At each revision,
+`8baa5aa343d763d9cb8d698185e114ec74d4ae11`. At each revision,
 `nix develop --command corepack pnpm build` emitted declarations with that
 revision's release TypeScript config. A TypeScript 5.9.3 compiler-API traversal
-then found 45 existing callable exports with changed argument or return types,
-66 added exports, and no removed exports. `SoundCueId` was already exported as a
-type and now also exports a constructor. The comparison follows package-root
-re-exports, compares call and construct signatures, exported object/union
+then found 47 existing callable exports with changed argument or return types,
+67 added exports, and no removed exports. `SoundCueId` was already exported as a
+type and now also exports a constructor. `OriginalSampleBankFailure` is a new
+exported error type for the original sample generator. The comparison follows
+package-root re-exports, compares call and construct signatures, exported object/union
 members, aliases, and non-callable values, and normalizes workspace paths and
 Effect and mc-kernel declaration paths to their public entrypoints.
 
-The following exports now return `Result`; callers must handle the failure
+The following 32 exports now return `Result`; callers must handle the failure
 branch before using the success value:
 
 | Export | Return type |
@@ -132,7 +133,9 @@ branch before using the success value:
 | `createFreeMinecraftMusicPack` | `Result<FreeMinecraftMusicPack, FreeMusicBankFailure \| AudioSampleManifestFailure>` |
 | `createMinecraft26_2SoundRegistry` | `Result<MinecraftSoundRegistry, MinecraftSoundsParseFailure>` |
 | `createMinecraft26_3Snapshot9SoundRegistry` | `Result<MinecraftSoundRegistry, MinecraftSoundsParseFailure>` |
+| `createOriginalSampleManifest` | `Result<AudioSampleManifest, OriginalSampleBankFailure>` |
 | `generateFreeMusicWav` | `Result<ArrayBuffer, FreeMusicBankFailure>` |
+| `generateOriginalSampleWav` | `Result<ArrayBuffer, OriginalSampleBankFailure>` |
 | `minecraftSoundManifest` | `Result<AudioSampleManifest, MinecraftSoundResolutionFailure>` |
 | `normalizeMinecraftAmbientSoundsDefinition` | `Result<NormalizedMinecraftAmbientSoundsDefinition, MinecraftAmbientSoundsFailure>` |
 | `normalizeMinecraftAudioComponent` | `Result<NormalizedMinecraftAudioComponent, MinecraftAudioFailure>` |
@@ -173,6 +176,10 @@ These Result-returning exports also changed argument types:
 
 `generateFreeMusicWav` therefore needs the brand for the `FreeMusicTrack` sound
 resource, not the similarly named event ID or cue ID.
+
+`OriginalSampleBankFailure.field` identifies invalid `options`, `soundId`,
+`sampleRate`, or `seed` input. The generated WAV or manifest is available only
+from the `Result` success branch.
 
 | Export | Signature change |
 | --- | --- |
@@ -396,6 +403,7 @@ constant values remain the same where their declared types now use brands.
 | --- | --- | --- |
 | `EndAudioClockFailure` | absent | `{ readonly _tag: 'EndAudioClockFailure' }` |
 | `EndAudioSoundLimitFailure` | absent | `{ readonly _tag: 'EndAudioSoundLimitFailure' }` |
+| `OriginalSampleBankFailure` | absent | `{ readonly _tag: 'OriginalSampleBankFailure'; readonly field: 'options' \| 'sampleRate' \| 'seed' \| 'soundId'; readonly message: string }` |
 | `CAPTION_LIFETIME_SECS` | absent | `AudioDurationSecs` |
 | `CUE_DEFINITIONS` | `Record<SoundCueId, CueDefinition>` | `Readonly<Record<RawSoundCueId, CueDefinition>>` |
 | `FREE_MINECRAFT_MUSIC_EVENT_VARIANTS` | `Readonly<Record<string, readonly FreeMusicEventVariant[]>>` | `ReadonlyMap<MinecraftSoundEventId, readonly FreeMusicEventVariant[]>` |

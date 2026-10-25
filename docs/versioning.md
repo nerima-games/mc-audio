@@ -169,7 +169,7 @@ plan.md §5.3 は「アセットは消費者に同梱（音声 → audio）」�
 WebAudio アダプタは decode、cache、preload、失敗時の oscillator fallback を担当する。
 
 このリポジトリは Minecraft の著作権付きバイナリアセットを同梱しない。標準サンプルの
-動作確認用には `createOriginalSampleManifest()` が生成する小さな WAV を使用する。
+動作確認用には `createOriginalSampleManifest()` の `Result` が成功したときに得られる小さな WAV を使用する。
 消費者が提供するリソースパックの URL と音声差し替えは、URL または ArrayBuffer の
 manifest の変更として扱う。大きなアセットを配布物へ含める方針は、実データを追加する時に
 別途決定する。

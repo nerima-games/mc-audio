@@ -713,7 +713,7 @@ mob の標準 variant は `parseMinecraftMobSoundVariantJson`、
 | `src/qa/audio.ts` / `src/entrypoints/audio-qa.ts` | `makeAudioQaSurface`、`makeAudioQaEntrypoint` | Effect-based audio QA provider and synchronous `audio.report` / `audio.snapshot` entrypoint. |
 | `src/domain/minecraft-audio.ts` | `parseMinecraftAudioComponent`、`normalizeMinecraftAudioComponent` | `minecraft:audio/*` component の解析・正規化 |
 | `src/domain/audio-sample.ts` | `AudioSampleManifest`、`mergeAudioSampleManifests` | リソースパック音源の manifest 境界 |
-| `src/domain/original-sample-bank.ts` / `free-music-bank.ts` | `createOriginalSampleManifest`、`createFreeMinecraftMusicPack` | 権利を持つ音源を注入するための生成 helper |
+| `src/domain/original-sample-bank.ts` / `free-music-bank.ts` | `createOriginalSampleManifest`、`createFreeMinecraftMusicPack` | Result-based sample generation helpers for caller-owned audio assets. |
 
 root export の完全な機械的な一覧は `src/index.ts` を正とする。この表は各モジュールの利用目的を示し、
 音声バイナリやブラウザ固有の型を公開契約に混ぜないという境界を補足する。

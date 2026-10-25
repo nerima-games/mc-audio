@@ -143,7 +143,8 @@ schema 側にも `:71-74` に「audioEnabled defaults to false intentionally」�
 `AudioSampleManifest` として音源を渡し、mc-audio は解決・再生の境界を提供する。
 
 音声の解決・再生に必要なデータ形式は mc-audio が所有する。バイナリ音源を無断で固定せず、
-`createOriginalSampleManifest()` が決定的な短い WAV を生成し、`AudioSampleManifest` は URL または
+`createOriginalSampleManifest()` は `Result` として決定的な短い WAV を返し、成功時の
+`AudioSampleManifest` は URL または
 独自 `ArrayBuffer` も受け入れる。`sounds.json` の解析・replace マージ・weight バリアント・
 subtitle・attenuation・manifest 変換も `minecraft-sounds*` に集約している。
 

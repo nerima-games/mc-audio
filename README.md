@@ -135,18 +135,23 @@ master volume と mute、同時音数上限、Node/SSR の安全な unavailable 
 ### 標準サンプルバンク
 
 ```ts
-import { Effect } from 'effect'
+import { Effect, Result } from 'effect'
 import { createOriginalSampleManifest, makeWebAudioBackend } from '@nerima-games/mc-audio'
 
-const backend = await Effect.runPromise(makeWebAudioBackend({
-  global: globalThis,
-  sampleManifest: createOriginalSampleManifest(),
-}))
+const manifest = createOriginalSampleManifest()
+if (Result.isFailure(manifest)) {
+  console.error(manifest.failure.message)
+} else {
+  const backend = await Effect.runPromise(makeWebAudioBackend({
+    global: globalThis,
+    sampleManifest: manifest.success,
+  }))
 
-await Effect.runPromise(backend.preloadSamples())
+  await Effect.runPromise(backend.preloadSamples())
+}
 ```
 
-生成器はDOM非依存で、同じ `seed` と `sampleRate` から常に同じWAVを返す。block break/place、
+生成器はDOM非依存で、同じ有効な `seed` と `sampleRate` から常に同じWAVを成功結果として返す。block break/place、
 footstep、mob、rain/thunder、End dragon、eye/frame/portal、End ambienceを標準manifestで網羅する。
 
 ## License
