@@ -177,7 +177,7 @@ export const preloadAudioSamples = (
   Effect.gen(function* preloadSamplesEffect() {
     let ids = [...options.manifest.keys()]
     if (soundIds !== globalThis.undefined) {
-      ids = [...soundIds]
+      ids = [...new Set(soundIds)]
     }
     let preloadIds = ids
     if (options.onlyPreload === true) {

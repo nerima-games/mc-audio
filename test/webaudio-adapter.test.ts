@@ -108,6 +108,33 @@ describe('decoded sample playback', () => {
     }),
   )
 
+  it.effect('deduplicates explicit preload ids and preserves omitted and empty selections', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        sampleManifest: audioSampleManifest({
+          first: { data: new ArrayBuffer(4), kind: 'array-buffer' },
+          second: { data: new ArrayBuffer(4), kind: 'array-buffer' },
+        }),
+      })
+
+      expect(yield* audio.preloadSamples([sampleId('first'), sampleId('first')])).toEqual({
+        cached: 0,
+        failed: 0,
+        loaded: 1,
+        requested: 1,
+      })
+      expect(fake.context()?.decodedData).toHaveLength(1)
+
+      expect(yield* audio.preloadSamples([])).toEqual({ cached: 0, failed: 0, loaded: 0, requested: 0 })
+      expect(fake.context()?.decodedData).toHaveLength(1)
+
+      expect(yield* audio.preloadSamples()).toEqual({ cached: 1, failed: 0, loaded: 1, requested: 2 })
+      expect(fake.context()?.decodedData).toHaveLength(2)
+    }),
+  )
+
   it.effect('loads URL and ArrayBuffer samples once, then plays the cached buffer', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio({ decodedDurationSecs: 0.25 })
