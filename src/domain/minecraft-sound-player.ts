@@ -89,7 +89,7 @@ const isMissing = (value: unknown): value is undefined => Object.is(value, globa
 
 export type MinecraftSoundPlayOptionsFailure = {
   readonly _tag: 'MinecraftSoundPlayOptionsFailure'
-  readonly field: 'durationSecs' | 'frequency'
+  readonly field: 'durationSecs' | 'frequency' | 'enabled'
   readonly message: AudioDiagnosticMessage
 }
 
@@ -216,35 +216,93 @@ const captionFor = ({
   return { ...caption, pan }
 }
 
+const randomForPlay = (
+  options: MinecraftSoundPlayOptions,
+  randomSource?: () => unknown,
+): unknown => {
+  const { random } = options
+  if (isMissing(random)) {
+    if (isMissing(randomSource)) {
+      return globalThis.undefined
+    }
+    return randomSource()
+  }
+  return random
+}
+
+const enabledForPlay = (value: unknown): Result.Result<boolean, MinecraftSoundPlayOptionsFailure> => {
+  if (isMissing(value)) {
+    return Result.succeed(true)
+  }
+  if (typeof value !== 'boolean') {
+    return Result.fail({
+      _tag: 'MinecraftSoundPlayOptionsFailure',
+      field: 'enabled',
+      message: makeAudioDiagnosticMessage('Enabled must be a boolean'),
+    })
+  }
+  return Result.succeed(value)
+}
+
+const resolveMinecraftSoundPlanInputs = (input: {
+  readonly registry: MinecraftSoundRegistry
+  readonly eventId: MinecraftSoundEventId
+  readonly options: MinecraftSoundPlayOptions
+  readonly randomSource?: (() => unknown) | undefined
+}) => Result.gen(function* resolveMinecraftSoundPlanInputsEffect() {
+  const { registry, eventId, options, randomSource } = input
+  const enabled = yield* enabledForPlay(options.enabled)
+  const frequency = yield* positiveFrequency(options.frequency)
+  const durationSecs = yield* positiveDuration(options.durationSecs)
+  const sound = yield* resolveMinecraftSound(registry, eventId, randomForPlay(options, randomSource))
+  const spatial = soundSpatialisation(sound, options)
+  const { loop = false } = options
+
+  return { durationSecs, enabled, frequency, loop, sound, spatial }
+})
+
+const planMinecraftSoundWithEnabled = (input: {
+  readonly registry: MinecraftSoundRegistry
+  readonly eventId: MinecraftSoundEventId
+  readonly options?: MinecraftSoundPlayOptions | undefined
+  readonly randomSource?: (() => unknown) | undefined
+}): Result.Result<
+  { readonly enabled: boolean; readonly plan: MinecraftSoundPlaybackPlan },
+  MinecraftSoundResolutionFailure | MinecraftSoundPlayOptionsFailure
+> => {
+  const { registry, eventId, options = {}, randomSource } = input
+  return Result.map(resolveMinecraftSoundPlanInputs({ eventId, options, randomSource, registry }), (planInputs) => {
+    const event = registry.events.get(eventId)
+    const { durationSecs, enabled, frequency, loop, sound, spatial } = planInputs
+
+    return {
+      enabled,
+      plan: {
+        eventId,
+        request: {
+          durationSecs,
+          frequency,
+          gain: soundEffectGain(sound, spatial, options),
+          loop,
+          naturalDuration: sound.stream,
+          pan: spatial.pan,
+          playbackRate: sound.pitch,
+          soundId: sound.soundId,
+          stream: sound.stream,
+        },
+        sound,
+        subtitle: event?.subtitle ?? null,
+      },
+    }
+  })
+}
+
 export const planMinecraftSound = (
   registry: MinecraftSoundRegistry,
   eventId: MinecraftSoundEventId,
   options: MinecraftSoundPlayOptions = {},
-): Result.Result<MinecraftSoundPlaybackPlan, MinecraftSoundResolutionFailure | MinecraftSoundPlayOptionsFailure> => Result.gen(function* planMinecraftSoundEffect() {
-    const { loop = false } = options
-    const frequency = yield* positiveFrequency(options.frequency)
-    const durationSecs = yield* positiveDuration(options.durationSecs)
-    const sound = yield* resolveMinecraftSound(registry, eventId, options.random)
-    const spatial = soundSpatialisation(sound, options)
-    const event = registry.events.get(eventId)
-
-    return {
-      eventId,
-      request: {
-        durationSecs,
-        frequency,
-        gain: soundEffectGain(sound, spatial, options),
-        loop,
-        naturalDuration: sound.stream,
-        pan: spatial.pan,
-        playbackRate: sound.pitch,
-        soundId: sound.soundId,
-        stream: sound.stream,
-      },
-      sound,
-      subtitle: event?.subtitle ?? null,
-    }
-  })
+): Result.Result<MinecraftSoundPlaybackPlan, MinecraftSoundResolutionFailure | MinecraftSoundPlayOptionsFailure> =>
+  Result.map(planMinecraftSoundWithEnabled({ eventId, options, registry }), ({ plan }) => plan)
 
 const playbackError = (eventId: MinecraftSoundEventId, cause: unknown): MinecraftSoundPlaybackError => ({
   _tag: 'MinecraftSoundPlaybackError',
@@ -257,28 +315,6 @@ const playbackHandle = (playback: TonePlayback): ToneHandle | null => {
     return null
   }
   return { id: playback.id }
-}
-
-const randomForPlay = (
-  options: MinecraftSoundPlayOptions | undefined,
-  randomSource: () => unknown,
-): unknown => {
-  if (isMissing(options)) {
-    return randomSource()
-  }
-  const { random } = options
-  if (isMissing(random)) {
-    return randomSource()
-  }
-  return random
-}
-
-const enabledForPlay = (options: MinecraftSoundPlayOptions | undefined): boolean => {
-  if (isMissing(options)) {
-    return true
-  }
-  const { enabled = true } = options
-  return enabled
 }
 
 export const makeMinecraftSoundPlayer = (
@@ -315,12 +351,13 @@ export const makeMinecraftSoundPlayer = (
     return {
       play: (eventId: MinecraftSoundEventId, options?: MinecraftSoundPlayOptions) =>
         Effect.gen(function* playMinecraftSound() {
-          const plan = yield* Effect.fromResult(planMinecraftSound(registry, eventId, {
-            ...options,
-            random: randomForPlay(options, randomSource),
+          const { enabled, plan } = yield* Effect.fromResult(planMinecraftSoundWithEnabled({
+            eventId,
+            options,
+            randomSource,
+            registry,
           })).pipe(Effect.mapError((cause) => playbackError(eventId, cause)))
           const availability = yield* backend.availability
-          const enabled = enabledForPlay(options)
           yield* emitCaption({ availability, enabled, eventId, options, plan })
 
           if (!enabled || availability !== 'ready') {

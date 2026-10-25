@@ -172,6 +172,10 @@ describe('Minecraft sound player', () => {
       // @ts-expect-error Simulate invalid playback options from an untyped JavaScript caller.
       durationSecs: Number.NaN,
     })
+    const invalidEnabled = planMinecraftSound(REGISTRY, soundEventId('minecraft:block.break'), {
+      // @ts-expect-error Simulate invalid playback options from an untyped JavaScript caller.
+      enabled: null,
+    })
 
     expect(Result.isFailure(invalidFrequency)).toBe(true)
     if (Result.isFailure(invalidFrequency)) {
@@ -185,6 +189,13 @@ describe('Minecraft sound player', () => {
       expect(invalidDuration.failure).toMatchObject({
         _tag: 'MinecraftSoundPlayOptionsFailure',
         field: 'durationSecs',
+      })
+    }
+    expect(Result.isFailure(invalidEnabled)).toBe(true)
+    if (Result.isFailure(invalidEnabled)) {
+      expect(invalidEnabled.failure).toMatchObject({
+        _tag: 'MinecraftSoundPlayOptionsFailure',
+        field: 'enabled',
       })
     }
   })
@@ -362,6 +373,29 @@ describe('Minecraft sound player', () => {
         _tag: 'MinecraftSoundPlaybackError',
         eventId: 'minecraft:missing',
       })
+    }),
+  )
+
+  it.effect('rejects null enabled before playback or captions', () =>
+    Effect.gen(function* () {
+      const { captionLog, player, recorded } = yield* makeHarness('ready')
+      const result = yield* player
+        .play(soundEventId('minecraft:block.break'), {
+          // @ts-expect-error Simulate invalid playback options from an untyped JavaScript caller.
+          enabled: null,
+        })
+        .pipe(Effect.catch((cause) => Effect.succeed(cause)))
+
+      expect(result).toMatchObject({
+        _tag: 'MinecraftSoundPlaybackError',
+        eventId: 'minecraft:block.break',
+        cause: {
+          _tag: 'MinecraftSoundPlayOptionsFailure',
+          field: 'enabled',
+        },
+      })
+      expect(yield* recorded.played).toHaveLength(0)
+      expect(yield* Ref.get(captionLog)).toHaveLength(0)
     }),
   )
 })
