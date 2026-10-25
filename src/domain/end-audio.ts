@@ -18,8 +18,8 @@ import {
   MonotonicTimeSecs as monotonicTimeSecs,
 } from '@nerima-games/mc-kernel/domain/quantities'
 import { clampNonNegative, spatialise } from './volume.js'
-import type { Position } from '@nerima-games/mc-kernel/domain/coordinates'
 import { Option, Result } from 'effect'
+import type { Position } from '@nerima-games/mc-kernel/domain/coordinates'
 
 export const END_AUDIO_DIMENSIONS = ['overworld', 'nether', 'end'] as const
 export type EndAudioDimension = (typeof END_AUDIO_DIMENSIONS)[number]
@@ -292,15 +292,11 @@ const selectEventPlans = (
   return selected
 }
 
-export const planEndAudio = (
+const planEndAudioAt = (
   snapshot: EndAudioSnapshot,
-  previous: EndAudioState = INITIAL_END_AUDIO_STATE,
-): Result.Result<EndAudioPlan, EndAudioClockFailure> => {
-  const nowSecsOption = monotonicTimeSecs.option(snapshot.nowSecs)
-  if (Option.isNone(nowSecsOption)) {
-    return Result.fail({ _tag: 'EndAudioClockFailure' })
-  }
-  const nowSecs = monotonicTimeSecs(Math.max(0, nowSecsOption.value))
+  previous: EndAudioState,
+  nowSecs: MonotonicTimeSecs,
+): EndAudioPlan => {
   const normalizedSnapshot = { ...snapshot, nowSecs }
   const maxSounds = boundedSoundLimit(snapshot.maxSimultaneousSounds)
   const loops = planEndLoops(snapshot.dimension, maxSounds)
@@ -319,7 +315,7 @@ export const planEndAudio = (
     snapshot: normalizedSnapshot,
   })
 
-  return Result.succeed({
+  return {
     events,
     loops,
     nextState: {
@@ -327,5 +323,17 @@ export const planEndAudio = (
       lastPlayedAtSecs: nextLastPlayedAtSecs,
       recentEventIds: rememberEventIds(previous.recentEventIds, snapshot.events),
     },
-  })
+  }
+}
+
+export const planEndAudio = (
+  snapshot: EndAudioSnapshot,
+  previous: EndAudioState = INITIAL_END_AUDIO_STATE,
+): Result.Result<EndAudioPlan, EndAudioClockFailure> => {
+  const nowSecsOption = monotonicTimeSecs.option(snapshot.nowSecs)
+  if (Option.isNone(nowSecsOption)) {
+    return Result.fail({ _tag: 'EndAudioClockFailure' })
+  }
+  const nowSecs = monotonicTimeSecs(Math.max(0, nowSecsOption.value))
+  return Result.succeed(planEndAudioAt(snapshot, previous, nowSecs))
 }

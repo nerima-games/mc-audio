@@ -1,11 +1,12 @@
 import type { AudioDurationSecs, AudioGain, AudioHandleId } from './audio-brands.js'
 import {
   END_AMBIENCE_FADE_SECS,
+  type EndAudioClockFailure,
   type EndAudioEventPlan,
   type EndAudioFallbackPlan,
-  type EndAudioClockFailure,
   type EndAudioLoopKind,
   type EndAudioLoopPlan,
+  type EndAudioPlan,
   type EndAudioSnapshot,
   type EndAudioState,
   INITIAL_END_AUDIO_STATE,
@@ -127,6 +128,13 @@ export const makeEndAudioController = (port: EndAudioPort): EndAudioController =
   let currentState = INITIAL_END_AUDIO_STATE
   let disposed = false
 
+  const applyPlan = (plan: EndAudioPlan, nowSecs: MonotonicTimeSecs): void => {
+    releaseCompleted(port, transient, nowSecs)
+    syncLoops(port, loops, plan.loops)
+    playEvents({ nowSecs, port, transient }, plan.events)
+    currentState = plan.nextState
+  }
+
   const update = (snapshot: EndAudioSnapshot): Result.Result<void, EndAudioClockFailure> => {
     const planned = planEndAudio(snapshot, currentState)
     if (Result.isFailure(planned)) {
@@ -136,11 +144,8 @@ export const makeEndAudioController = (port: EndAudioPort): EndAudioController =
       return Result.succeed(globalThis.undefined)
     }
 
-    const nowSecs = snapshot.nowSecs
-    releaseCompleted(port, transient, nowSecs)
-    syncLoops(port, loops, planned.success.loops)
-    playEvents({ nowSecs, port, transient }, planned.success.events)
-    currentState = planned.success.nextState
+    const { nowSecs } = snapshot
+    applyPlan(planned.success, nowSecs)
     return Result.succeed(globalThis.undefined)
   }
 
