@@ -210,8 +210,9 @@ or the mc-kernel 0.9 public entrypoints listed above.
 
 The declaration comparison found 173 changed members across 76 existing
 exported object and union types. Among those types, no member was added, and no
-member changed from optional to required or from required to optional. Six former members are absent because
-`MinecraftBackgroundMusicInputEntry` and `MinecraftBiomeMusicDefinition` now
+member changed from optional to required or from required to optional. Six former
+members are absent because `MinecraftBackgroundMusicInputEntry` and
+`MinecraftBiomeMusicDefinition` now
 accept `unknown`. The nine WebAudio `start`, `stop`, `cancelScheduledValues`,
 `linearRampToValueAtTime`, and `setValueAtTime` members are methods in 0.4 where
 they were readonly function properties before. Other members retain their
