@@ -113,8 +113,8 @@ to the synchronous QA API at an allowed package entrypoint.
 ## Public API declaration changes
 
 This inventory compares the generated package-root declaration graphs for base
-commit `1d87499e082f146cba3292703bb115f3e38331e6` and API source commit
-`b15301a04e4d4772766d62b8b2290dded3eb6dfa`. The package-root graph has 67 added
+commit `1d87499e082f146cba3292703bb115f3e38331e6` and merged API commit
+`c98a638c5022161bd8b1daa438742eb098ef5b5a`. The package-root graph has 67 added
 exports and no removed exports. The callable-signature inventory found 47 existing
 exports with changed argument or return types.
 

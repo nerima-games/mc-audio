@@ -1,5 +1,15 @@
 # @nerima-games/mc-audio
 
+## 0.4.0
+
+### Minor Changes
+
+- Move to Effect 4 and mc-kernel 0.9.0. Add branded audio values, result-based validation, and package-owned caption, audio runtime, footstep mapping, and QA APIs. Align weather inputs with `clear`, `rain`, and `thunder`.
+  
+  Original sample generation now returns `Result` so invalid options, sound IDs, sample rates, and seeds are reported without throwing. Callers must check the result before using a generated WAV or manifest.
+  
+  See the [0.4.0 migration guide](docs/migration-0.4.md) for the public API changes and consumer instructions.
+
 ## 0.3.0
 
 ### Minor Changes
