@@ -37,11 +37,11 @@ different brand. The constructors for nominal text brands accept any string.
 | Branded type | Constructor for raw input |
 | --- | --- |
 | `AudioBpm` | `AudioBpm.result(number)` |
-| `AudioCaptionText` | `AudioCaptionText.result(string)` |
+| `AudioCaptionText` | `AudioCaptionText(string)` |
 | `AudioCount` | `AudioCount.result(number)` |
 | `AudioDelayTicks` | `AudioDelayTicks.result(number)` |
-| `AudioDiagnosticMessage` | `AudioDiagnosticMessage.result(string)` |
-| `AudioDiagnosticPath` | `AudioDiagnosticPath.result(string)` |
+| `AudioDiagnosticMessage` | `AudioDiagnosticMessage(string)` |
+| `AudioDiagnosticPath` | `AudioDiagnosticPath(string)` |
 | `AudioDistance` | `AudioDistance.result(number)` |
 | `AudioDurationSecs` | `AudioDurationSecs.result(number)` |
 | `AudioEventId` | `AudioEventId.result(string)` |
@@ -52,7 +52,7 @@ different brand. The constructors for nominal text brands accept any string.
 | `AudioOffset` | `AudioOffset.result(number)` |
 | `AudioPan` | `AudioPan.result(number)` |
 | `AudioPlaybackRate` | `AudioPlaybackRate.result(number)` |
-| `AudioRuntimeCaptionSignature` | `AudioRuntimeCaptionSignature.result(string)` |
+| `AudioRuntimeCaptionSignature` | `AudioRuntimeCaptionSignature(string)` |
 | `AudioSampleId` | `AudioSampleId.result(string)` |
 | `AudioSampleRate` | `AudioSampleRate.result(number)` |
 | `AudioSampleUrl` | `AudioSampleUrl.result(string)` |
@@ -114,7 +114,7 @@ to the synchronous QA API at an allowed package entrypoint.
 
 This inventory compares the generated package-root declaration graphs for base
 commit `1d87499e082f146cba3292703bb115f3e38331e6` and API source commit
-`8baa5aa343d763d9cb8d698185e114ec74d4ae11`. The comparison covers callable
+`b15301a04e4d4772766d62b8b2290dded3eb6dfa`. The comparison covers callable
 signatures, exported object and union members, aliases, and non-callable values,
 and normalizes workspace and dependency declaration paths. It found 47 existing
 callable exports with changed argument or return types, 67 added exports, and no
@@ -177,8 +177,9 @@ These Result-returning exports also changed argument types:
 resource, not the similarly named event ID or cue ID.
 
 `OriginalSampleBankFailure.field` identifies invalid `options`, `soundId`,
-`sampleRate`, or `seed` input. The generated WAV or manifest is available only
-from the `Result` success branch.
+`sampleRate`, or `seed` input. Its `message` is `AudioDiagnosticMessage`, a
+nominal string brand constructed with `AudioDiagnosticMessage(message)`. The
+generated WAV or manifest is available only from the `Result` success branch.
 
 | Export | Signature change |
 | --- | --- |
@@ -207,9 +208,9 @@ or the mc-kernel 0.9 public entrypoints listed above.
 
 ## Exported type member changes
 
-The declaration comparison found 173 changed members across 76 exported object
-and union types. No member was added, and no member changed from optional to
-required or from required to optional. Six former members are absent because
+The declaration comparison found 173 changed members across 76 existing
+exported object and union types. Among those types, no member was added, and no
+member changed from optional to required or from required to optional. Six former members are absent because
 `MinecraftBackgroundMusicInputEntry` and `MinecraftBiomeMusicDefinition` now
 accept `unknown`. The nine WebAudio `start`, `stop`, `cancelScheduledValues`,
 `linearRampToValueAtTime`, and `setValueAtTime` members are methods in 0.4 where
@@ -402,7 +403,7 @@ constant values remain the same where their declared types now use brands.
 | --- | --- | --- |
 | `EndAudioClockFailure` | absent | `{ readonly _tag: 'EndAudioClockFailure' }` |
 | `EndAudioSoundLimitFailure` | absent | `{ readonly _tag: 'EndAudioSoundLimitFailure' }` |
-| `OriginalSampleBankFailure` | absent | `{ readonly _tag: 'OriginalSampleBankFailure'; readonly field: 'options' \| 'sampleRate' \| 'seed' \| 'soundId'; readonly message: string }` |
+| `OriginalSampleBankFailure` | absent | `{ readonly _tag: 'OriginalSampleBankFailure'; readonly field: 'options' \| 'sampleRate' \| 'seed' \| 'soundId'; readonly message: AudioDiagnosticMessage }` |
 | `CAPTION_LIFETIME_SECS` | absent | `AudioDurationSecs` |
 | `CUE_DEFINITIONS` | `Record<SoundCueId, CueDefinition>` | `Readonly<Record<RawSoundCueId, CueDefinition>>` |
 | `FREE_MINECRAFT_MUSIC_EVENT_VARIANTS` | `Readonly<Record<string, readonly FreeMusicEventVariant[]>>` | `ReadonlyMap<MinecraftSoundEventId, readonly FreeMusicEventVariant[]>` |
