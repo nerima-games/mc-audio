@@ -83,11 +83,12 @@ export const makeAudioRuntime = (input: {
   readonly settings?: AudioRuntimeSettings
 }): Effect.Effect<AudioRuntime> =>
   Effect.gen(function* makeAudioRuntimeEffect() {
+    const { settings: initialSettings = DEFAULT_AUDIO_RUNTIME_SETTINGS } = input
     const captionEvents = yield* Ref.make<ReadonlyArray<CaptionEvent>>([])
     const state = yield* Ref.make<AudioRuntimeState>({
       closed: false,
       cueIds: [],
-      settings: input.settings ?? DEFAULT_AUDIO_RUNTIME_SETTINGS,
+      settings: initialSettings,
       unlockPending: false,
       unlocked: false,
     })

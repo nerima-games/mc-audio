@@ -442,14 +442,14 @@ describe('Minecraft music player', () => {
     }),
   )
 
-  it.effect('handles non-finite randomness at the player boundary', () =>
-    Effect.gen(function* () {
-      const { player, recorded } = yield* makeHarness('ready', () => Number.NaN)
-      const result = yield* tickToStart(player)
+  it.effect('rejects non-finite randomness before starting music', () =>
+  Effect.gen(function* () {
+    const { player, recorded } = yield* makeHarness('ready', () => Number.NaN)
+    const failure = yield* Effect.flip(tickToStart(player))
 
-      expect(result.played).toBe(true)
-      expect(yield* recorded.musicPlayed).toHaveLength(1)
-    }),
+    expect(failure).toBeDefined()
+    expect(yield* recorded.musicPlayed).toHaveLength(0)
+  }),
   )
 
   it.effect('forwards resolved volume, pitch, and streaming metadata', () =>

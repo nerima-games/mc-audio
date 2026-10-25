@@ -60,11 +60,14 @@ type CollectSoundSourcesOptions = {
 const failure = (eventId: MinecraftSoundEventId, message: string): Result.Result<never, MinecraftSoundResolutionFailure> =>
   Result.fail({ _tag: 'MinecraftSoundResolutionFailure', eventId, message: makeAudioDiagnosticMessage(message) })
 
-const normalizeRandom = (random: unknown): number => {
+const normalizeRandom = (
+  random: unknown,
+  eventId: MinecraftSoundEventId,
+): Result.Result<number, MinecraftSoundResolutionFailure> => {
   if (typeof random !== 'number' || !Number.isFinite(random)) {
-    return DEFAULT_RANDOM
+    return failure(eventId, 'Minecraft sound selection random value must be finite')
   }
-  return Math.min(MAX_RANDOM, Math.max(MIN_RANDOM, random))
+  return Result.succeed(Math.min(MAX_RANDOM, Math.max(MIN_RANDOM, random)))
 }
 
 const selectWeightedVariant = (
@@ -88,10 +91,14 @@ const selectWeightedVariant = (
 const selectFromNonEmptyVariants = (
   variants: readonly [MinecraftSoundVariant, ...MinecraftSoundVariant[]],
   random: unknown,
+  eventId: MinecraftSoundEventId,
 ): Result.Result<MinecraftSoundVariant, MinecraftSoundResolutionFailure> => {
+  const normalizedRandom = normalizeRandom(random, eventId)
+  if (Result.isFailure(normalizedRandom)) {
+    return Result.fail(normalizedRandom.failure)
+  }
   const totalWeight = variants.reduce((total, variant) => total + variant.weight, DEFAULT_RANDOM)
-  const selected = selectWeightedVariant(variants, normalizeRandom(random) * totalWeight)
-  return Result.succeed(selected)
+  return Result.succeed(selectWeightedVariant(variants, normalizedRandom.success * totalWeight))
 }
 
 export const selectMinecraftSoundVariant = (
@@ -107,7 +114,7 @@ export const selectMinecraftSoundVariant = (
     firstVariant,
     ...event.sounds.slice(INDEX_STEP),
   ]
-  return selectFromNonEmptyVariants(variants, random)
+  return selectFromNonEmptyVariants(variants, random, event.id)
 }
 
 const combineResolvedSound = (

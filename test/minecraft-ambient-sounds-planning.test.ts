@@ -107,30 +107,82 @@ describe('Minecraft ambient sound planning', () => {
   })
 
   it('rejects a zero delay returned by the injected mood resolver', () => {
-    const result = planMinecraftAmbientSounds({
-      cameraPosition: LISTENER,
-      definition: {
-        mood: {
-          block_search_extent: 8,
-          offset: 0,
-          sound: 'minecraft:ambient.mood',
-          tick_delay: 1,
-        },
+  const result = planMinecraftAmbientSounds({
+    cameraPosition: LISTENER,
+    definition: {
+      mood: {
+        block_search_extent: 8,
+        offset: 0,
+        sound: 'minecraft:ambient.mood',
+        tick_delay: 1,
       },
+    },
+    moodPosition: MOOD_POSITION,
+    moodResolver: () => ({ delayTicks: AudioDelayTicks(0), position: MOOD_POSITION }),
+    randomSource: () => 0,
+    state: initialMinecraftAmbientSoundsState(),
+    tick: AudioTick(0),
+  })
+
+  expect(Result.isFailure(result)).toBe(true)
+  if (Result.isFailure(result)) {
+    expect(result.failure).toMatchObject({
+      _tag: 'MinecraftAmbientSoundsPlannerFailure',
+      message: 'Minecraft ambient mood delayTicks must be a positive integer',
+    })
+  }
+
+  const nullResolution = planMinecraftAmbientSounds({
+    cameraPosition: LISTENER,
+    definition: {
+      mood: {
+        block_search_extent: 8,
+        offset: 0,
+        sound: 'minecraft:ambient.mood',
+        tick_delay: 1,
+      },
+    },
+    moodPosition: MOOD_POSITION,
+    moodResolver: () => null,
+    randomSource: () => 0,
+    state: initialMinecraftAmbientSoundsState(),
+    tick: AudioTick(0),
+  })
+  expect(Result.isFailure(nullResolution)).toBe(true)
+})
+
+  it('rejects an explicit null resolver and an undefined resolver result', () => {
+    const definition = {
+      mood: {
+        block_search_extent: 8,
+        offset: 0,
+        sound: 'minecraft:ambient.mood',
+        tick_delay: 1,
+      },
+    }
+    const nullResolver = planMinecraftAmbientSounds({
+      cameraPosition: LISTENER,
+      definition,
       moodPosition: MOOD_POSITION,
-      moodResolver: () => ({ delayTicks: AudioDelayTicks(0), position: MOOD_POSITION }),
+      // @ts-expect-error Explicit null is outside the optional callback contract.
+      moodResolver: null,
+      randomSource: () => 0,
+      state: initialMinecraftAmbientSoundsState(),
+      tick: AudioTick(0),
+    })
+    const undefinedResult = planMinecraftAmbientSounds({
+      cameraPosition: LISTENER,
+      definition,
+      moodPosition: MOOD_POSITION,
+      // @ts-expect-error Explicit undefined is outside the callback return contract.
+      moodResolver: () => globalThis.undefined,
       randomSource: () => 0,
       state: initialMinecraftAmbientSoundsState(),
       tick: AudioTick(0),
     })
 
-    expect(Result.isFailure(result)).toBe(true)
-    if (Result.isFailure(result)) {
-      expect(result.failure).toMatchObject({
-        _tag: 'MinecraftAmbientSoundsPlannerFailure',
-        message: 'Minecraft ambient mood delayTicks must be a positive integer',
-      })
-    }
+    expect(Result.isFailure(nullResolver)).toBe(true)
+    expect(Result.isFailure(undefinedResult)).toBe(true)
   })
 
   it('rejects invalid delay and tick values when constructing their brands', () => {
@@ -179,12 +231,15 @@ describe('Minecraft ambient sound planning', () => {
         randomSource: () => 2,
       }).commands,
     ).toStrictEqual([])
-    expect(
-      plan({
-        definition: { additions: [{ sound: 'minecraft:ambient.half', tick_chance: 0.5 }] },
-        randomSource: () => Number.NaN,
-      }).commands,
-    ).toHaveLength(1)
+    const invalidRandom = planMinecraftAmbientSounds({
+      cameraPosition: LISTENER,
+      definition: { additions: [{ sound: 'minecraft:ambient.half', tick_chance: 0.5 }] },
+      moodPosition: null,
+      randomSource: () => Number.NaN,
+      state: initialMinecraftAmbientSoundsState(),
+      tick: AudioTick(0),
+    })
+    expect(Result.isFailure(invalidRandom)).toBe(true)
   })
 
   it('rejects invalid game ticks', () => {

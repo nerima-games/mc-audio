@@ -65,10 +65,10 @@ const delayFor = (
   randomIntInclusive: (min: AudioDelayTicks, max: AudioDelayTicks) => unknown,
 ): Result.Result<AudioTick, MinecraftMusicDataFailure> => {
   const sample = randomIntInclusive(definition.min_delay, definition.max_delay)
-  let bounded: number = definition.min_delay
-  if (typeof sample === 'number' && Number.isFinite(sample)) {
-    bounded = Math.trunc(sample)
+  if (typeof sample !== 'number' || !Number.isFinite(sample)) {
+    return Result.fail(dataFailure('random', 'Minecraft music random value must be finite'))
   }
+  const bounded = Math.trunc(sample)
   const delay = Math.min(definition.max_delay, Math.max(definition.min_delay, bounded))
   return Result.succeed(makeAudioTick(delay))
 }

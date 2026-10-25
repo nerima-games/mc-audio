@@ -249,13 +249,15 @@ export const effectiveSfxGain = (input: {
   readonly sfxVolume: AudioVolume
   readonly spatialGain: AudioVolume
   readonly gainScale?: AudioGain
-}): AudioGain =>
-  clampNonNegative(
+}): AudioGain => {
+  const { gainScale = UNITY_GAIN } = input
+  return clampNonNegative(
     input.baseGain *
       input.sfxVolume *
       input.spatialGain *
-      Math.max(MIN_GAIN_SCALE, input.gainScale ?? UNITY_GAIN),
+      Math.max(MIN_GAIN_SCALE, gainScale),
   )
+}
 
 /**
  * Per-track gain for music. Master is deliberately absent — see the module header.

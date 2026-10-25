@@ -86,7 +86,8 @@ const createOscillatorSource = ({ context, request, sampleBuffer, playbackRate, 
     catch: (cause) => graphFailure({ context, playbackRate, request, sampleBuffer, streamSource }, cause),
     try: () => {
       const oscillator = context.createOscillator()
-      oscillator.type = request.wave ?? DEFAULT_TONE_WAVE
+      const { wave = DEFAULT_TONE_WAVE } = request
+      oscillator.type = wave
       oscillator.frequency.value = drivenFrequency(request.frequency)
       return oscillator
     },

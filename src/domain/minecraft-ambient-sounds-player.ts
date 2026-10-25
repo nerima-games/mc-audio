@@ -65,15 +65,19 @@ const plannerInputForTick = (
   randomSource: MinecraftAmbientSoundsPlannerInput['randomSource'],
   state: MinecraftAmbientSoundsPlannerInput['state'],
 ): MinecraftAmbientSoundsPlannerInput => {
+  let cameraPosition = options.listener
+  if (!isMissing(options.camera)) {
+    cameraPosition = options.camera.position
+  }
   const input = {
-    cameraPosition: options.camera?.position ?? options.listener,
+    cameraPosition,
     definition: definitionForTick(options),
     moodPosition: options.moodPosition ?? null,
     randomSource,
     state,
     tick: options.tick,
   }
-  if (options.moodResolver) {
+  if (!isMissing(options.moodResolver)) {
     return { ...input, moodResolver: options.moodResolver }
   }
   return input
@@ -226,8 +230,14 @@ const spatialForCommand = (
   if (command.category !== 'mood') {
     return NO_SPATIALISATION
   }
+  const { camera, listener: providedListener } = options
+  let listener = providedListener
+  if (!isMissing(camera)) {
+    const { position: cameraPosition } = camera
+    listener = cameraPosition
+  }
   return spatialForMood({
-    listener: options.camera?.position ?? options.listener,
+    listener,
     listenerForward: options.listenerForward,
     offset: command.offset,
     position: command.position,
@@ -301,7 +311,8 @@ export const makeMinecraftAmbientSoundsPlayer = (
         const { loopSound: plannedLoopSound } = plan.state
         let loopSound = plannedLoopSound
         const playedSoundIds: MinecraftSoundResourceId[] = []
-        const volume = options.ambientVolume ?? DEFAULT_AMBIENT_VOLUME
+        const { ambientVolume = DEFAULT_AMBIENT_VOLUME } = options
+        const volume = ambientVolume
         return yield* Effect.gen(function* applyMinecraftAmbientCommands() {
           for (const command of plan.commands) {
             if (command.kind === 'stop-loop') {

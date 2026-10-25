@@ -221,54 +221,56 @@ describe('Minecraft mob sound variant data layer', () => {
   })
 
   it('resolves age-specific and species-specific event ids', () => {
-    expect(() => variantOrThrow(new Map<MinecraftMobSoundVariantId, MinecraftMobSoundVariantDefinition>()))
-      .toThrow('expected classic variant')
-    const catRegistry = parseMinecraftMobSoundVariantRegistry({
-      input: { classic: catVariant('cat') },
-      kind: 'cat',
-      namespace: 'minecraft',
-    })
-    const cat = variantOrThrow(catRegistry.variants)
-    const pigRegistry = parseMinecraftMobSoundVariantRegistry({
-      input: { classic: pigVariant('pig') },
-      kind: 'pig',
-      namespace: 'minecraft',
-    })
-    const pig = variantOrThrow(pigRegistry.variants)
-    const cowRegistry = parseMinecraftMobSoundVariantRegistry({
-      input: { classic: cowVariant('cow') },
-      kind: 'cow',
-      namespace: 'minecraft',
-    })
-    const cow = variantOrThrow(cowRegistry.variants)
-    const chickenRegistry = parseMinecraftMobSoundVariantRegistry({
-      input: { classic: chickenVariant('chicken') },
-      kind: 'chicken',
-      namespace: 'minecraft',
-    })
-    const chicken = variantOrThrow(chickenRegistry.variants)
-    const catBehaviors: readonly [MinecraftMobSoundBehavior, string][] = [
-      ['ambient', 'ambientSound'],
-      ['strayAmbient', 'strayAmbientSound'],
-      ['hiss', 'hissSound'],
-      ['hurt', 'hurtSound'],
-      ['death', 'deathSound'],
-      ['eat', 'eatSound'],
-      ['begForFood', 'begForFoodSound'],
-      ['purr', 'purrSound'],
-      ['purreow', 'purreowSound'],
-    ]
-
-    for (const [behavior, field] of catBehaviors) {
-      expect(success(resolveMinecraftMobSoundEventId(cat, behavior))).toBe(`minecraft:cat/adult-${field.replace('Sound', '').replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`)}`)
-    }
-    expect(success(resolveMinecraftMobSoundEventId(cat, 'ambient', true))).toBe('minecraft:cat/baby-ambient')
-    expect(success(resolveMinecraftMobSoundEventId(pig, 'step', true))).toBe('minecraft:pig/baby-step')
-    expect(success(resolveMinecraftMobSoundEventId(cow, 'step', true))).toBe('minecraft:cow/step')
-    expect(success(resolveMinecraftMobSoundEventId(chicken, 'death', true))).toBe('minecraft:chicken/baby-death')
-    const missingBehavior = resolveMinecraftMobSoundEventId(cow, 'purr')
-    expect(Result.isFailure(missingBehavior)).toBe(true)
+  expect(() => variantOrThrow(new Map<MinecraftMobSoundVariantId, MinecraftMobSoundVariantDefinition>()))
+    .toThrow('expected classic variant')
+  const catRegistry = parseMinecraftMobSoundVariantRegistry({
+    input: { classic: catVariant('cat') },
+    kind: 'cat',
+    namespace: 'minecraft',
   })
+  const cat = variantOrThrow(catRegistry.variants)
+  const pigRegistry = parseMinecraftMobSoundVariantRegistry({
+    input: { classic: pigVariant('pig') },
+    kind: 'pig',
+    namespace: 'minecraft',
+  })
+  const pig = variantOrThrow(pigRegistry.variants)
+  const cowRegistry = parseMinecraftMobSoundVariantRegistry({
+    input: { classic: cowVariant('cow') },
+    kind: 'cow',
+    namespace: 'minecraft',
+  })
+  const cow = variantOrThrow(cowRegistry.variants)
+  const chickenRegistry = parseMinecraftMobSoundVariantRegistry({
+    input: { classic: chickenVariant('chicken') },
+    kind: 'chicken',
+    namespace: 'minecraft',
+  })
+  const chicken = variantOrThrow(chickenRegistry.variants)
+  const catBehaviors: readonly [MinecraftMobSoundBehavior, string][] = [
+    ['ambient', 'ambientSound'],
+    ['strayAmbient', 'strayAmbientSound'],
+    ['hiss', 'hissSound'],
+    ['hurt', 'hurtSound'],
+    ['death', 'deathSound'],
+    ['eat', 'eatSound'],
+    ['begForFood', 'begForFoodSound'],
+    ['purr', 'purrSound'],
+    ['purreow', 'purreowSound'],
+  ]
+
+  for (const [behavior, field] of catBehaviors) {
+    expect(success(resolveMinecraftMobSoundEventId(cat, behavior))).toBe(`minecraft:cat/adult-${field.replace('Sound', '').replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`)}`)
+  }
+  expect(success(resolveMinecraftMobSoundEventId(cat, 'ambient', true))).toBe('minecraft:cat/baby-ambient')
+  expect(success(resolveMinecraftMobSoundEventId(pig, 'step', true))).toBe('minecraft:pig/baby-step')
+  expect(success(resolveMinecraftMobSoundEventId(cow, 'step', true))).toBe('minecraft:cow/step')
+  expect(success(resolveMinecraftMobSoundEventId(chicken, 'death', true))).toBe('minecraft:chicken/baby-death')
+  // @ts-expect-error Explicit null is invalid and must not select adult sounds.
+  expect(Result.isFailure(resolveMinecraftMobSoundEventId(cat, 'ambient', null))).toBe(true)
+  const missingBehavior = resolveMinecraftMobSoundEventId(cow, 'purr')
+  expect(Result.isFailure(missingBehavior)).toBe(true)
+})
 
   it('resolves selected variants through sounds.json and rejects unknown variants', () => {
     const variants = parseMinecraftMobSoundVariantRegistry({
@@ -300,6 +302,16 @@ describe('Minecraft mob sound variant data layer', () => {
       eventId: 'minecraft:cat/baby-ambient',
       soundId: 'minecraft:cat/baby-ambient/sample',
     })
+    // @ts-expect-error Explicit null is invalid and must not select adult sounds.
+    const nullAge = resolveMinecraftMobSound({
+      behavior: 'ambient',
+      definition,
+      options: { isBaby: null },
+      registry,
+    })
+    const nullRandom = resolveMinecraftMobSound({ behavior: 'ambient', definition, options: { random: null }, registry })
+    expect(Result.isFailure(nullAge)).toBe(true)
+    expect(Result.isFailure(nullRandom)).toBe(true)
     expect(success(resolveMinecraftMobSoundVariant({
       behavior: 'purr',
       registry,
@@ -315,32 +327,39 @@ describe('Minecraft mob sound variant data layer', () => {
   })
 
   it('resolves every wolf sound behavior for adult and baby definitions', () => {
-    const definition = parseMinecraftWolfSoundDefinition({ input: wolfDefinition('wolf'), namespace: 'minecraft' })
-    const behaviors: readonly [MinecraftWolfSoundBehavior, string][] = [
-      ['ambient', 'ambient'],
-      ['death', 'death'],
-      ['growl', 'growl'],
-      ['hurt', 'hurt'],
-      ['pant', 'pant'],
-      ['whine', 'whine'],
-    ]
-    for (const [behavior, name] of behaviors) {
-      expect(success(resolveMinecraftWolfSoundEventId(definition, behavior))).toBe(`minecraft:wolf/adult-${name}`)
-      expect(success(resolveMinecraftWolfSoundEventId(definition, behavior, true))).toBe(`minecraft:wolf/baby-${name}`)
-    }
-    const registry = makeSoundRegistry(['minecraft:wolf/adult-pant', 'minecraft:wolf/baby-pant'])
-    expect(success(resolveMinecraftWolfSound({
-      behavior: 'pant',
-      definition,
-      registry,
-    }))).toMatchObject({ eventId: 'minecraft:wolf/adult-pant' })
-    expect(success(resolveMinecraftWolfSound({
-      behavior: 'pant',
-      definition,
-      options: { isBaby: true, random: 0.5 },
-      registry,
-    }))).toMatchObject({ eventId: 'minecraft:wolf/baby-pant' })
-  })
+  const definition = parseMinecraftWolfSoundDefinition({ input: wolfDefinition('wolf'), namespace: 'minecraft' })
+  const behaviors: readonly [MinecraftWolfSoundBehavior, string][] = [
+    ['ambient', 'ambient'],
+    ['death', 'death'],
+    ['growl', 'growl'],
+    ['hurt', 'hurt'],
+    ['pant', 'pant'],
+    ['whine', 'whine'],
+  ]
+  for (const [behavior, name] of behaviors) {
+    expect(success(resolveMinecraftWolfSoundEventId(definition, behavior))).toBe(`minecraft:wolf/adult-${name}`)
+    expect(success(resolveMinecraftWolfSoundEventId(definition, behavior, true))).toBe(`minecraft:wolf/baby-${name}`)
+  }
+  // @ts-expect-error Explicit null is invalid and must not select adult wolf sounds.
+  expect(Result.isFailure(resolveMinecraftWolfSoundEventId(definition, 'pant', null))).toBe(true)
+  const registry = makeSoundRegistry(['minecraft:wolf/adult-pant', 'minecraft:wolf/baby-pant'])
+  expect(success(resolveMinecraftWolfSound({
+    behavior: 'pant',
+    definition,
+    registry,
+  }))).toMatchObject({ eventId: 'minecraft:wolf/adult-pant' })
+  expect(success(resolveMinecraftWolfSound({
+    behavior: 'pant',
+    definition,
+    options: { isBaby: true, random: 0.5 },
+    registry,
+  }))).toMatchObject({ eventId: 'minecraft:wolf/baby-pant' })
+  // @ts-expect-error Explicit null is invalid and must not select adult wolf sounds.
+  const nullAge = resolveMinecraftWolfSound({ behavior: 'pant', definition, options: { isBaby: null }, registry })
+  const nullRandom = resolveMinecraftWolfSound({ behavior: 'pant', definition, options: { random: null }, registry })
+  expect(Result.isFailure(nullAge)).toBe(true)
+  expect(Result.isFailure(nullRandom)).toBe(true)
+})
 
   it('rejects malformed registries, definitions, ids, and kinds at the data boundary', () => {
     const namespace = MinecraftSoundNamespace('minecraft')

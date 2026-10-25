@@ -126,7 +126,8 @@ describe('Minecraft sounds.json data layer', () => {
     }
     expect(success(selectMinecraftSoundVariant(first, 0)).name).toBe('minecraft:block/stone')
     expect(success(selectMinecraftSoundVariant(first, 0.99)).name).toBe('custom:rare')
-    expect(success(selectMinecraftSoundVariant(first, Number.NaN)).name).toBe('minecraft:block/stone')
+    expect(Result.isFailure(selectMinecraftSoundVariant(first, Number.NaN))).toBe(true)
+    expect(Result.isFailure(selectMinecraftSoundVariant(first, null))).toBe(true)
     expect(success(selectMinecraftSoundVariant(first, 1)).name).toBe('custom:rare')
 
     const singletonEvent: MinecraftSoundEvent = {

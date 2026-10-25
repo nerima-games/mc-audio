@@ -193,40 +193,41 @@ describe('minecraft music definitions', () => {
   })
 
   it('selects weighted biome music without exposing the internal weight', () => {
-    const music: readonly MinecraftBiomeMusicDefinition[] = [
-      { data: definition({ sound: 'minecraft:music.game' }), weight: 1 },
-      { data: definition({ sound: 'minecraft:music.creative' }), weight: 3 },
-    ]
-    expect(success(selectMinecraftBiomeMusicDefinition([], 0))).toBeNull()
-    expect(success(selectMinecraftBiomeMusicDefinition(music, 0))).toStrictEqual({
-      max_delay: 0,
-      min_delay: 0,
-      replace_current_music: false,
-      sound: 'minecraft:music.game',
-    })
-    expect(success(selectMinecraftBiomeMusicDefinition(music, 0.5))?.sound).toBe('minecraft:music.creative')
-    expect(success(selectMinecraftBiomeMusicDefinition(music, -1))?.sound).toBe('minecraft:music.game')
-    expect(success(selectMinecraftBiomeMusicDefinition(music, 2))?.sound).toBe('minecraft:music.creative')
-    expect(success(selectMinecraftBiomeMusicDefinition(music, Number.NaN))?.sound).toBe('minecraft:music.game')
-    expect(
-      success(selectMinecraftBiomeMusicDefinition(
-        [
-          { data: definition({ sound: 'minecraft:music.game' }), weight: Number.MAX_VALUE },
-          { data: definition({ sound: 'minecraft:music.creative' }), weight: Number.MAX_VALUE },
-        ],
-        0.5,
-      ))?.sound,
-    ).toBe('minecraft:music.creative')
-    expect(
-      success(selectMinecraftBiomeMusicDefinition(
-        [
-          { data: definition({ sound: 'minecraft:music.game' }), weight: Number.MAX_VALUE },
-          { data: definition({ sound: 'minecraft:music.creative' }), weight: Number.MAX_VALUE },
-        ],
-        Number.MAX_VALUE,
-      ))?.sound,
-    ).toBe('minecraft:music.creative')
+  const music: readonly MinecraftBiomeMusicDefinition[] = [
+    { data: definition({ sound: 'minecraft:music.game' }), weight: 1 },
+    { data: definition({ sound: 'minecraft:music.creative' }), weight: 3 },
+  ]
+  expect(success(selectMinecraftBiomeMusicDefinition([], 0))).toBeNull()
+  expect(success(selectMinecraftBiomeMusicDefinition(music, 0))).toStrictEqual({
+    max_delay: 0,
+    min_delay: 0,
+    replace_current_music: false,
+    sound: 'minecraft:music.game',
   })
+  expect(success(selectMinecraftBiomeMusicDefinition(music, 0.5))?.sound).toBe('minecraft:music.creative')
+  expect(success(selectMinecraftBiomeMusicDefinition(music, -1))?.sound).toBe('minecraft:music.game')
+  expect(success(selectMinecraftBiomeMusicDefinition(music, 2))?.sound).toBe('minecraft:music.creative')
+  expect(Result.isFailure(selectMinecraftBiomeMusicDefinition(music, Number.NaN))).toBe(true)
+  expect(Result.isFailure(selectMinecraftBiomeMusicDefinition(music, null))).toBe(true)
+  expect(
+    success(selectMinecraftBiomeMusicDefinition(
+      [
+        { data: definition({ sound: 'minecraft:music.game' }), weight: 1 },
+        { data: definition({ sound: 'minecraft:music.creative' }), weight: 3 },
+      ],
+      0.5,
+    ))?.sound,
+  ).toBe('minecraft:music.creative')
+  expect(
+    success(selectMinecraftBiomeMusicDefinition(
+      [
+        { data: definition({ sound: 'minecraft:music.game' }), weight: Number.MAX_VALUE },
+        { data: definition({ sound: 'minecraft:music.creative' }), weight: Number.MAX_VALUE },
+      ],
+      Number.MAX_VALUE,
+    ))?.sound,
+  ).toBe('minecraft:music.creative')
+})
 })
 
 describe('minecraft music planning', () => {
@@ -333,72 +334,61 @@ describe('minecraft music planning', () => {
     })
   })
 
-  it('counts down before starting and clamps generated delays', () => {
-    expect(plan({ state: state({ nextSongDelayTicks: 2 }) })).toEqual({
-      commands: [],
-      state: state({ nextSongDelayTicks: 1 }),
-    })
-    expect(
-      plan({
-        desired: definition({ max_delay: 4, min_delay: 2 }),
-        randomIntInclusive: () => -1,
-      }),
-    ).toEqual({
-      commands: [
-        {
-          definition: {
-            max_delay: 4,
-            min_delay: 2,
-            replace_current_music: false,
-            sound: 'minecraft:music.game',
-          },
-          gain: 1,
-          kind: 'start',
-        },
-      ],
-      state: state({ currentGain: 1, currentSound: 'minecraft:music.game', nextSongDelayTicks: 2 }),
-    })
-    expect(
-      plan({
-        desired: definition({ max_delay: 4, min_delay: 2 }),
-        randomIntInclusive: () => 99,
-      }),
-    ).toEqual({
-      commands: [
-        {
-          definition: {
-            max_delay: 4,
-            min_delay: 2,
-            replace_current_music: false,
-            sound: 'minecraft:music.game',
-          },
-          gain: 1,
-          kind: 'start',
-        },
-      ],
-      state: state({ currentGain: 1, currentSound: 'minecraft:music.game', nextSongDelayTicks: 4 }),
-    })
-    expect(
-      plan({
-        desired: definition({ max_delay: 4, min_delay: 2 }),
-        randomIntInclusive: () => Number.NaN,
-      }),
-    ).toEqual({
-      commands: [
-        {
-          definition: {
-            max_delay: 4,
-            min_delay: 2,
-            replace_current_music: false,
-            sound: 'minecraft:music.game',
-          },
-          gain: 1,
-          kind: 'start',
-        },
-      ],
-      state: state({ currentGain: 1, currentSound: 'minecraft:music.game', nextSongDelayTicks: 2 }),
-    })
+  it('counts down, clamps valid generated delays, and rejects invalid randomness', () => {
+  expect(plan({ state: state({ nextSongDelayTicks: 2 }) })).toEqual({
+    commands: [],
+    state: state({ nextSongDelayTicks: 1 }),
   })
+  expect(
+    plan({
+      desired: definition({ max_delay: 4, min_delay: 2 }),
+      randomIntInclusive: () => -1,
+    }),
+  ).toEqual({
+    commands: [
+      {
+        definition: {
+          max_delay: 4,
+          min_delay: 2,
+          replace_current_music: false,
+          sound: 'minecraft:music.game',
+        },
+        gain: 1,
+        kind: 'start',
+      },
+    ],
+    state: state({ currentGain: 1, currentSound: 'minecraft:music.game', nextSongDelayTicks: 2 }),
+  })
+  expect(
+    plan({
+      desired: definition({ max_delay: 4, min_delay: 2 }),
+      randomIntInclusive: () => 99,
+    }),
+  ).toEqual({
+    commands: [
+      {
+        definition: {
+          max_delay: 4,
+          min_delay: 2,
+          replace_current_music: false,
+          sound: 'minecraft:music.game',
+        },
+        gain: 1,
+        kind: 'start',
+      },
+    ],
+    state: state({ currentGain: 1, currentSound: 'minecraft:music.game', nextSongDelayTicks: 4 }),
+  })
+  const invalidRandom = planMinecraftMusic({
+    currentActive: true,
+    desired: definition({ max_delay: 4, min_delay: 2 }),
+    enabled: true,
+    musicVolume: AudioVolume(1),
+    randomIntInclusive: () => Number.NaN,
+    state: state(),
+  })
+  expect(Result.isFailure(invalidRandom)).toBe(true)
+})
 
   it('returns typed failures when caller-supplied planner state violates its brands', () => {
     const invalidGain = planMinecraftMusic({

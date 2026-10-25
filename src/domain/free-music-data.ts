@@ -624,10 +624,11 @@ const freeSoundIdForVariant = (eventId: string, variant: OfficialMusicVariant): 
 }
 
 const mapMusicEventVariant = (eventId: string, variant: OfficialMusicVariant): FreeMusicEventVariant => {
+  const { stream = false, volume = 1, weight = 1 } = variant
   const metadata = {
-    stream: variant.stream ?? false,
-    volume: makeAudioGain(variant.volume ?? 1),
-    weight: makeAudioWeight(variant.weight ?? 1),
+    stream,
+    volume: makeAudioGain(volume),
+    weight: makeAudioWeight(weight),
   }
   if (variant.type === 'event') {
     return {

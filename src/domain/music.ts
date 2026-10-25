@@ -39,7 +39,8 @@ export type MusicEnvironmentContext = {
 }
 
 export const resolveMusicEnvironment = (context: MusicEnvironmentContext): MusicEnvironment => {
-  const threshold = context.caveThresholdY ?? DEFAULT_CAVE_THRESHOLD_Y
+  const { caveThresholdY = DEFAULT_CAVE_THRESHOLD_Y } = context
+  const threshold = caveThresholdY
   if (context.playerPosition.y < threshold) {
     return 'cave'
   }

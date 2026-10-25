@@ -81,12 +81,15 @@ export type MinecraftAmbientSoundsPlannerInput = {
   readonly tick: AudioTick
 }
 
-const randomUnit = (randomSource: () => unknown): number => {
+const randomUnit = (randomSource: () => unknown): Result.Result<number, MinecraftAmbientSoundsPlannerFailure> => {
   const value = randomSource()
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return ZERO
+    return Result.fail({
+      _tag: 'MinecraftAmbientSoundsPlannerFailure',
+      message: makeAudioDiagnosticMessage('Minecraft ambient random source must return a finite number'),
+    })
   }
-  return Math.min(MAX_RANDOM, Math.max(ZERO, value))
+  return Result.succeed(Math.min(MAX_RANDOM, Math.max(ZERO, value)))
 }
 
 const validTick = (tick: AudioTick): Result.Result<AudioTick, MinecraftAmbientSoundsPlannerFailure> =>
@@ -126,6 +129,26 @@ type MoodPlan = {
   readonly nextMoodTick: AudioTick
 }
 
+type MoodResolutionInput = Pick<
+  MoodPlanInput,
+  'cameraPosition' | 'moodPosition' | 'moodResolver' | 'randomSource' | 'tick'
+> & { readonly mood: MinecraftAmbientMood }
+
+const moodResolutionFailure = (message: string): Result.Result<never, MinecraftAmbientSoundsPlannerFailure> =>
+  Result.fail({
+    _tag: 'MinecraftAmbientSoundsPlannerFailure',
+    message: makeAudioDiagnosticMessage(message),
+  })
+
+const checkedMoodResolution = (
+  resolved: MinecraftAmbientMoodResolution | null | undefined,
+): Result.Result<MinecraftAmbientMoodResolution, MinecraftAmbientSoundsPlannerFailure> => {
+  if (resolved === null || resolved === globalThis.undefined) {
+    return moodResolutionFailure('Minecraft ambient mood resolver must return a resolution')
+  }
+  return Result.succeed(resolved)
+}
+
 const moodCommand = (
   mood: MinecraftAmbientMood,
   resolution: MinecraftAmbientMoodResolution | null,
@@ -142,6 +165,24 @@ const moodCommand = (
       sound: mood.sound,
     },
   ]
+}
+
+const resolveMood = ({
+  cameraPosition,
+  mood,
+  moodPosition,
+  moodResolver,
+  randomSource,
+  tick,
+}: MoodResolutionInput): Result.Result<MinecraftAmbientMoodResolution, MinecraftAmbientSoundsPlannerFailure> => {
+  const defaultResolution = { delayTicks: mood.tick_delay, position: moodPosition }
+  if (moodResolver === globalThis.undefined) {
+    return Result.succeed(defaultResolution)
+  }
+  if (typeof moodResolver !== 'function') {
+    return moodResolutionFailure('Minecraft ambient mood resolver must be a function when provided')
+  }
+  return checkedMoodResolution(moodResolver({ cameraPosition, mood, randomSource, tick }))
 }
 
 const moodDelay = (resolution: MinecraftAmbientMoodResolution): Result.Result<AudioDelayTicks, MinecraftAmbientSoundsPlannerFailure> => {
@@ -171,45 +212,51 @@ const planMoodCommands = ({
     return Result.succeed({ commands: [], nextMoodTick })
   }
 
-  const resolution = moodResolver?.({ cameraPosition, mood, randomSource, tick }) ?? {
-    delayTicks: mood.tick_delay,
-    position: moodPosition ?? null,
-  }
+  const activeMood = mood
   return Result.gen(function* planMoodCommandsEffect() {
+    const resolution = yield* resolveMood({
+      cameraPosition,
+      mood: activeMood,
+      moodPosition,
+      moodResolver,
+      randomSource,
+      tick,
+    })
     const delayTicks = yield* moodDelay(resolution)
     const nextTick = yield* Result.mapError(makeAudioTick.result(tick + delayTicks), (error) => ({
       _tag: 'MinecraftAmbientSoundsPlannerFailure' as const,
       message: makeAudioDiagnosticMessage(error.message),
     }))
-    return { commands: moodCommand(mood, resolution), nextMoodTick: nextTick }
+    return { commands: moodCommand(activeMood, resolution), nextMoodTick: nextTick }
   })
 }
 
 const shouldPlayAddition = (
   addition: MinecraftAmbientAddition,
   randomSource: () => unknown,
-): boolean => {
+): Result.Result<boolean, MinecraftAmbientSoundsPlannerFailure> => {
   if (addition.tick_chance === ONE) {
-    return true
+    return Result.succeed(true)
   }
   if (addition.tick_chance === ZERO) {
-    return false
+    return Result.succeed(false)
   }
-  return randomUnit(randomSource) < addition.tick_chance
+  return Result.map(randomUnit(randomSource), (value) => value < addition.tick_chance)
 }
 
 const planAdditionCommands = (input: {
   readonly additions: readonly MinecraftAmbientAddition[]
   readonly randomSource: () => unknown
-}): readonly MinecraftAmbientSoundsCommand[] => {
+}): Result.Result<readonly MinecraftAmbientSoundsCommand[], MinecraftAmbientSoundsPlannerFailure> =>
+  Result.gen(function* planAdditionCommandsEffect() {
   const commands: MinecraftAmbientSoundsCommand[] = []
   for (const addition of input.additions) {
-    if (shouldPlayAddition(addition, input.randomSource)) {
+    if (yield* shouldPlayAddition(addition, input.randomSource)) {
       commands.push({ category: 'addition', kind: 'play', sound: addition.sound })
     }
   }
   return commands
-}
+})
 
 export const planMinecraftAmbientSounds = ({
   cameraPosition,
@@ -236,7 +283,7 @@ export const planMinecraftAmbientSounds = ({
     randomSource,
     tick: currentTick,
   })
-  const additionCommands = planAdditionCommands({ additions: normalized.additions, randomSource })
+  const additionCommands = yield* planAdditionCommands({ additions: normalized.additions, randomSource })
   return {
     commands: [...loopCommands, ...moodPlan.commands, ...additionCommands],
     state: { loopSound: normalized.loop, nextMoodTick: moodPlan.nextMoodTick },

@@ -316,12 +316,15 @@ describe('Minecraft ambient sound planning', () => {
         randomSource: () => 2,
       }).commands,
     ).toStrictEqual([])
-    expect(
-      plan({
-        definition: { additions: [{ sound: 'minecraft:ambient.half', tick_chance: 0.5 }] },
-        randomSource: () => Number.NaN,
-      }).commands,
-    ).toHaveLength(1)
+    const invalidRandom = planMinecraftAmbientSounds({
+      cameraPosition: LISTENER,
+      definition: { additions: [{ sound: 'minecraft:ambient.half', tick_chance: 0.5 }] },
+      moodPosition: null,
+      randomSource: () => Number.NaN,
+      state: state(),
+      tick: AudioTick(0),
+    })
+    expect(Result.isFailure(invalidRandom)).toBe(true)
   })
 
   it('rejects invalid game ticks', () => {

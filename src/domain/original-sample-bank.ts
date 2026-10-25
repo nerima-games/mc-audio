@@ -11,10 +11,12 @@ import {
   AudioFrequencyHz as makeAudioFrequencyHz,
   AudioSampleId as makeAudioSampleId,
   AudioSampleRate as makeAudioSampleRate,
+  AudioSeed as makeAudioSeed,
 } from './audio-brands.js'
 import type { AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
 import { END_AUDIO_EVENT_KINDS, END_SOUND_DEFINITIONS, type EndAudioEventKind } from './end-audio.js'
 import { SOUND_CUE_IDS, type SoundCueId, cueDefinition } from './cue.js'
+import { Option } from 'effect'
 
 export const ORIGINAL_SAMPLE_RATE: AudioSampleRate = makeAudioSampleRate(16_000)
 
@@ -116,13 +118,26 @@ export const generateOriginalSampleWav = (
   soundId: OriginalSampleSoundId,
   options: OriginalSampleBankOptions = {},
 ): ArrayBuffer => {
-  const requestedSampleRate = options.sampleRate ?? ORIGINAL_SAMPLE_RATE
-  const sampleRate = makeAudioSampleRate(Math.round(Math.min(48_000, Math.max(8_000, requestedSampleRate))))
+  const {
+    sampleRate: requestedSampleRate = ORIGINAL_SAMPLE_RATE,
+    seed: requestedSeed = 0x4d_43_41,
+  } = options
+  const validSampleRate = makeAudioSampleRate.option(requestedSampleRate)
+  if (Option.isNone(validSampleRate)) {
+    throw new TypeError('Original sample rate must be a positive integer')
+  }
+  const sampleRate = makeAudioSampleRate(
+    Math.round(Math.min(48_000, Math.max(8_000, validSampleRate.value))),
+  )
+  const validSeed = makeAudioSeed.option(requestedSeed)
+  if (Option.isNone(validSeed)) {
+    throw new TypeError('Original sample seed must be a safe integer')
+  }
   const spec = specFor(soundId)
   const sampleCount = makeAudioCount(Math.max(1, Math.round(spec.durationSecs * sampleRate)))
   const buffer = new ArrayBuffer(44 + sampleCount * 2)
   const view = new DataView(buffer)
-  const random = { value: hash(soundId, options.seed ?? 0x4d_43_41) }
+  const random = { value: hash(soundId, validSeed.value) }
   writeHeader(view, sampleRate, sampleCount)
 
   let filteredNoise = 0

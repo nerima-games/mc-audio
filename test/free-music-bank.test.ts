@@ -162,33 +162,50 @@ describe('free Minecraft music bank', () => {
     expect(new Uint8Array(first)).toEqual(new Uint8Array(second))
   })
 
-  it('uses safe bounds for invalid generation options', () => {
-    const low = wav('minecraft:music/free_game', {
-      durationSecs: AudioDurationSecs(0.001),
-      sampleRate: AudioSampleRate(1),
-    })
-    const high = wav('minecraft:music/free_game', {
-      durationSecs: AudioDurationSecs(0.001),
-      sampleRate: AudioSampleRate(100000),
-    })
-    const malformedRate = wav('minecraft:music/free_game', {
-      durationSecs: AudioDurationSecs(0.001),
-      // @ts-expect-error Simulate an invalid sample rate from an untyped JavaScript caller.
-      sampleRate: Number.NaN,
-    })
-    const defaulted = wav('minecraft:music/free_game', { durationSecs: AudioDurationSecs(0) })
-    const omittedDuration = wav('minecraft:music/free_game', { sampleRate: AudioSampleRate(8000) })
-
-    expect(Option.isNone(AudioSampleRate.option(Number.NaN))).toBe(true)
-    expect(Option.isNone(AudioDurationSecs.option(Number.NaN))).toBe(true)
-    expect(new DataView(low).getUint32(24, true)).toBe(8000)
-    expect(new DataView(high).getUint32(24, true)).toBe(48000)
-    expect(new DataView(malformedRate).getUint32(24, true)).toBe(22050)
-    expect(new DataView(defaulted).getUint32(24, true)).toBe(22050)
-    expect(defaulted.byteLength).toBe(44 + 8 * 22050 * 2)
-    expect(omittedDuration.byteLength).toBe(44 + 8 * 8000 * 2)
-    expect(Result.isFailure(generateFreeMusicWav(MinecraftSoundResourceId('minecraft:music/unknown')))).toBe(true)
+  it('clamps valid rates and rejects invalid generation options', () => {
+  const low = wav('minecraft:music/free_game', {
+    durationSecs: AudioDurationSecs(0.001),
+    sampleRate: AudioSampleRate(1),
   })
+  const high = wav('minecraft:music/free_game', {
+    durationSecs: AudioDurationSecs(0.001),
+    sampleRate: AudioSampleRate(100000),
+  })
+  const malformedRate = generateFreeMusicWav(MinecraftSoundResourceId('minecraft:music/free_game'), {
+    durationSecs: AudioDurationSecs(0.001),
+    // @ts-expect-error Simulate an invalid sample rate from an untyped JavaScript caller.
+    sampleRate: Number.NaN,
+  })
+  const malformedDuration = generateFreeMusicWav(MinecraftSoundResourceId('minecraft:music/free_game'), {
+    // @ts-expect-error Simulate an invalid duration from an untyped JavaScript caller.
+    durationSecs: Number.NaN,
+  })
+  const zeroDuration = generateFreeMusicWav(
+    MinecraftSoundResourceId('minecraft:music/free_game'),
+    { durationSecs: AudioDurationSecs(0) },
+  )
+  const nullRate = generateFreeMusicWav(MinecraftSoundResourceId('minecraft:music/free_game'), {
+    // @ts-expect-error Explicit null is invalid and must not select the default rate.
+    sampleRate: null,
+  })
+  const nullDuration = generateFreeMusicWav(MinecraftSoundResourceId('minecraft:music/free_game'), {
+    // @ts-expect-error Explicit null is invalid and must not select the default duration.
+    durationSecs: null,
+  })
+  const omittedDuration = wav('minecraft:music/free_game', { sampleRate: AudioSampleRate(8000) })
+
+  expect(Option.isNone(AudioSampleRate.option(Number.NaN))).toBe(true)
+  expect(Option.isNone(AudioDurationSecs.option(Number.NaN))).toBe(true)
+  expect(new DataView(low).getUint32(24, true)).toBe(8000)
+  expect(new DataView(high).getUint32(24, true)).toBe(48000)
+  expect(Result.isFailure(malformedRate)).toBe(true)
+  expect(Result.isFailure(malformedDuration)).toBe(true)
+  expect(Result.isFailure(zeroDuration)).toBe(true)
+  expect(Result.isFailure(nullRate)).toBe(true)
+  expect(Result.isFailure(nullDuration)).toBe(true)
+  expect(omittedDuration.byteLength).toBe(44 + 8 * 8000 * 2)
+  expect(Result.isFailure(generateFreeMusicWav(MinecraftSoundResourceId('minecraft:music/unknown')))).toBe(true)
+})
 
   it('rejects a malformed resource id before track lookup', () => {
     // @ts-expect-error Simulate an invalid resource ID from an untyped JavaScript caller.

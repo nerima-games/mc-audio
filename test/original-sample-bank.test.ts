@@ -51,14 +51,18 @@ describe('original PCM sample bank', () => {
   })
 
   it('requires a finite positive sample rate and clamps valid rates to the supported range', () => {
-    expect(Option.isNone(AudioSampleRate.option(Number.NaN))).toBe(true)
-    expect(Option.isNone(AudioSampleRate.option(Number.POSITIVE_INFINITY))).toBe(true)
-    expect(Option.isNone(AudioSampleRate.option(Number.NEGATIVE_INFINITY))).toBe(true)
-    const below = generateOriginalSampleWav(blockBreak, { sampleRate: AudioSampleRate(1) })
-    const above = generateOriginalSampleWav(blockBreak, { sampleRate: AudioSampleRate(100_000) })
-    expect(new DataView(below).getUint32(24, true)).toBe(8_000)
-    expect(new DataView(above).getUint32(24, true)).toBe(48_000)
-  })
+  expect(Option.isNone(AudioSampleRate.option(Number.NaN))).toBe(true)
+  expect(Option.isNone(AudioSampleRate.option(Number.POSITIVE_INFINITY))).toBe(true)
+  expect(Option.isNone(AudioSampleRate.option(Number.NEGATIVE_INFINITY))).toBe(true)
+  const below = generateOriginalSampleWav(blockBreak, { sampleRate: AudioSampleRate(1) })
+  const above = generateOriginalSampleWav(blockBreak, { sampleRate: AudioSampleRate(100_000) })
+  expect(new DataView(below).getUint32(24, true)).toBe(8_000)
+  expect(new DataView(above).getUint32(24, true)).toBe(48_000)
+  // @ts-expect-error Simulate an explicit null from an untyped JavaScript caller.
+  expect(() => generateOriginalSampleWav(blockBreak, { sampleRate: null })).toThrow(TypeError)
+  // @ts-expect-error Simulate an explicit null from an untyped JavaScript caller.
+  expect(() => generateOriginalSampleWav(blockBreak, { seed: null })).toThrow(TypeError)
+})
 
   it('never seeds the noise generator with zero, even for a seed chosen to hash to it', () => {
     // The internal hash is `Math.imul(state ^ charCode, 16_777_619)` folded

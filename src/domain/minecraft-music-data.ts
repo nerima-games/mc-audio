@@ -234,11 +234,13 @@ export const normalizeMinecraftBiomeMusic = (
   return normalized
 })
 
-const randomUnitInterval = (random: unknown): number => {
+const randomUnitInterval = (
+  random: unknown,
+): Result.Result<number, MinecraftMusicDataFailure> => {
   if (typeof random !== 'number' || !Number.isFinite(random)) {
-    return ZERO_TICKS
+    return failure('random', 'Minecraft music random value must be finite')
   }
-  return Math.min(RANDOM_UNIT_UPPER_BOUND, Math.max(ZERO_TICKS, random))
+  return Result.succeed(Math.min(RANDOM_UNIT_UPPER_BOUND, Math.max(ZERO_TICKS, random)))
 }
 
 const withoutBiomeMusicWeight = (
@@ -248,17 +250,16 @@ const withoutBiomeMusicWeight = (
   return { max_delay, min_delay, replace_current_music, sound }
 }
 
-export const selectMinecraftBiomeMusicDefinition = (
-  music: MinecraftBiomeMusic,
+const selectNormalizedBiomeMusic = (
+  normalized: ReadonlyArray<NormalizedMinecraftBiomeMusicDefinition>,
   random: unknown,
-): Result.Result<NormalizedMinecraftMusicDefinition | null, MinecraftMusicDataFailure> => Result.map(
-  normalizeMinecraftBiomeMusic(music),
-  (normalized) => {
-    if (normalized.length === ZERO_TICKS) {
-      return null
-    }
+): Result.Result<NormalizedMinecraftMusicDefinition | null, MinecraftMusicDataFailure> => {
+  if (normalized.length === ZERO_TICKS) {
+    return Result.succeed(null)
+  }
+  return Result.map(randomUnitInterval(random), (randomUnit) => {
     const totalWeight = normalized.reduce((total, definition) => total + definition.weight, ZERO_TICKS)
-    let target = randomUnitInterval(random) * totalWeight
+    let target = randomUnit * totalWeight
     for (const definition of normalized) {
       if (target < definition.weight) {
         return withoutBiomeMusicWeight(definition)
@@ -266,5 +267,13 @@ export const selectMinecraftBiomeMusicDefinition = (
       target -= definition.weight
     }
     return withoutBiomeMusicWeight(normalized.reduce((_previousDefinition, definition) => definition))
-  },
-)
+  })
+}
+
+export const selectMinecraftBiomeMusicDefinition = (
+  music: MinecraftBiomeMusic,
+  random: unknown,
+): Result.Result<NormalizedMinecraftMusicDefinition | null, MinecraftMusicDataFailure> =>
+  Result.flatMap(normalizeMinecraftBiomeMusic(music), (normalized) =>
+    selectNormalizedBiomeMusic(normalized, random),
+  )

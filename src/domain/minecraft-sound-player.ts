@@ -43,7 +43,6 @@ const DEFAULT_DURATION_VALUE_SECS = 0.12
 const DEFAULT_DURATION_SECS = makeAudioDurationSecs(DEFAULT_DURATION_VALUE_SECS)
 const DEFAULT_SFX_VOLUME_VALUE = 1
 const DEFAULT_SFX_VOLUME = makeAudioVolume(DEFAULT_SFX_VOLUME_VALUE)
-const DEFAULT_RANDOM = 0
 const MIN_POSITIVE_VALUE = 0
 
 export type MinecraftSoundPlayOptions = {
@@ -139,8 +138,12 @@ const soundSpatialisation = (
   sound: ResolvedMinecraftSound,
   options: MinecraftSoundPlayOptions,
 ): Spatialisation => {
-  const { listenerForward, position } = options
-  const listener = options.listener ?? options.camera?.position
+  const { camera, listener: providedListener, listenerForward, position } = options
+  let listener = providedListener
+  if (isMissing(providedListener) && !isMissing(camera)) {
+    const { position: cameraPosition } = camera
+    listener = cameraPosition
+  }
   if (isMissing(position) || isMissing(listener)) {
     return NO_SPATIALISATION
   }
@@ -155,9 +158,10 @@ const soundEffectGain = (
   spatial: Spatialisation,
   options: MinecraftSoundPlayOptions,
 ): AudioGain => {
+  const { sfxVolume = DEFAULT_SFX_VOLUME } = options
   const input: SfxGainInput = {
     baseGain: sound.volume,
-    sfxVolume: options.sfxVolume ?? DEFAULT_SFX_VOLUME,
+    sfxVolume,
     spatialGain: spatial.gain,
   }
   if (!isMissing(options.gainScale)) {
@@ -176,7 +180,7 @@ type SfxGainInput = {
 type CaptionForOptions = {
   readonly atSecs: CaptionEvent['atSecs']
   readonly eventId: MinecraftSoundEventId
-  readonly options: MinecraftSoundPlayOptions
+  readonly options: MinecraftSoundPlayOptions | undefined
   readonly pan: AudioPan
   readonly reason: CaptionReason
   readonly text: AudioCaptionText
@@ -190,10 +194,22 @@ type EmitCaptionInput = {
   readonly plan: MinecraftSoundPlaybackPlan
 }
 
-const captionFor = ({ atSecs, eventId, options, pan, reason, text }: CaptionForOptions): CaptionEvent => {
+const captionFor = ({
+  atSecs,
+  eventId,
+  options = {},
+  pan,
+  reason,
+  text,
+}: CaptionForOptions): CaptionEvent => {
   const caption: CaptionEvent = { atSecs, cueId: eventId, reason, text }
   const { position } = options
-  const listener = options.listener ?? options.camera?.position
+  const { camera, listener: providedListener } = options
+  let listener = providedListener
+  if (isMissing(providedListener) && !isMissing(camera)) {
+    const { position: cameraPosition } = camera
+    listener = cameraPosition
+  }
   if (isMissing(position) || isMissing(listener)) {
     return caption
   }
@@ -205,9 +221,10 @@ export const planMinecraftSound = (
   eventId: MinecraftSoundEventId,
   options: MinecraftSoundPlayOptions = {},
 ): Result.Result<MinecraftSoundPlaybackPlan, MinecraftSoundResolutionFailure | MinecraftSoundPlayOptionsFailure> => Result.gen(function* planMinecraftSoundEffect() {
+    const { loop = false } = options
     const frequency = yield* positiveFrequency(options.frequency)
     const durationSecs = yield* positiveDuration(options.durationSecs)
-    const sound = yield* resolveMinecraftSound(registry, eventId, options.random ?? DEFAULT_RANDOM)
+    const sound = yield* resolveMinecraftSound(registry, eventId, options.random)
     const spatial = soundSpatialisation(sound, options)
     const event = registry.events.get(eventId)
 
@@ -217,7 +234,7 @@ export const planMinecraftSound = (
         durationSecs,
         frequency,
         gain: soundEffectGain(sound, spatial, options),
-        loop: options.loop ?? false,
+        loop,
         naturalDuration: sound.stream,
         pan: spatial.pan,
         playbackRate: sound.pitch,
@@ -240,6 +257,28 @@ const playbackHandle = (playback: TonePlayback): ToneHandle | null => {
     return null
   }
   return { id: playback.id }
+}
+
+const randomForPlay = (
+  options: MinecraftSoundPlayOptions | undefined,
+  randomSource: () => unknown,
+): unknown => {
+  if (isMissing(options)) {
+    return randomSource()
+  }
+  const { random } = options
+  if (isMissing(random)) {
+    return randomSource()
+  }
+  return random
+}
+
+const enabledForPlay = (options: MinecraftSoundPlayOptions | undefined): boolean => {
+  if (isMissing(options)) {
+    return true
+  }
+  const { enabled = true } = options
+  return enabled
 }
 
 export const makeMinecraftSoundPlayer = (
@@ -266,7 +305,7 @@ export const makeMinecraftSoundPlayer = (
         yield* captions.emit(captionFor({
           atSecs,
           eventId,
-          options: options ?? {},
+          options,
           pan: plan.request.pan,
           reason: captionReason(enabled, availability),
           text: plan.subtitle,
@@ -278,10 +317,10 @@ export const makeMinecraftSoundPlayer = (
         Effect.gen(function* playMinecraftSound() {
           const plan = yield* Effect.fromResult(planMinecraftSound(registry, eventId, {
             ...options,
-            random: options?.random ?? randomSource(),
+            random: randomForPlay(options, randomSource),
           })).pipe(Effect.mapError((cause) => playbackError(eventId, cause)))
           const availability = yield* backend.availability
-          const enabled = options?.enabled ?? true
+          const enabled = enabledForPlay(options)
           yield* emitCaption({ availability, enabled, eventId, options, plan })
 
           if (!enabled || availability !== 'ready') {

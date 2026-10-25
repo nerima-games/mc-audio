@@ -58,24 +58,34 @@ const failure = (path: string, message: string): Result.Result<never, FreeMusicB
     path: makeAudioDiagnosticPath(path),
   })
 
-const sampleRateFor = (requestedSampleRate: AudioSampleRate | undefined): number => {
-  const sampleRate = requestedSampleRate ?? FREE_MUSIC_SAMPLE_RATE
-  return Number.isFinite(sampleRate)
-    ? Math.round(Math.min(MAX_FREE_MUSIC_SAMPLE_RATE, Math.max(MIN_FREE_MUSIC_SAMPLE_RATE, sampleRate)))
-    : FREE_MUSIC_SAMPLE_RATE
+const sampleRateFor = (
+  requestedSampleRate: AudioSampleRate = FREE_MUSIC_SAMPLE_RATE,
+): Result.Result<number, FreeMusicBankFailure> => {
+  const validSampleRate = makeAudioSampleRate.option(requestedSampleRate)
+  if (Option.isNone(validSampleRate)) {
+    return failure('sampleRate', 'Free Minecraft music sample rate must be a positive integer')
+  }
+  return Result.succeed(
+    Math.round(
+      Math.min(
+        MAX_FREE_MUSIC_SAMPLE_RATE,
+        Math.max(MIN_FREE_MUSIC_SAMPLE_RATE, validSampleRate.value),
+      ),
+    ),
+  )
 }
 
 const durationFor = (
-  requestedDurationSecs: AudioDurationSecs | undefined,
+  requestedDurationSecs: AudioDurationSecs = FREE_MUSIC_DURATION_SECS,
 ): Result.Result<AudioDurationSecs, FreeMusicBankFailure> => {
-  const durationSecs = requestedDurationSecs ?? FREE_MUSIC_DURATION_SECS
-  if (!Number.isFinite(durationSecs) || durationSecs <= 0) {
-    return Result.succeed(FREE_MUSIC_DURATION_SECS)
+  const validDurationSecs = makeAudioDurationSecs.option(requestedDurationSecs)
+  if (Option.isNone(validDurationSecs) || validDurationSecs.value <= 0) {
+    return failure('durationSecs', 'Free Minecraft music duration must be finite and positive')
   }
-  if (durationSecs > FREE_MUSIC_MAX_DURATION_SECS) {
+  if (validDurationSecs.value > FREE_MUSIC_MAX_DURATION_SECS) {
     return failure('durationSecs', `Free Minecraft music duration must be at most ${FREE_MUSIC_MAX_DURATION_SECS} seconds`)
   }
-  return Result.succeed(makeAudioDurationSecs(durationSecs))
+  return Result.succeed(validDurationSecs.value)
 }
 
 const writeHeader = (view: DataView, sampleRate: number, sampleCount: number): void => {
@@ -101,8 +111,9 @@ const writeHeader = (view: DataView, sampleRate: number, sampleCount: number): v
 const renderFreeMusicWav = (
   track: FreeMusicTrack,
   options: FreeMusicBankOptions,
-): Result.Result<ArrayBuffer, FreeMusicBankFailure> => Result.map(durationFor(options.durationSecs), (durationSecs) => {
-  const sampleRate = sampleRateFor(options.sampleRate)
+): Result.Result<ArrayBuffer, FreeMusicBankFailure> => Result.gen(function* renderFreeMusicWavEffect() {
+  const durationSecs = yield* durationFor(options.durationSecs)
+  const sampleRate = yield* sampleRateFor(options.sampleRate)
   const sampleCount = Math.max(1, Math.round(durationSecs * sampleRate))
   const buffer = new ArrayBuffer(44 + sampleCount * 2)
   const view = new DataView(buffer)

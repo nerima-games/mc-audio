@@ -73,12 +73,12 @@ const randomIntInclusive = (
   randomSource: () => unknown,
   min: number,
   max: number,
-): number => {
+): unknown => {
   const sample = randomSource()
-  let normalized = RANDOM_LOWER_BOUND
-  if (typeof sample === 'number' && Number.isFinite(sample)) {
-    normalized = Math.min(RANDOM_UPPER_BOUND, Math.max(RANDOM_LOWER_BOUND, sample))
+  if (typeof sample !== 'number' || !Number.isFinite(sample)) {
+    return sample
   }
+  const normalized = Math.min(RANDOM_UPPER_BOUND, Math.max(RANDOM_LOWER_BOUND, sample))
   return Math.floor(min + normalized * (max - min + RANDOM_INTERVAL_STEP))
 }
 
@@ -400,10 +400,10 @@ export const makeMinecraftMusicPlayer = (
       readonly plan: MinecraftMusicPlan
     }, MinecraftMusicPlaybackError> =>
       Effect.gen(function* prepareMinecraftMusicTick() {
+        const { enabled = DEFAULT_ENABLED, musicVolume = DEFAULT_MUSIC_VOLUME } = input
         const state = yield* Ref.get(stateRef)
         const handle = yield* Ref.get(handleRef)
         const currentActive = yield* activeStateFor({ backend, handle })
-        const enabled = input.enabled ?? DEFAULT_ENABLED
         const selectedBiomeMusic = yield* selectBiomeMusicForTick({
           currentActive,
           enabled,
@@ -417,7 +417,7 @@ export const makeMinecraftMusicPlayer = (
           currentActive,
           desired,
           enabled,
-          musicVolume: input.musicVolume ?? DEFAULT_MUSIC_VOLUME,
+          musicVolume,
           randomIntInclusive: (min, max) => randomIntInclusive(randomSource, min, max),
           state,
         })).pipe(Effect.mapError((cause: MinecraftMusicDataFailure) => playbackError(desired?.sound ?? null, cause)))
