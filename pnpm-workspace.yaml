@@ -1,7 +1,8 @@
 allowBuilds:
   esbuild: true
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
-  # pnpm's default 24-hour release age applies; exempt this exact kernel pin for the migration.
+  # Exempt this exact kernel pin from the workspace's 24-hour release age policy.
   - '@nerima-games/mc-kernel@0.9.0'
 overrides:
   nanoid: 3.3.18

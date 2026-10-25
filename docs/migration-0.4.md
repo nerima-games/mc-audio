@@ -112,11 +112,11 @@ to the synchronous QA API at an allowed package entrypoint.
 
 This inventory compares the generated package-root declaration graphs for base
 commit `1d87499e082f146cba3292703bb115f3e38331e6` and API source commit
-`4455df7f5ceea40c1e3e6c0cbfd0de7fc5914e3b`. At each revision,
+`b6830cfada7a0149e2c2e85ebced5b7e7d3d724b`. At each revision,
 `nix develop --command corepack pnpm build` emitted declarations with that
 revision's release TypeScript config. A TypeScript 5.9.3 compiler-API traversal
 then found 45 existing callable exports with changed argument or return types,
-65 added exports, and no removed exports. `SoundCueId` was already exported as a
+66 added exports, and no removed exports. `SoundCueId` was already exported as a
 type and now also exports a constructor. The comparison follows package-root
 re-exports, compares call and construct signatures, exported object/union
 members, aliases, and non-callable values, and normalizes workspace paths and
@@ -145,7 +145,7 @@ branch before using the success value:
 | `parseMinecraftMobSoundVariantRegistry` | `Result<MinecraftMobSoundVariantRegistry, MinecraftMobSoundVariantParseFailure>` |
 | `parseMinecraftSoundsJson` | `Result<MinecraftSoundRegistry, MinecraftSoundsParseFailure>` |
 | `parseMinecraftWolfSoundDefinition` | `Result<MinecraftWolfSoundDefinition, MinecraftMobSoundVariantParseFailure>` |
-| `planEndAudio` | `Result<EndAudioPlan, EndAudioClockFailure>` |
+| `planEndAudio` | `Result<EndAudioPlan, EndAudioClockFailure \\| EndAudioSoundLimitFailure>` |
 | `planMinecraftAmbientSounds` | `Result<MinecraftAmbientSoundsPlan, MinecraftAmbientSoundsFailure \| MinecraftAmbientSoundsPlannerFailure>` |
 | `planMinecraftMusic` | `Result<MinecraftMusicPlan, MinecraftMusicDataFailure>` |
 | `planMinecraftSound` | `Result<MinecraftSoundPlaybackPlan, MinecraftSoundResolutionFailure \| MinecraftSoundPlayOptionsFailure>` |
@@ -236,7 +236,7 @@ original mutability. A `?` marks an optional member.
 | `CaptionEvent.pan` | `number?` | `AudioPan?` |
 | `CaptionEvent.text` | `string` | `AudioCaptionText` |
 | `CuePlayOptions.gainScale` | `number?` | `AudioGain?` |
-| `EndAudioController.update` | `(snapshot: EndAudioSnapshot) => void` | `(snapshot: EndAudioSnapshot) => Result.Result<void, EndAudioClockFailure>` |
+| `EndAudioController.update` | `(snapshot: EndAudioSnapshot) => void` | `(snapshot: EndAudioSnapshot) => Result.Result<void, EndAudioClockFailure \\| EndAudioSoundLimitFailure>` |
 | `EndAudioEvent.id` | `string` | `AudioEventId` |
 | `EndAudioEventPlan.eventId` | `string` | `AudioEventId` |
 | `EndAudioEventPlan.gain` | `number` | `AudioGain` |
@@ -264,17 +264,17 @@ original mutability. A `?` marks an optional member.
 | `GameAudioEvent.cueId` | `"blockBreak" \| "blockPlace" \| "playerHurt" \| "entityHit" \| "mobHurt" \| "mobDeath" \| "enchant" \| "inventoryOpen" \| "itemPickup" \| "inventoryClose" \| "footstepGrass" \| "footstepStone" \| "footstepWood" \| "rainAmbient" \| "thunderClap" \| "levelUp" \| "achievementUnlock"` | `SoundCueId` |
 | `GameAudioEvent.gainScale` | `number?` | `AudioGain?` |
 | `Minecraft26_2SoundDefinition.subtitle` | `string?` | `unknown?` |
-| `Minecraft26_2SoundVariantDefinition[object union member].attenuation_distance` | `number?` | `unknown?` |
-| `Minecraft26_2SoundVariantDefinition[object union member].name` | `string` | `unknown` |
-| `Minecraft26_2SoundVariantDefinition[object union member].pitch` | `number?` | `unknown?` |
-| `Minecraft26_2SoundVariantDefinition[object union member].volume` | `number?` | `unknown?` |
-| `Minecraft26_2SoundVariantDefinition[object union member].weight` | `number?` | `unknown?` |
+| `Minecraft26_2SoundVariantDefinition[variant-1].attenuation_distance` | `number` | `unknown` |
+| `Minecraft26_2SoundVariantDefinition[variant-1].name` | `string` | `unknown` |
+| `Minecraft26_2SoundVariantDefinition[variant-1].pitch` | `number` | `unknown` |
+| `Minecraft26_2SoundVariantDefinition[variant-1].volume` | `number` | `unknown` |
+| `Minecraft26_2SoundVariantDefinition[variant-1].weight` | `number` | `unknown` |
 | `Minecraft26_3Snapshot9SoundDefinition.subtitle` | `string?` | `unknown?` |
-| `Minecraft26_3Snapshot9SoundVariantDefinition[object union member].attenuation_distance` | `number?` | `unknown?` |
-| `Minecraft26_3Snapshot9SoundVariantDefinition[object union member].name` | `string` | `unknown` |
-| `Minecraft26_3Snapshot9SoundVariantDefinition[object union member].pitch` | `number?` | `unknown?` |
-| `Minecraft26_3Snapshot9SoundVariantDefinition[object union member].volume` | `number?` | `unknown?` |
-| `Minecraft26_3Snapshot9SoundVariantDefinition[object union member].weight` | `number?` | `unknown?` |
+| `Minecraft26_3Snapshot9SoundVariantDefinition[variant-1].attenuation_distance` | `number` | `unknown` |
+| `Minecraft26_3Snapshot9SoundVariantDefinition[variant-1].name` | `string` | `unknown` |
+| `Minecraft26_3Snapshot9SoundVariantDefinition[variant-1].pitch` | `number` | `unknown` |
+| `Minecraft26_3Snapshot9SoundVariantDefinition[variant-1].volume` | `number` | `unknown` |
+| `Minecraft26_3Snapshot9SoundVariantDefinition[variant-1].weight` | `number` | `unknown` |
 | `MinecraftAmbientAddition.sound` | `string` | `MinecraftSoundEventId` |
 | `MinecraftAmbientAddition.tick_chance` | `number` | `AudioVolume` |
 | `MinecraftAmbientMood.block_search_extent` | `number` | `AudioCount` |
@@ -302,10 +302,10 @@ original mutability. A `?` marks an optional member.
 | `MinecraftBackgroundMusicEntry.max_delay` | `number` | `AudioDelayTicks` |
 | `MinecraftBackgroundMusicEntry.min_delay` | `number` | `AudioDelayTicks` |
 | `MinecraftBackgroundMusicEntry.sound` | `string` | `MinecraftSoundEventId` |
-| `MinecraftBackgroundMusicInputEntry[object union member].max_delay` | `number` | removed with parent alias widening to `unknown` |
-| `MinecraftBackgroundMusicInputEntry[object union member].min_delay` | `number` | removed with parent alias widening to `unknown` |
-| `MinecraftBackgroundMusicInputEntry[object union member].replace_current_music` | `boolean?` | removed with parent alias widening to `unknown` |
-| `MinecraftBackgroundMusicInputEntry[object union member].sound` | `string` | removed with parent alias widening to `unknown` |
+| `MinecraftBackgroundMusicInputEntry[variant-0].max_delay` | `number` | removed with parent alias widening to `unknown` |
+| `MinecraftBackgroundMusicInputEntry[variant-0].min_delay` | `number` | removed with parent alias widening to `unknown` |
+| `MinecraftBackgroundMusicInputEntry[variant-0].replace_current_music` | `boolean?` | removed with parent alias widening to `unknown` |
+| `MinecraftBackgroundMusicInputEntry[variant-0].sound` | `string` | removed with parent alias widening to `unknown` |
 | `MinecraftBiomeMusicDefinition.data` | `MinecraftMusicDefinition` | removed with parent alias widening to `unknown` |
 | `MinecraftBiomeMusicDefinition.weight` | `number` | removed with parent alias widening to `unknown` |
 | `MinecraftMusicCommand[kind=gain].gain` | `number` | `AudioVolume` |
@@ -394,6 +394,11 @@ constant values remain the same where their declared types now use brands.
 
 | Export | Base declaration | 0.4 declaration |
 | --- | --- | --- |
+| `EndAudioClockFailure` | absent | `{ readonly _tag: 'EndAudioClockFailure' }` |
+| `EndAudioSoundLimitFailure` | absent | `{ readonly _tag: 'EndAudioSoundLimitFailure' }` |
+| `CAPTION_LIFETIME_SECS` | absent | `AudioDurationSecs` |
+| `CUE_DEFINITIONS` | `Record<SoundCueId, CueDefinition>` | `Readonly<Record<RawSoundCueId, CueDefinition>>` |
+| `FREE_MINECRAFT_MUSIC_EVENT_VARIANTS` | `Readonly<Record<string, readonly FreeMusicEventVariant[]>>` | `ReadonlyMap<MinecraftSoundEventId, readonly FreeMusicEventVariant[]>` |
 | `AudioSampleManifest` | `Readonly<Record<string, AudioSampleSource>>` | `ReadonlyMap<AudioSampleId, AudioSampleSource>` |
 | `Minecraft26_2SoundEventId` | `` `minecraft:${Minecraft26_2SoundKey}` `` | `MinecraftSoundEventId` |
 | `Minecraft26_3Snapshot9SoundEventId` | `` `minecraft:${Minecraft26_3Snapshot9SoundKey}` `` | `MinecraftSoundEventId` |
@@ -403,6 +408,7 @@ constant values remain the same where their declared types now use brands.
 | `VolumeSettings[Category]` | `number` | `AudioVolume` |
 | `WeatherMode` | `'clear' \| 'rain' \| 'thunder' \| 'snow'` | `'clear' \| 'rain' \| 'thunder'` |
 | `WEATHER_MODES` | `readonly ['clear', 'rain', 'thunder', 'snow']` | `readonly ['clear', 'rain', 'thunder']` |
+| `SOUND_CUE_IDS` | `readonly ['blockBreak', 'blockPlace', 'playerHurt', 'entityHit', 'mobHurt', 'mobDeath', 'enchant', 'inventoryOpen', 'itemPickup', 'inventoryClose', 'footstepGrass', 'footstepStone', 'footstepWood', 'rainAmbient', 'thunderClap', 'levelUp', 'achievementUnlock']` | `readonly SoundCueId[]` |
 | `WeatherLoopKind` | `'rain' \| 'wind'` | `'rain'` |
 | `CAPTION_DISPLAY_SECS` | `2.5` | `AudioDurationSecs` |
 | `DEFAULT_MAX_SIMULTANEOUS_END_SOUNDS` | `6` | `AudioCount` |
