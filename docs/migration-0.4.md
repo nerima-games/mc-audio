@@ -23,8 +23,10 @@ const gain = AudioGain.result(rawGain)
 const volume = AudioVolume.option(rawVolume)
 ```
 
-Use `.result` or `.option` for values from untrusted input. The direct
-constructor is for values already known to satisfy the brand's constraints.
+Use `.result` or `.option` for values from untrusted input. `.result(raw)`
+returns a `Result`; `.option(raw)` returns an `Option`. Check `Result.isSuccess`
+or `Option.isSome` before using the wrapped value. The direct constructor is for
+values already known to satisfy the brand's constraints.
 This applies to audio gain, volume, pan, frequency, duration, playback rate,
 distance, ticks, sample IDs and URLs, handles, and Minecraft sound identifiers.
 
@@ -112,16 +114,13 @@ to the synchronous QA API at an allowed package entrypoint.
 
 This inventory compares the generated package-root declaration graphs for base
 commit `1d87499e082f146cba3292703bb115f3e38331e6` and API source commit
-`8baa5aa343d763d9cb8d698185e114ec74d4ae11`. At each revision,
-`nix develop --command corepack pnpm build` emitted declarations with that
-revision's release TypeScript config. A TypeScript 5.9.3 compiler-API traversal
-then found 47 existing callable exports with changed argument or return types,
-67 added exports, and no removed exports. `SoundCueId` was already exported as a
-type and now also exports a constructor. `OriginalSampleBankFailure` is a new
-exported error type for the original sample generator. The comparison follows
-package-root re-exports, compares call and construct signatures, exported object/union
-members, aliases, and non-callable values, and normalizes workspace paths and
-Effect and mc-kernel declaration paths to their public entrypoints.
+`8baa5aa343d763d9cb8d698185e114ec74d4ae11`. The comparison covers callable
+signatures, exported object and union members, aliases, and non-callable values,
+and normalizes workspace and dependency declaration paths. It found 47 existing
+callable exports with changed argument or return types, 67 added exports, and no
+removed exports. `SoundCueId` was already exported as a type and now also exports
+a constructor. `OriginalSampleBankFailure` is a new exported error type for the
+original sample generator.
 
 The following 32 exports now return `Result`; callers must handle the failure
 branch before using the success value:

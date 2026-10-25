@@ -245,34 +245,6 @@ captions are shown; `audioUnlocked` does not suppress them. Sound players set
 is emitted before the playback request, so `audible` is not confirmation that a
 sound was accepted by the backend.
 
-### 参照実装との差
-
-参照実装の `SoundCaptionPort`（`packages/game/application/sound-caption-port.ts:8-15`）:
-
-```typescript
-export type SoundCaptionPortShape = {
-  readonly announce: (effect: SoundEffect) => Effect.Effect<void, never>
-}
-```
-
-**イベントは素のキュー ID だけ**である。タイムスタンプも位置も音量も無い。
-
-その結果、字幕消費に必要なロジックが全部 DOM コードに入った
-（`packages/presentation/hud/sound-captions.ts`）:
-
-| ロジック | 場所 | 問題 |
-| --- | --- | --- |
-| ラベルによる重複排除 | `:66-70` | モジュールレベルの mutable `Map`（`:34`） |
-| 5 行の上限 | `:72-76` | 同上 |
-| 2500ms の期限切れ | `:6`, `:82` | 生の `setTimeout`。テストに fake timer が要る |
-| 有効/無効 | `:33`, `:44` | モジュールレベルの `let captionsEnabled` |
-
-DOM 無しの consumer（字幕エクスポータ、スクリーンリーダーブリッジ）は何も再利用できない。
-
-`atSecs` を付けたことで期限切れと重複排除が**イベント列の純関数**になり、
-`visibleCaptions` として DOM の外に出た。
-DOM 側は描画だけをする。
-
 ### `reason` があること自体が契約
 
 `muted` / `gate-blocked` / `unavailable` の 3 つは
@@ -325,7 +297,6 @@ export const makeSoundCueService: (input: {
 `makeSoundCueService` reads `ClockPort` from its Effect environment when it emits a
 caption. `makeMinecraftSoundPlayer` also requires `ClockPort` in its environment.
 Caption times are monotonic seconds, never wall-clock time or `performance.now()`.
-（`performance.now()` は `pnpm check:deps` が禁止している）。
 
 ---
 
@@ -713,7 +684,7 @@ mob の標準 variant は `parseMinecraftMobSoundVariantJson`、
 | `src/qa/audio.ts` / `src/entrypoints/audio-qa.ts` | `makeAudioQaSurface`、`makeAudioQaEntrypoint` | Effect-based audio QA provider and synchronous `audio.report` / `audio.snapshot` entrypoint. |
 | `src/domain/minecraft-audio.ts` | `parseMinecraftAudioComponent`、`normalizeMinecraftAudioComponent` | `minecraft:audio/*` component の解析・正規化 |
 | `src/domain/audio-sample.ts` | `AudioSampleManifest`、`mergeAudioSampleManifests` | リソースパック音源の manifest 境界 |
-| `src/domain/original-sample-bank.ts` / `free-music-bank.ts` | `createOriginalSampleManifest`、`createFreeMinecraftMusicPack` | Result-based sample generation helpers for caller-owned audio assets. |
+| `src/domain/original-sample-bank.ts` / `free-music-bank.ts` | `createOriginalSampleManifest`、`createFreeMinecraftMusicPack` | 権利を持つ音源を manifest 化する。標準サンプル生成の失敗は `Result` で返す。 |
 
 root export の完全な機械的な一覧は `src/index.ts` を正とする。この表は各モジュールの利用目的を示し、
 音声バイナリやブラウザ固有の型を公開契約に混ぜないという境界を補足する。

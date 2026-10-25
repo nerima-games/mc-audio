@@ -17,12 +17,6 @@ npm view @nerima-games/mc-audio version --registry=https://npm.pkg.github.com
 
 ## 2. 公開・昇格の方針
 
-plan.md §6 Step 0 / §8 は元々「界面安定（4 週間 API ロック無変更）まで npm 公開・バージョン
-bump 運用を開始しない」という日数計測ベースのゲートを想定していたが、この自動凍結ゲートと
-その根拠だった `api-lock.md` は org 全体で廃止された
-（[API_STANDARD.md §4](https://github.com/nerima-games/.github/blob/main/API_STANDARD.md#4-自動-apiロックスナップショットツールは使わない)）。
-現在の方針は次の通り:
-
 > npm 公開・バージョン bump、および 0.x → 1.0.0 への昇格は、日数計測などの自動ゲートを設けず
 > **maintainer(take)による裁量判断のみ**で行う
 > （[RELEASE_STANDARD.md §4.2](https://github.com/nerima-games/.github/blob/main/RELEASE_STANDARD.md#42-新しい昇格ポリシー人間による裁量判断)）。
@@ -45,7 +39,7 @@ Minecraft ブロック判定の型・関数を直接利用し、オーディオ�
 このリポジトリで管理する。
 
 - `@nerima-games/mc-kernel` の依存指定と解決結果は `package.json` と lockfile を正とする。
-  この文書や移行ガイドに kernel の版数を複製して記載しない
+  移行ガイドの版数は、その移行で必要な依存の組み合わせを示す
 - `minecraft-sound-player.ts` は kernel の `ClockPort`、`CameraPoseSnapshot`、`Position` を直接使う
 - `.oxlintrc.json` の `no-restricted-imports`（`error`）が tier 1 の依存境界を検査する
 
@@ -63,7 +57,7 @@ Minecraft ブロック判定の型・関数を直接利用し、オーディオ�
 | --- | --- |
 | semver | `0.x` なので minor bump で破壊的変更が入りうる |
 | 破壊的変更の扱い | CHANGELOG に必ず書く。黙って変えない |
-| 消費者 | まだ居ない。居ないうちに界面を固める |
+| 消費者 | `mx-gameplay` と `mx-ui` が依存する。1.0.0 の昇格には実際の利用と契約確認を要する |
 
 ### 利用者向け移行手順
 
@@ -73,7 +67,7 @@ Minecraft ブロック判定の型・関数を直接利用し、オーディオ�
 1. `pnpm typecheck` 相当の consumer の型検査を実行し、`Position` や `ClockPort` を独自の互換型へ
    置き換えず、kernel の公開型を渡す。
 2. 外部から読む `sounds.json` と `minecraft:audio/*` は parser の引数へ `unknown` のまま渡す。
-   `TypeError` / `RangeError` を読み込み境界で処理し、型アサーションで検証を省略しない。
+   戻り値の `Result` の失敗分岐を処理し、型アサーションで検証を省略しない。
 3. 独自 backend は `playTone` / `playMusic` の `TonePlayback.accepted` を確認する。`ToneHandle.id`
    の存在は再生成功を意味しない。
 4. ブラウザでは `makeWebAudioBackend` の backend を保持し、ユーザージェスチャーから `unlock` を
@@ -97,7 +91,6 @@ mc-audio の場合、具体的には:
    ロスターは公開 API の一部であり、キューの追加は semver-minor だが、
    キューの**削除・改名**は破壊的変更になる
 
-「良さそうだから 1.0 にする」はしない。
 **実消費者が 2 つ付いて初めて、界面が正しいかどうかの証拠が揃う。**
 
 ## 5. ビルドと publish のパイプライン
@@ -122,11 +115,8 @@ root (`.`) のみを公開し、型は `dist/index.d.ts`、実装は `dist/index
 
 ### 現在の release build
 
-1. `tsconfig.release.json` が `dist/` に JavaScript、宣言、source map を emit する
-2. `exports`、`main`、`types` は `dist/` を指す
-3. `files` は `dist`、LICENSE、README に限定する
-4. `pnpm verify` が `pnpm build` まで実行する
-5. npm publish はこの作業では実行しない。認証設定は利用者の環境で行う
+1. `files` は `dist`、LICENSE、README に限定する
+2. `pnpm package:verify` が `pnpm build` とパッケージ境界検査を実行する
 
 ### `.npmrc` の現状
 
@@ -163,13 +153,12 @@ API シグネチャが変わらなくても**実質的に破壊的**である。
 
 ## 7. アセットのバージョニング
 
-plan.md §5.3 は「アセットは消費者に同梱（音声 → audio）」としている。
 音声データは `AudioSampleManifest` で `ArrayBuffer` または URL として注入する。
 `minecraftSoundManifest` は `sounds.json` の実体サウンドを URL manifest に変換し、
 WebAudio アダプタは decode、cache、preload、失敗時の oscillator fallback を担当する。
 
 このリポジトリは Minecraft の著作権付きバイナリアセットを同梱しない。標準サンプルの
-動作確認用には `createOriginalSampleManifest()` の `Result` が成功したときに得られる小さな WAV を使用する。
+動作確認用には `createOriginalSampleManifest()` の成功した `Result` から得る小さな WAV を使用する。
 消費者が提供するリソースパックの URL と音声差し替えは、URL または ArrayBuffer の
 manifest の変更として扱う。大きなアセットを配布物へ含める方針は、実データを追加する時に
 別途決定する。

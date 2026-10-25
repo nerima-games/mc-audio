@@ -49,7 +49,7 @@ mc-save 側の IndexedDB surface、mc-render、mx-ui と同じ手法である。
 本物の `makeSoundCueService` を本物のアダプタの上で走らせ、その結果を読み出して表示する
 （再計算はしない）。
 
-## 2. 非スコープ（ここに書いたら負け）
+## 2. 非スコープ
 
 | 非スコープ | 正しい置き場 | 理由 |
 | --- | --- | --- |
@@ -143,9 +143,9 @@ schema 側にも `:71-74` に「audioEnabled defaults to false intentionally」�
 `AudioSampleManifest` として音源を渡し、mc-audio は解決・再生の境界を提供する。
 
 音声の解決・再生に必要なデータ形式は mc-audio が所有する。バイナリ音源を無断で固定せず、
-`createOriginalSampleManifest()` は `Result` として決定的な短い WAV を返し、成功時の
-`AudioSampleManifest` は URL または
-独自 `ArrayBuffer` も受け入れる。`sounds.json` の解析・replace マージ・weight バリアント・
+`createOriginalSampleManifest()` は決定的な短い WAV を含む manifest を `Result` で返す。
+`AudioSampleManifest` は URL または独自 `ArrayBuffer` の音源も受け入れる。
+`sounds.json` の解析・replace マージ・weight バリアント・
 subtitle・attenuation・manifest 変換も `minecraft-sounds*` に集約している。
 
 ### 5-1. 現在の境界

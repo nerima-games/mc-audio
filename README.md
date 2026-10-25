@@ -7,7 +7,6 @@ WebAudio エンジン・効果音キューレジストリ・音楽コンテキ�
 ## 依存
 
 `effect` と `@nerima-games/mc-kernel` のみ。
-内部依存のホワイトリストは `@nerima-games/mc-kernel` だけを許可し、`pnpm check:deps` が機械的に強制している。
 
 mc-audio は**シンク**である。押し込まれる側であって、押し返さない。
 特に `mc-sim` を import してはならない（「プレイヤーはどこ？」は呼び出し側が渡す）。
@@ -32,7 +31,7 @@ mc-audio に依存するのは `mx-gameplay` と `mx-ui` の 2 つである。
 
 ## ドキュメント
 
-実装に必要な情報は全て [`docs/`](./docs/) にある。**plan.md を読み直す必要は無い。**
+実装に必要な情報は全て [`docs/`](./docs/) にある。
 
 | ファイル | 内容 |
 | --- | --- |
@@ -77,8 +76,7 @@ Nix を使わない場合は Node.js 24 以上と pnpm 11.24 以上（`corepack`
 | `pnpm verify` | `typecheck && lint && test`（TEST_STANDARD §1 の 3 段。カバレッジと `package:verify` は CI の別 step） |
 
 依存境界（`@nerima-games/*` の import 制限）は `.oxlintrc.json` の `no-restricted-imports`（`error`）
-が担う。旧 `pnpm check:deps`（`scripts/check-dependency-whitelist.ts`）は
-DEPENDENCY_POLICY.md のホワイトリスト機構が org 全体で廃止されたため削除した。
+が担う。
 
 ### 構成
 
@@ -100,8 +98,6 @@ src/domain/
   audio-sample.ts  ホスト非依存の sample manifest 型
   volume.ts         音量カテゴリと gain 算術
   webaudio-adapter.ts  WebAudio の生成・decode・cache・再生
-scripts/
-  check-dependency-whitelist.ts   依存境界のゲート
 test/                             Vitest テストスイート（DOM も fake timer も使わない）
 docs/                             実装情報
 ```
