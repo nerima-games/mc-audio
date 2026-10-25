@@ -168,9 +168,11 @@ const resolvePlaybackRate = (playbackRate: AudioPlaybackRate | undefined): Optio
 type PlaybackAdmission = {
   readonly maxConcurrentTones: AudioCount
   readonly playbackRate: AudioPlaybackRate
-  readonly request: ToneRequest
+  readonly request: AdmittedToneRequest
   readonly sampleId: Option.Option<AudioSampleId>
 }
+
+type AdmittedToneRequest = Omit<ToneRequest, 'soundId'> & { readonly soundId?: AudioSampleId }
 
 const playbackAdmission = (
   request: ToneRequest,
@@ -185,8 +187,10 @@ const playbackAdmission = (
     return Option.none()
   }
 
-  const sampleId = request.soundId === undefined ? Option.none<AudioSampleId>() : AudioSampleId.option(request.soundId)
-  if (request.soundId !== undefined && Option.isNone(sampleId)) {
+  const { soundId: untrustedSoundId, ...requestWithoutSoundId } = request
+  const sampleId =
+    untrustedSoundId === undefined ? Option.none<AudioSampleId>() : AudioSampleId.option(untrustedSoundId)
+  if (untrustedSoundId !== undefined && Option.isNone(sampleId)) {
     return Option.none()
   }
 
@@ -194,7 +198,7 @@ const playbackAdmission = (
     maxConcurrentTones: maxConcurrentTones.value,
     playbackRate: playbackRate.value,
     request: {
-      ...request,
+      ...requestWithoutSoundId,
       playbackRate: playbackRate.value,
       ...(Option.isSome(sampleId) ? { soundId: sampleId.value } : {}),
     },
@@ -221,7 +225,7 @@ const audioTime = (value: unknown): Option.Option<AudioDurationSecs> =>
   typeof value === 'number' ? AudioDurationSecs.option(value) : Option.none<AudioDurationSecs>()
 
 const resolveSampleBuffer = (
-  request: ToneRequest,
+  request: AdmittedToneRequest,
   options: WebAudioOptions,
   sampleCache: ReadonlyMap<AudioSampleId, AudioBufferSurface>,
 ): Effect.Effect<AudioBufferSurface | null> => {
@@ -241,7 +245,7 @@ const resolveSampleBuffer = (
 type StreamSourceRequestOptions = {
   readonly context: AudioContextSurface
   readonly createStreamSource: WebAudioOptions['createStreamSource']
-  readonly request: ToneRequest
+  readonly request: AdmittedToneRequest
   readonly sampleManifest: AudioSampleManifest
 }
 
