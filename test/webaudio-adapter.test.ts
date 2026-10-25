@@ -1493,11 +1493,10 @@ describe('resource limits and lifecycle', () => {
   it.effect('refuses an invalid explicit polyphony limit', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()
-      const invalidLimit = Number.NaN as unknown as AudioCount
-      const audio = yield* makeWebAudioBackend({
-        global: fake.global,
-        maxConcurrentTones: invalidLimit,
-      })
+      const options = { global: fake.global, maxConcurrentTones: AudioCount(1) }
+      // Simulate a JavaScript caller supplying a non-finite branded value.
+      Object.defineProperty(options, 'maxConcurrentTones', { value: Number.NaN })
+      const audio = yield* makeWebAudioBackend(options)
 
       yield* audio.unlock
       const playback = yield* audio.playTone(CUE)

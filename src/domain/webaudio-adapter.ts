@@ -165,6 +165,43 @@ const resolvePlaybackRate = (playbackRate: AudioPlaybackRate | undefined): Optio
   return AudioPlaybackRate.option(playbackRate)
 }
 
+type PlaybackAdmission = {
+  readonly maxConcurrentTones: AudioCount
+  readonly playbackRate: AudioPlaybackRate
+  readonly request: ToneRequest
+  readonly sampleId: Option.Option<AudioSampleId>
+}
+
+const playbackAdmission = (
+  request: ToneRequest,
+  maxConcurrentTones: Option.Option<AudioCount>,
+): Option.Option<PlaybackAdmission> => {
+  if (Option.isNone(maxConcurrentTones)) {
+    return Option.none()
+  }
+
+  const playbackRate = resolvePlaybackRate(request.playbackRate)
+  if (Option.isNone(playbackRate)) {
+    return Option.none()
+  }
+
+  const sampleId = request.soundId === undefined ? Option.none<AudioSampleId>() : AudioSampleId.option(request.soundId)
+  if (request.soundId !== undefined && Option.isNone(sampleId)) {
+    return Option.none()
+  }
+
+  return Option.some({
+    maxConcurrentTones: maxConcurrentTones.value,
+    playbackRate: playbackRate.value,
+    request: {
+      ...request,
+      playbackRate: playbackRate.value,
+      ...(Option.isSome(sampleId) ? { soundId: sampleId.value } : {}),
+    },
+    sampleId,
+  })
+}
+
 const sampleDurationSecs = (
   buffer: AudioBufferSurface,
   playbackRate: AudioPlaybackRate,
@@ -429,22 +466,12 @@ export const makeWebAudioBackend = (
         // Handles stay uniform across the admission gate; accepted is authoritative.
         const id = AudioHandleId(yield* Ref.updateAndGet(nextIdRef, (value) => value + 1))
         const refusedPlayback = (): TonePlayback => ({ accepted: false, id })
-        const playbackRateOption = resolvePlaybackRate(request.playbackRate)
-        const sampleId = request.soundId === undefined ? Option.none<AudioSampleId>() : AudioSampleId.option(request.soundId)
-        if (
-          Option.isNone(maxConcurrentTones) ||
-          Option.isNone(playbackRateOption) ||
-          (request.soundId !== undefined && Option.isNone(sampleId))
-        ) {
+        const admission = playbackAdmission(request, maxConcurrentTones)
+        if (Option.isNone(admission)) {
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
           return refusedPlayback()
         }
-        const playbackRequest: ToneRequest = {
-          ...request,
-          playbackRate: playbackRateOption.value,
-          ...(Option.isSome(sampleId) ? { soundId: sampleId.value } : {}),
-        }
-        const playbackRate = playbackRateOption.value
+        const { maxConcurrentTones: concurrentToneLimit, playbackRate, request: playbackRequest, sampleId } = admission.value
 
         const runtime = yield* ensureRuntime
         if (Option.isNone(runtime)) {
@@ -492,7 +519,7 @@ export const makeWebAudioBackend = (
         }
 
         const activeCount = [...activeTones.values()].filter((tone) => !tone.releasing).length
-        if (activeCount >= maxConcurrentTones.value) {
+        if (activeCount >= concurrentToneLimit) {
           yield* Ref.update(refusedTonesRef, (count) => count + 1)
           yield* Ref.update(capacityRefusalsRef, (count) => count + 1)
           return refusedPlayback()
