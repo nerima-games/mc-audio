@@ -143,4 +143,3 @@ export const AudioCaptionText: Brand.Constructor<AudioCaptionText> = Brand.nomin
 export type AudioRuntimeCaptionSignature = string & Brand.Brand<'AudioRuntimeCaptionSignature'>
 export const AudioRuntimeCaptionSignature: Brand.Constructor<AudioRuntimeCaptionSignature> =
   Brand.nominal<AudioRuntimeCaptionSignature>()
-
