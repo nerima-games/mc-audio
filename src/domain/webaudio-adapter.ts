@@ -232,8 +232,7 @@ const resolveSampleBuffer = (
   return Effect.try({
     catch: (cause) => cause,
     try: () => {
-      const sampleId = AudioSampleId.option(soundId)
-      const cached = Option.isSome(sampleId) ? sampleCache.get(sampleId.value) : undefined
+      const cached = sampleCache.get(soundId)
       return options.resolveAudioBuffer?.(soundId) ?? cached ?? null
     },
   }).pipe(Effect.catch(() => Effect.succeed(null)))
@@ -261,18 +260,14 @@ const streamSourceForRequest = ({
     return Effect.succeed(null)
   }
 
-  const sampleId = AudioSampleId.option(soundId)
-  if (Option.isNone(sampleId)) {
-    return Effect.succeed(null)
-  }
-  const source = sampleManifest.get(sampleId.value)
+  const source = sampleManifest.get(soundId)
   if (source === undefined || source.stream !== true) {
     return Effect.succeed(null)
   }
 
   return Effect.try({
     catch: (cause) => cause,
-    try: () => createStreamSource({ context, request, soundId: sampleId.value, source }),
+    try: () => createStreamSource({ context, request, soundId, source }),
   }).pipe(Effect.catch(() => Effect.succeed(null)))
 }
 
