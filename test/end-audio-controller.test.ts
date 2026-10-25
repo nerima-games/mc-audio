@@ -1,5 +1,6 @@
 /* oxlint-disable id-length, max-statements, no-empty-function, no-magic-numbers, sort-imports -- Compact no-op ports make ownership and lifecycle assertions explicit. */
 import { describe, expect, it } from 'vitest'
+import { Result } from 'effect'
 import {
   makeEndAudioController,
   type EndAudioHandle,
@@ -160,17 +161,24 @@ describe('End audio controller', () => {
     expect(stopped).toStrictEqual([2, 1])
   })
 
-  it('normalizes an untyped NaN clock before playback and state updates', () => {
+  it('rejects an untyped NaN clock before port calls or state updates', () => {
     const record = recorder(true)
     const controller = makeEndAudioController(record.port)
+    const initialState = controller.state()
     const snapshot = endSnapshot({
       events: [{ id: AudioEventId('roar'), kind: 'dragonRoar', position: position() }],
     })
     expect(Reflect.set(snapshot, 'nowSecs', Number.NaN)).toBe(true)
 
-    expect(() => controller.update(snapshot)).not.toThrow()
-    expect(record.primary).toHaveLength(1)
-    expect(controller.state().lastPlayedAtSecs.dragonRoar).toBe(0)
+    const result = controller.update(snapshot)
+    expect(Result.isFailure(result)).toBe(true)
+    expect(record.created).toStrictEqual([])
+    expect(record.fallback).toStrictEqual([])
+    expect(record.primary).toStrictEqual([])
+    expect(record.released).toStrictEqual([])
+    expect(record.stopped).toStrictEqual([])
+    expect(record.gains).toStrictEqual([])
+    expect(controller.state()).toBe(initialState)
   })
 
   it('tracks an event at the branded start of the clock', () => {

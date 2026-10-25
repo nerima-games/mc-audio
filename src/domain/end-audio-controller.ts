@@ -3,6 +3,7 @@ import {
   END_AMBIENCE_FADE_SECS,
   type EndAudioEventPlan,
   type EndAudioFallbackPlan,
+  type EndAudioClockFailure,
   type EndAudioLoopKind,
   type EndAudioLoopPlan,
   type EndAudioSnapshot,
@@ -14,7 +15,7 @@ import {
   type MonotonicTimeSecs,
   MonotonicTimeSecs as monotonicTimeSecs,
 } from '@nerima-games/mc-kernel/domain/quantities'
-import { Option } from 'effect'
+import { Result } from 'effect'
 
 export type EndAudioHandle = { readonly id: AudioHandleId }
 
@@ -29,12 +30,10 @@ export type EndAudioPort = {
 }
 
 export type EndAudioController = {
-  readonly update: (snapshot: EndAudioSnapshot) => void
+  readonly update: (snapshot: EndAudioSnapshot) => Result.Result<void, EndAudioClockFailure>
   readonly dispose: () => void
   readonly state: () => EndAudioState
 }
-
-const ZERO_SECS = 0
 
 const releaseCompleted = (
   port: EndAudioPort,
@@ -128,18 +127,21 @@ export const makeEndAudioController = (port: EndAudioPort): EndAudioController =
   let currentState = INITIAL_END_AUDIO_STATE
   let disposed = false
 
-  const update = (snapshot: EndAudioSnapshot): void => {
-    if (!disposed) {
-      const nowSecs = Option.match(monotonicTimeSecs.option(snapshot.nowSecs), {
-        onNone: () => monotonicTimeSecs(ZERO_SECS),
-        onSome: (value) => monotonicTimeSecs(Math.max(ZERO_SECS, value)),
-      })
-      releaseCompleted(port, transient, nowSecs)
-      const plan = planEndAudio({ ...snapshot, nowSecs }, currentState)
-      syncLoops(port, loops, plan.loops)
-      playEvents({ nowSecs, port, transient }, plan.events)
-      currentState = plan.nextState
+  const update = (snapshot: EndAudioSnapshot): Result.Result<void, EndAudioClockFailure> => {
+    const planned = planEndAudio(snapshot, currentState)
+    if (Result.isFailure(planned)) {
+      return Result.fail(planned.failure)
     }
+    if (disposed) {
+      return Result.succeed(globalThis.undefined)
+    }
+
+    const nowSecs = snapshot.nowSecs
+    releaseCompleted(port, transient, nowSecs)
+    syncLoops(port, loops, planned.success.loops)
+    playEvents({ nowSecs, port, transient }, planned.success.events)
+    currentState = planned.success.nextState
+    return Result.succeed(globalThis.undefined)
   }
 
   const dispose = (): void => {

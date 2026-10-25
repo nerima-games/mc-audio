@@ -1,13 +1,15 @@
 /* oxlint-disable id-length, no-magic-numbers, no-ternary, sort-imports -- Compact spatial fixtures and gate matrices keep these planner tests readable. */
 import { describe, expect, it } from 'vitest'
-import { Option } from 'effect'
+import { Option, Result } from 'effect'
 import {
   END_EVENT_HISTORY_LIMIT,
   type EndAudioEvent,
   type EndAudioEventKind,
+  type EndAudioPlan,
   type EndAudioSnapshot,
+  type EndAudioState,
   INITIAL_END_AUDIO_STATE,
-  planEndAudio,
+  planEndAudio as planEndAudioResult,
 } from '../src/domain/end-audio'
 import { AudioCount, AudioEventId } from '../src/domain/audio-brands'
 import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
@@ -29,6 +31,17 @@ const snapshot = (overrides: Partial<EndAudioSnapshot> = {}): EndAudioSnapshot =
   phase: 'active',
   ...overrides,
 })
+
+const planEndAudio = (
+  input: EndAudioSnapshot,
+  previous?: EndAudioState,
+): EndAudioPlan => {
+  const result = planEndAudioResult(input, previous)
+  if (Result.isFailure(result)) {
+    throw new Error('Expected a valid End audio clock')
+  }
+  return result.success
+}
 
 describe('End audio planning', () => {
   it('runs End ambience only in the End and honours a zero sound limit', () => {
@@ -150,14 +163,13 @@ describe('End audio planning', () => {
     expect(Option.isNone(AudioCount.option(Number.NaN))).toBe(true)
   })
 
-  it('normalizes malformed clock values and disables sounds for a malformed limit', () => {
+  it('rejects a malformed clock and disables sounds for a malformed limit', () => {
     // @ts-expect-error Simulate an invalid value from an untyped JavaScript caller.
     const malformedTime: MonotonicTimeSecs = Number.NaN
-    const normalizedTime = planEndAudio(
+    const invalidTime = planEndAudioResult(
       snapshot({ events: [event('dragonFlap', 'malformed-clock')], nowSecs: malformedTime }),
     )
-    expect(normalizedTime.events).toHaveLength(1)
-    expect(normalizedTime.nextState.lastPlayedAtSecs.dragonFlap).toBe(MonotonicTimeSecs(0))
+    expect(Result.isFailure(invalidTime)).toBe(true)
 
     // @ts-expect-error Simulate an invalid value from an untyped JavaScript caller.
     const malformedLimit: AudioCount = Number.NaN

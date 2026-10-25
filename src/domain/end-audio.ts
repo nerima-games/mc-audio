@@ -19,6 +19,7 @@ import {
 } from '@nerima-games/mc-kernel/domain/quantities'
 import { clampNonNegative, spatialise } from './volume.js'
 import type { Position } from '@nerima-games/mc-kernel/domain/coordinates'
+import { Option, Result } from 'effect'
 
 export const END_AUDIO_DIMENSIONS = ['overworld', 'nether', 'end'] as const
 export type EndAudioDimension = (typeof END_AUDIO_DIMENSIONS)[number]
@@ -90,6 +91,10 @@ export type EndAudioPlan = {
   readonly events: ReadonlyArray<EndAudioEventPlan>
   readonly loops: ReadonlyArray<EndAudioLoopPlan>
   readonly nextState: EndAudioState
+}
+
+export type EndAudioClockFailure = {
+  readonly _tag: 'EndAudioClockFailure'
 }
 
 type EndSoundDefinition = {
@@ -201,13 +206,6 @@ const rememberEventIds = (
   return remembered.slice(-END_EVENT_HISTORY_LIMIT)
 }
 
-const sanitizedTime = (value: MonotonicTimeSecs): MonotonicTimeSecs => {
-  if (!Number.isFinite(value)) {
-    return monotonicTimeSecs(0)
-  }
-  return monotonicTimeSecs(Math.max(0, value))
-}
-
 const planEndLoops = (
   dimension: EndAudioDimension,
   maxSounds: number,
@@ -297,8 +295,12 @@ const selectEventPlans = (
 export const planEndAudio = (
   snapshot: EndAudioSnapshot,
   previous: EndAudioState = INITIAL_END_AUDIO_STATE,
-): EndAudioPlan => {
-  const nowSecs = sanitizedTime(snapshot.nowSecs)
+): Result.Result<EndAudioPlan, EndAudioClockFailure> => {
+  const nowSecsOption = monotonicTimeSecs.option(snapshot.nowSecs)
+  if (Option.isNone(nowSecsOption)) {
+    return Result.fail({ _tag: 'EndAudioClockFailure' })
+  }
+  const nowSecs = monotonicTimeSecs(Math.max(0, nowSecsOption.value))
   const normalizedSnapshot = { ...snapshot, nowSecs }
   const maxSounds = boundedSoundLimit(snapshot.maxSimultaneousSounds)
   const loops = planEndLoops(snapshot.dimension, maxSounds)
@@ -317,7 +319,7 @@ export const planEndAudio = (
     snapshot: normalizedSnapshot,
   })
 
-  return {
+  return Result.succeed({
     events,
     loops,
     nextState: {
@@ -325,5 +327,5 @@ export const planEndAudio = (
       lastPlayedAtSecs: nextLastPlayedAtSecs,
       recentEventIds: rememberEventIds(previous.recentEventIds, snapshot.events),
     },
-  }
+  })
 }
