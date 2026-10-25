@@ -1,12 +1,14 @@
 /* oxlint-disable max-statements, no-bitwise, no-magic-numbers, no-nested-ternary, no-ternary, prefer-destructuring -- PCM/WAV synthesis is intentionally numeric and stateful. */
 import {
   type AudioCount,
+  type AudioDiagnosticMessage,
   type AudioDurationSecs,
   type AudioFrequencyHz,
   type AudioSampleId,
   type AudioSampleRate,
   type AudioSeed,
   AudioCount as makeAudioCount,
+  AudioDiagnosticMessage as makeAudioDiagnosticMessage,
   AudioDurationSecs as makeAudioDurationSecs,
   AudioFrequencyHz as makeAudioFrequencyHz,
   AudioSampleId as makeAudioSampleId,
@@ -38,7 +40,7 @@ export type OriginalSampleBankOptions = {
 export type OriginalSampleBankFailure = {
   readonly _tag: 'OriginalSampleBankFailure'
   readonly field: 'options' | 'sampleRate' | 'seed' | 'soundId'
-  readonly message: string
+  readonly message: AudioDiagnosticMessage
 }
 
 const ORIGINAL_SAMPLE_BANK_FAILURE_MESSAGES = {
@@ -51,7 +53,7 @@ const ORIGINAL_SAMPLE_BANK_FAILURE_MESSAGES = {
 const originalSampleBankFailure = (field: OriginalSampleBankFailure['field']): OriginalSampleBankFailure => ({
   _tag: 'OriginalSampleBankFailure',
   field,
-  message: ORIGINAL_SAMPLE_BANK_FAILURE_MESSAGES[field],
+  message: makeAudioDiagnosticMessage(ORIGINAL_SAMPLE_BANK_FAILURE_MESSAGES[field]),
 })
 
 type SampleSpec = {
