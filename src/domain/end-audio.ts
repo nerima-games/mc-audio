@@ -97,6 +97,10 @@ export type EndAudioClockFailure = {
   readonly _tag: 'EndAudioClockFailure'
 }
 
+export type EndAudioSoundLimitFailure = {
+  readonly _tag: 'EndAudioSoundLimitFailure'
+}
+
 type EndSoundDefinition = {
   readonly baseGain: AudioGain
   readonly cooldownSecs: AudioDurationSecs
@@ -184,12 +188,14 @@ const isEventAllowed = (
   }
 }
 
-const boundedSoundLimit = (value: AudioCount | undefined): number => {
-  const requested = value ?? DEFAULT_MAX_SIMULTANEOUS_END_SOUNDS
-  if (!Number.isFinite(requested)) {
-    return 0
+const boundedSoundLimit = (
+  value: AudioCount = DEFAULT_MAX_SIMULTANEOUS_END_SOUNDS,
+): Result.Result<AudioCount, EndAudioSoundLimitFailure> => {
+  const validCount = audioCount.option(value)
+  if (Option.isNone(validCount)) {
+    return Result.fail({ _tag: 'EndAudioSoundLimitFailure' })
   }
-  return Math.max(0, Math.floor(requested))
+  return Result.succeed(validCount.value)
 }
 
 const rememberEventIds = (
@@ -292,13 +298,18 @@ const selectEventPlans = (
   return selected
 }
 
-const planEndAudioAt = (
-  snapshot: EndAudioSnapshot,
-  previous: EndAudioState,
-  nowSecs: MonotonicTimeSecs,
-): EndAudioPlan => {
+const planEndAudioAt = ({
+  snapshot,
+  previous,
+  nowSecs,
+  maxSounds,
+}: {
+  readonly snapshot: EndAudioSnapshot
+  readonly previous: EndAudioState
+  readonly nowSecs: MonotonicTimeSecs
+  readonly maxSounds: AudioCount
+}): EndAudioPlan => {
   const normalizedSnapshot = { ...snapshot, nowSecs }
-  const maxSounds = boundedSoundLimit(snapshot.maxSimultaneousSounds)
   const loops = planEndLoops(snapshot.dimension, maxSounds)
   const activeUntilSecs = previous.activeUntilSecs.filter(
     (endsAtSecs) => Number.isFinite(endsAtSecs) && endsAtSecs > nowSecs,
@@ -329,11 +340,15 @@ const planEndAudioAt = (
 export const planEndAudio = (
   snapshot: EndAudioSnapshot,
   previous: EndAudioState = INITIAL_END_AUDIO_STATE,
-): Result.Result<EndAudioPlan, EndAudioClockFailure> => {
+): Result.Result<EndAudioPlan, EndAudioClockFailure | EndAudioSoundLimitFailure> => {
   const nowSecsOption = monotonicTimeSecs.option(snapshot.nowSecs)
   if (Option.isNone(nowSecsOption)) {
     return Result.fail({ _tag: 'EndAudioClockFailure' })
   }
+  const maxSounds = boundedSoundLimit(snapshot.maxSimultaneousSounds)
+  if (Result.isFailure(maxSounds)) {
+    return Result.fail(maxSounds.failure)
+  }
   const nowSecs = monotonicTimeSecs(Math.max(0, nowSecsOption.value))
-  return Result.succeed(planEndAudioAt(snapshot, previous, nowSecs))
+  return Result.succeed(planEndAudioAt({ maxSounds: maxSounds.success, nowSecs, previous, snapshot }))
 }

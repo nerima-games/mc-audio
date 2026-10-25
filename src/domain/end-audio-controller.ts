@@ -8,6 +8,7 @@ import {
   type EndAudioLoopPlan,
   type EndAudioPlan,
   type EndAudioSnapshot,
+  type EndAudioSoundLimitFailure,
   type EndAudioState,
   INITIAL_END_AUDIO_STATE,
   planEndAudio,
@@ -31,7 +32,9 @@ export type EndAudioPort = {
 }
 
 export type EndAudioController = {
-  readonly update: (snapshot: EndAudioSnapshot) => Result.Result<void, EndAudioClockFailure>
+  readonly update: (
+    snapshot: EndAudioSnapshot,
+  ) => Result.Result<void, EndAudioClockFailure | EndAudioSoundLimitFailure>
   readonly dispose: () => void
   readonly state: () => EndAudioState
 }
@@ -135,7 +138,9 @@ export const makeEndAudioController = (port: EndAudioPort): EndAudioController =
     currentState = plan.nextState
   }
 
-  const update = (snapshot: EndAudioSnapshot): Result.Result<void, EndAudioClockFailure> => {
+  const update = (
+    snapshot: EndAudioSnapshot,
+  ): Result.Result<void, EndAudioClockFailure | EndAudioSoundLimitFailure> => {
     const planned = planEndAudio(snapshot, currentState)
     if (Result.isFailure(planned)) {
       return Result.fail(planned.failure)

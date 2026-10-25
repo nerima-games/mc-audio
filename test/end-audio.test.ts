@@ -38,7 +38,7 @@ const planEndAudio = (
 ): EndAudioPlan => {
   const result = planEndAudioResult(input, previous)
   if (Result.isFailure(result)) {
-    throw new Error('Expected a valid End audio clock')
+    throw new Error('Expected a valid End audio plan')
   }
   return result.success
 }
@@ -173,11 +173,19 @@ describe('End audio planning', () => {
 
     // @ts-expect-error Simulate an invalid value from an untyped JavaScript caller.
     const malformedLimit: AudioCount = Number.NaN
-    const disabled = planEndAudio(
+    const invalidLimit = planEndAudioResult(
       snapshot({ events: [event('dragonRoar', 'malformed-limit')], maxSimultaneousSounds: malformedLimit }),
     )
-    expect(disabled.loops).toStrictEqual([])
-    expect(disabled.events).toStrictEqual([])
+    expect(Result.isFailure(invalidLimit)).toBe(true)
+
+    const nullLimit = planEndAudioResult(
+      snapshot({
+        events: [event('dragonRoar', 'null-limit')],
+        // @ts-expect-error Explicit null is invalid and must not select the default limit.
+        maxSimultaneousSounds: null,
+      }),
+    )
+    expect(Result.isFailure(nullLimit)).toBe(true)
   })
 
   it('keeps the earlier of two same-priority (same-kind) events on a sort tie', () => {
