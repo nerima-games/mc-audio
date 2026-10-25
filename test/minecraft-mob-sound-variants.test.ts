@@ -302,10 +302,10 @@ describe('Minecraft mob sound variant data layer', () => {
       eventId: 'minecraft:cat/baby-ambient',
       soundId: 'minecraft:cat/baby-ambient/sample',
     })
-    // @ts-expect-error Explicit null is invalid and must not select adult sounds.
     const nullAge = resolveMinecraftMobSound({
       behavior: 'ambient',
       definition,
+      // @ts-expect-error Explicit null is invalid and must not select adult sounds.
       options: { isBaby: null },
       registry,
     })
