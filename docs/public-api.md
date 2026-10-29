@@ -678,7 +678,7 @@ mob の標準 variant は `parseMinecraftMobSoundVariantJson`、
 | --- | --- | --- |
 | `src/domain/end-audio.ts` / `end-audio-controller.ts` | `planEndAudio`、`makeEndAudioController` | End のイベント、ループ、Dragon Battle の音声状態 |
 | `src/domain/audio-runtime.ts` | `makeAudioRuntime`、`AudioRuntime`、`AudioRuntimeSnapshot` | Effect-based host runtime for cue playback, captions, settings, unlock, and close. |
-| `src/domain/footstep.ts` | `cueForSurface`、`surfaceForBlockType`、`footstepCueFor` | Pure surface-to-cue mapping. `footstepCueFor` remains as a compatibility alias. |
+| `src/domain/footstep.ts` | `cueForSurface`、`surfaceForBlockType`、`footstepCueFor` | Maps known block types to footstep surfaces; unknown names and non-string values return a typed failure. Known blocks without a specialized surface use `default`. `footstepCueFor` remains a compatibility alias. |
 | `src/domain/game-audio.ts` | `makeGameAudioHost` | ゲームイベントを音声・字幕 Port へ接続する host |
 | `src/domain/weather-ambience.ts` / `weather-audio-controller.ts` | `planWeatherAmbience`、`makeWeatherAudioController` | Ambient loops and transitions for `clear`, `rain`, and `thunder`. |
 | `src/qa/audio.ts` / `src/entrypoints/audio-qa.ts` | `makeAudioQaSurface`、`makeAudioQaEntrypoint` | Effect-based audio QA provider and synchronous `audio.report` / `audio.snapshot` entrypoint. |

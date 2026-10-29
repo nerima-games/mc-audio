@@ -1,3 +1,6 @@
+import { BLOCK_TYPES } from '@nerima-games/mc-kernel/domain/block-type'
+import { Result } from 'effect'
+import * as fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import {
   cueForSurface,
@@ -16,7 +19,7 @@ describe('footstep audio mapping', () => {
     expect(footstepCueFor).toBe(cueForSurface)
   })
 
-  it('classifies the package block vocabulary and defaults unknown blocks', () => {
+  it('classifies special surfaces and keeps the default for known unclassified blocks', () => {
     const blockTypes = [
       { names: ['dirt', 'grass_block', 'farmland'], surface: 'grass' },
       { names: ['oak_log', 'oak_leaves', 'oak_planks', 'sapling', 'ladder', 'chest', 'door'], surface: 'wood' },
@@ -25,10 +28,38 @@ describe('footstep audio mapping', () => {
 
     for (const { names, surface } of blockTypes) {
       for (const name of names) {
-        expect(surfaceForBlockType(name)).toBe(surface)
+        const result = surfaceForBlockType(name)
+        expect(Result.isSuccess(result) && result.success).toBe(surface)
       }
     }
-    expect(surfaceForBlockType('glass')).toBe('default')
-    expect(surfaceForBlockType(null)).toBe('default')
+    const glass = surfaceForBlockType('glass')
+    expect(Result.isSuccess(glass) && glass.success).toBe('default')
+  })
+
+  it('accepts known block types and rejects names immediately outside the kernel vocabulary', () => {
+    expect(BLOCK_TYPES.length).toBeGreaterThan(0)
+    const registeredBlockType = fc.constantFrom(...BLOCK_TYPES)
+    fc.assert(fc.property(registeredBlockType, (blockType) => {
+      const result = surfaceForBlockType(blockType)
+      return Result.isSuccess(result)
+    }), { numRuns: 100 })
+
+    fc.assert(fc.property(registeredBlockType, (blockType) => {
+      const unknownBlockType = `${blockType}__unknown`
+      const result = surfaceForBlockType(unknownBlockType)
+      return Result.isFailure(result) &&
+        result.failure.reason === 'unknown-block-type' &&
+        result.failure.blockType === unknownBlockType
+    }), { numRuns: 100 })
+
+    fc.assert(fc.property(fc.integer(), (blockType) => {
+      const result = surfaceForBlockType(blockType)
+      return Result.isFailure(result) &&
+        result.failure.reason === 'invalid-type' &&
+        result.failure.blockType === null
+    }), { numRuns: 100 })
+
+    const nullValue = surfaceForBlockType(null)
+    expect(Result.isFailure(nullValue) && nullValue.failure.reason).toBe('invalid-type')
   })
 })

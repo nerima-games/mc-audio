@@ -1,4 +1,6 @@
 import { type SoundCueId, SoundCueId as soundCueId } from './cue.js'
+import { Result } from 'effect'
+import { isBlockType } from '@nerima-games/mc-kernel/domain/block-type'
 
 /** Surface vocabulary supplied by the block registry and consumed by audio. */
 export const FOOTSTEP_SURFACES = ['default', 'grass', 'wood', 'stone'] as const
@@ -37,18 +39,41 @@ export const cueForSurface = (surface: FootstepSurface): SoundCueId | undefined 
 /** Existing name retained for compatibility. */
 export const footstepCueFor: typeof cueForSurface = cueForSurface
 
-export const surfaceForBlockType = (blockType: unknown): FootstepSurface => {
-  if (typeof blockType !== 'string') {
-    return 'default'
+type FootstepSurfaceFailure = {
+  readonly _tag: 'FootstepSurfaceFailure'
+  readonly blockType: string | null
+  readonly reason: 'unknown-block-type' | 'invalid-type'
+}
+
+const surfaceFailure = (blockType: unknown): Result.Result<never, FootstepSurfaceFailure> => {
+  if (typeof blockType === 'string') {
+    return Result.fail({
+      _tag: 'FootstepSurfaceFailure',
+      blockType,
+      reason: 'unknown-block-type',
+    })
+  }
+  return Result.fail({
+    _tag: 'FootstepSurfaceFailure',
+    blockType: null,
+    reason: 'invalid-type',
+  })
+}
+
+export const surfaceForBlockType = (
+  blockType: unknown,
+): Result.Result<FootstepSurface, FootstepSurfaceFailure> => {
+  if (!isBlockType(blockType)) {
+    return surfaceFailure(blockType)
   }
   if (['dirt', 'grass_block', 'farmland'].includes(blockType)) {
-    return 'grass'
+    return Result.succeed('grass')
   }
   if (['oak_log', 'oak_leaves', 'oak_planks', 'sapling', 'ladder', 'chest', 'door'].includes(blockType)) {
-    return 'wood'
+    return Result.succeed('wood')
   }
   if (['stone', 'sand', 'gravel', 'cobblestone', 'end_stone_bricks'].includes(blockType)) {
-    return 'stone'
+    return Result.succeed('stone')
   }
-  return 'default'
+  return Result.succeed('default')
 }
