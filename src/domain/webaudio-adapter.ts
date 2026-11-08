@@ -673,7 +673,12 @@ export const makeWebAudioBackend = (
       const cursor = assetVariantCursors.get(cueId) ?? 0
       assetVariantCursors.set(cueId, cursor + 1)
       const surface = FOOTSTEP_SURFACE_BY_CUE.get(cueId)
-      const selectedAsset = selectAudioAsset({ cueId, manifest: audioAssetManifest, surface, variantIndex: cursor })
+      const selectedAsset = selectAudioAsset({
+        cueId,
+        manifest: audioAssetManifest,
+        surface,
+        variantIndex: AudioCount(cursor),
+      })
       if (Result.isFailure(selectedAsset)) {
         return Effect.gen(function* playProceduralFallbackForMissingAsset() {
           yield* recordAudioAssetFailure({

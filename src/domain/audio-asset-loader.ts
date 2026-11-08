@@ -2,6 +2,7 @@
 import type { AudioAssetManifest, AudioAssetPath, CueAudioAssetVariant } from './audio-asset-manifest.js'
 import {
   AudioCount,
+  type AudioCount as AudioCountType,
   AudioSampleId,
   type AudioSampleId as AudioSampleIdType,
   AudioSampleUrl,
@@ -22,7 +23,7 @@ export type AudioAssetLoadFailure = {
   readonly files: ReadonlyArray<AudioAssetPath>
   readonly reason: 'asset-load-failed' | 'asset-missing'
   /** Variant index for a lazy playback failure; preload failures aggregate per cue. */
-  readonly variantIndex?: number
+  readonly variantIndex?: AudioCountType
 }
 
 export type AudioAssetLoadReport = {
@@ -42,7 +43,7 @@ export type AudioAssetSelection = {
   readonly cueId: SoundCueId
   readonly sampleId: AudioSampleIdType
   readonly variant: CueAudioAssetVariant
-  readonly variantIndex: number
+  readonly variantIndex: AudioCountType
 }
 
 export type AudioAssetSelectionFailure = {
@@ -55,7 +56,7 @@ export type AudioAssetSelectionRequest = {
   readonly cueId: SoundCueId
   readonly manifest: AudioAssetManifest
   readonly surface?: FootstepSurface | undefined
-  readonly variantIndex?: number
+  readonly variantIndex?: AudioCountType
 }
 
 export type AudioAssetLoader = {
@@ -165,7 +166,7 @@ export const selectAudioAsset = (
     cueId: request.cueId,
     sampleId: assetSampleId(request.cueId, selected.index),
     variant: selected.variant,
-    variantIndex: selected.index,
+    variantIndex: AudioCount(selected.index),
   })
 }
 

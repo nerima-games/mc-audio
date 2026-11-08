@@ -1,3 +1,5 @@
+/* oxlint-disable new-cap -- AudioDiagnosticMessage preserves untrusted input as a diagnostic. */
+import { AudioDiagnosticMessage, type AudioDiagnosticMessage as AudioDiagnosticMessageType } from './audio-brands.js'
 import { type FootstepSurface, cueForSurface, surfaceForBlockType } from './footstep.js'
 import { type SoundCueId, SoundCueId as makeSoundCueId } from './cue.js'
 import { Result } from 'effect'
@@ -20,7 +22,7 @@ export type AudioEventMapping = {
 export type AudioEventMapFailure = {
   readonly _tag: 'AudioEventMapFailure'
   readonly kind: 'mining' | 'place' | 'footstep'
-  readonly blockType: string | null
+  readonly blockType: AudioDiagnosticMessageType | null
   readonly reason: 'unknown-block-type' | 'invalid-type'
 }
 
@@ -33,10 +35,10 @@ const surfaceFailure = (
   blockType: unknown,
 ): Result.Result<never, AudioEventMapFailure> => {
   let reason: AudioEventMapFailure['reason'] = 'invalid-type'
-  let safeBlockType: string | null = null
+  let safeBlockType: AudioDiagnosticMessageType | null = null
   if (typeof blockType === 'string') {
     reason = 'unknown-block-type'
-    safeBlockType = blockType
+    safeBlockType = AudioDiagnosticMessage(blockType)
   }
   return Result.fail({
     _tag: 'AudioEventMapFailure',

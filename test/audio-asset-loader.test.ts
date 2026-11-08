@@ -97,19 +97,19 @@ describe('audio asset loader', () => {
     expect(selectAudioAsset({ cueId: SoundCueId('footstepGrass'), manifest, surface: 'grass' })).toMatchObject({
       success: {
         sampleId: AudioSampleId('mc-audio.asset:footstepGrass:1'),
-        variantIndex: 1,
+        variantIndex: AudioCount(1),
       },
     })
     expect(selectAudioAsset({ cueId: SoundCueId('footstepGrass'), manifest, surface: 'stone' })).toMatchObject({
       success: {
         sampleId: AudioSampleId('mc-audio.asset:footstepGrass:2'),
-        variantIndex: 2,
+        variantIndex: AudioCount(2),
       },
     })
     expect(selectAudioAsset({ cueId: SoundCueId('footstepGrass'), manifest })).toMatchObject({
       success: {
         sampleId: AudioSampleId('mc-audio.asset:footstepGrass:0'),
-        variantIndex: 0,
+        variantIndex: AudioCount(0),
       },
     })
     expect(selectAudioAsset({ cueId: SoundCueId('blockBreak'), manifest: {} })).toMatchObject({
