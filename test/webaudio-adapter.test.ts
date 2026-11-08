@@ -899,7 +899,10 @@ describe('decoded sample playback', () => {
             streamPreloads += 1
             return Effect.succeed(true)
           },
-          sampleManifest: audioSampleManifest({ title: { kind: 'url', stream: true, url: '/audio/title.ogg' } }),
+          sampleManifest: audioSampleManifest({
+            raw: { data: new ArrayBuffer(4), kind: 'array-buffer' },
+            title: { kind: 'url', stream: true, url: '/audio/title.ogg' },
+          }),
         }
         Reflect.set(options, 'sampleLoadTimeoutMs', sampleLoadTimeoutMs)
         const audio = yield* makeWebAudioBackend(options)
@@ -911,8 +914,46 @@ describe('decoded sample playback', () => {
           reason: 'invalid-timeout',
           sampleId: sampleId('title'),
         }])
+        expect(yield* audio.preloadSamples([sampleId('raw')])).toMatchObject({ failed: 1 })
+        expect((yield* audio.report).sampleLoadFailures).toContainEqual({
+          _tag: 'AudioSampleLoadFailure',
+          file: 'raw',
+          reason: 'invalid-timeout',
+          sampleId: sampleId('raw'),
+        })
         expect(loads).toBe(0)
         expect(streamPreloads).toBe(0)
+        yield* audio.dispose
+      }
+    }),
+  )
+
+  it.effect('records invalid full-load deadlines behind a valid cue deadline', () =>
+    Effect.gen(function* () {
+      for (const { sampleLoadTimeoutMs, reason } of [
+        { sampleLoadTimeoutMs: null, reason: 'invalid-timeout' },
+        { sampleLoadTimeoutMs: 0, reason: 'load-timeout' },
+      ] as const) {
+        const fake = makeFakeWebAudio()
+        let loads = 0
+        const options: WebAudioOptions = {
+          audioAssetManifest: cueAssetManifest(),
+          global: fake.global,
+          loadSampleData: async () => {
+            loads += 1
+            return new ArrayBuffer(4)
+          },
+        }
+        Reflect.set(options, 'sampleLoadTimeoutMs', sampleLoadTimeoutMs)
+        const audio = yield* makeWebAudioBackend(options)
+        yield* audio.unlock
+
+        const playback = yield* audio.playTone({ ...CUE, soundId: SoundCueId('blockBreak') })
+
+        expect(playback.accepted).toBe(true)
+        expect(loads).toBe(0)
+        expect(fake.context()?.oscillators).toHaveLength(1)
+        expect((yield* audio.report).sampleLoadFailures).toMatchObject([{ reason }])
         yield* audio.dispose
       }
     }),
