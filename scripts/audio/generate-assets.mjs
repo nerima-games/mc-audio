@@ -586,7 +586,7 @@ const encodeOggBatch = (records) => {
   ])
   const args = [
     'run',
-    'nixpkgs#ffmpeg',
+    '.#ffmpeg',
     '--',
     '-hide_banner',
     '-loglevel',
@@ -612,7 +612,7 @@ const measureEncodedBatch = (records) => {
   const outputArgs = records.flatMap((_, index) => ['-map', `[volume${index}]`, '-f', 'null', '-'])
   const result = spawnSync('nix', [
     'run',
-    'nixpkgs#ffmpeg',
+    '.#ffmpeg',
     '--',
     '-hide_banner',
     '-nostats',
