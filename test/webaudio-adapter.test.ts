@@ -33,6 +33,7 @@
  */
 import { describe, expect, it } from '@effect/vitest'
 import { Effect, Fiber, Layer, Option, Ref, Result } from 'effect'
+import { TestClock } from 'effect/testing'
 import { FixedClockLayer } from '@nerima-games/mc-kernel/domain/clock'
 import { EpochMillis, MonotonicTimeSecs } from '@nerima-games/mc-kernel/domain/quantities'
 import { PositionAxis } from '@nerima-games/mc-kernel/domain/coordinates'
@@ -61,6 +62,7 @@ import { ATTACK_SECS, RELEASE_SECS, toneEnvelope } from '../src/domain/envelope'
 import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
 import {
   DEFAULT_SAMPLE_LOAD_TIMEOUT_MS,
+  DEFAULT_EFFECT_SAMPLE_LOAD_TIMEOUT_MS,
   DEFAULT_TONE_WAVE,
   availabilityForState,
   makeWebAudioBackend,
@@ -200,6 +202,31 @@ describe('decoded sample playback', () => {
         loaded: 0,
         requested: 1,
       })
+    }),
+  )
+
+  it.effect('starts cue asset preloads when the audio context is first created', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      let loads = 0
+      let signalLoadStarted: (() => void) | null = null
+      const loadStarted = new Promise<void>((resolve) => {
+        signalLoadStarted = resolve
+      })
+      const audio = yield* makeWebAudioBackend({
+        audioAssetManifest: cueAssetManifest(),
+        global: fake.global,
+        loadSampleData: () => {
+          loads += 1
+          signalLoadStarted?.()
+          return Promise.resolve(new ArrayBuffer(4))
+        },
+      })
+
+      expect(yield* audio.availability).toBe('locked')
+      yield* Effect.promise(() => loadStarted)
+      expect(loads).toBe(1)
+      yield* audio.dispose
     }),
   )
 
@@ -646,14 +673,17 @@ describe('decoded sample playback', () => {
       })
       yield* audio.unlock
 
-      const playback = yield* audio.playMusic({
+      const playbackFiber = yield* Effect.forkChild(audio.playMusic({
         gain: AudioGain(1),
         playbackRate: AudioPlaybackRate(1),
         soundId: MinecraftSoundResourceId('title'),
         stream: false,
-      })
+      }))
+      yield* TestClock.adjust('0 millis')
+      const playback = yield* Fiber.join(playbackFiber)
 
       expect(DEFAULT_SAMPLE_LOAD_TIMEOUT_MS).toBe(15_000)
+      expect(DEFAULT_EFFECT_SAMPLE_LOAD_TIMEOUT_MS).toBe(250)
       expect(playback).toMatchObject({ accepted: false, refusalReason: 'asset-load-failed' })
       expect((yield* audio.report).sampleLoadFailures).toEqual([{
         _tag: 'AudioSampleLoadFailure',
@@ -664,7 +694,7 @@ describe('decoded sample playback', () => {
     }),
   )
 
-  it.effect('bounds a pending host stream preload before its decoded-file fallback', () =>
+  it.effect('bounds a pending host stream preload with the music deadline', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()
       let streamPreloads = 0
@@ -679,24 +709,150 @@ describe('decoded sample playback', () => {
           streamPreloads += 1
           return Effect.never
         },
-        sampleLoadTimeoutMs: AudioTimeoutMs(0),
+        sampleLoadTimeoutMs: AudioTimeoutMs(100),
         sampleManifest: audioSampleManifest({ title: { kind: 'url', stream: true, url: '/audio/title.ogg' } }),
       })
       yield* audio.unlock
 
-      const playback = yield* audio.playMusic({
+      const playbackFiber = yield* Effect.forkChild(audio.playMusic({
         gain: AudioGain(1),
         playbackRate: AudioPlaybackRate(1),
         soundId: MinecraftSoundResourceId('title'),
         stream: true,
-      })
+      }))
+      yield* TestClock.adjust('100 millis')
+      const playback = yield* Fiber.join(playbackFiber)
 
       expect(playback).toMatchObject({ accepted: false, refusalReason: 'asset-load-failed' })
       expect(streamPreloads).toBe(1)
+      expect(sampleReads).toBe(0)
+      expect((yield* audio.report).sampleLoadFailures).toMatchObject([
+        { file: '/audio/title.ogg', reason: 'load-timeout' },
+      ])
+    }),
+  )
+
+  it.effect('applies one music deadline across a failed stream preload and its decoded fallback', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      let finishSampleRead: ((data: ArrayBuffer) => void) | null = null
+      let signalStreamStarted: (() => void) | null = null
+      let sampleReads = 0
+      const streamStarted = new Promise<void>((resolve) => {
+        signalStreamStarted = resolve
+      })
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        loadSampleData: () => {
+          sampleReads += 1
+          return new Promise<ArrayBuffer>((resolve) => {
+            finishSampleRead = resolve
+          })
+        },
+        preloadStream: () => {
+          signalStreamStarted?.()
+          return Effect.sleep('80 millis').pipe(Effect.as(false))
+        },
+        sampleLoadTimeoutMs: AudioTimeoutMs(100),
+        sampleManifest: audioSampleManifest({ title: { kind: 'url', stream: true, url: '/audio/title.ogg' } }),
+      })
+      yield* audio.unlock
+      const playbackFiber = yield* Effect.forkChild(audio.playMusic({
+        gain: AudioGain(1),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('title'),
+        stream: true,
+      }))
+      yield* Effect.promise(() => streamStarted)
+      const finishReadFiber = yield* Effect.forkChild(
+        Effect.sleep('150 millis').pipe(Effect.tap(() => Effect.sync(() => finishSampleRead?.(new ArrayBuffer(4))))),
+      )
+
+      yield* TestClock.adjust('100 millis')
+      const playback = yield* Fiber.join(playbackFiber)
+      expect(playback).toMatchObject({ accepted: false, refusalReason: 'asset-load-failed' })
       expect(sampleReads).toBe(1)
       expect((yield* audio.report).sampleLoadFailures).toMatchObject([
         { file: '/audio/title.ogg', reason: 'load-timeout' },
       ])
+
+      yield* TestClock.adjust('50 millis')
+      yield* Fiber.join(finishReadFiber)
+      yield* Effect.promise(() => Promise.resolve())
+      expect(fake.context()?.decodedData).toHaveLength(0)
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+    }),
+  )
+
+  it.effect('decides concurrent cue events at the shared deadline and ignores late asset success', () =>
+    Effect.gen(function* () {
+      for (const { arrivalMs, usesAsset } of [
+        { arrivalMs: 249, usesAsset: true },
+        { arrivalMs: 250, usesAsset: false },
+        { arrivalMs: 251, usesAsset: false },
+      ]) {
+        const fake = makeFakeWebAudio()
+        const sampleRead: { finish: ((data: ArrayBuffer) => void) | null } = { finish: null }
+        let signalLoadStarted: (() => void) | null = null
+        let loads = 0
+        const loadStarted = new Promise<void>((resolve) => {
+          signalLoadStarted = resolve
+        })
+        const audio = yield* makeWebAudioBackend({
+          audioAssetManifest: cueAssetManifest(),
+          global: fake.global,
+          loadSampleData: () => {
+            loads += 1
+            signalLoadStarted?.()
+            return new Promise<ArrayBuffer>((resolve) => {
+              sampleRead.finish = resolve
+            })
+          },
+        })
+        yield* audio.unlock
+        yield* Effect.promise(() => loadStarted)
+        const eventFibers = yield* Effect.forEach([1, 2], () =>
+          Effect.forkChild(audio.playTone({ ...CUE, soundId: SoundCueId('blockBreak') })),
+        )
+        yield* Effect.yieldNow
+        if (usesAsset) {
+          const finishReadFiber = yield* Effect.forkChild(
+            Effect.sleep(`${arrivalMs} millis`).pipe(Effect.tap(() => Effect.sync(() => sampleRead.finish?.(new ArrayBuffer(4))))),
+          )
+          yield* TestClock.adjust(`${arrivalMs} millis`)
+          yield* Fiber.join(finishReadFiber)
+        } else {
+          yield* TestClock.adjust('250 millis')
+        }
+        const playbacks = yield* Effect.forEach(eventFibers, Fiber.join)
+        expect(playbacks.every((playback) => playback.accepted)).toBe(true)
+        expect(loads).toBe(1)
+        if (usesAsset) {
+          expect(fake.context()?.bufferSources).toHaveLength(2)
+          expect(fake.context()?.oscillators).toHaveLength(0)
+        } else {
+          expect(fake.context()?.bufferSources).toHaveLength(0)
+          expect(fake.context()?.oscillators).toHaveLength(2)
+          expect((yield* audio.report).sampleLoadFailures).toMatchObject([
+            { file: 'audio/block-break.ogg', reason: 'load-timeout' },
+          ])
+        }
+
+        if (!usesAsset) {
+          if (arrivalMs === 251) {
+            yield* TestClock.adjust('1 millis')
+          }
+          sampleRead.finish?.(new ArrayBuffer(4))
+        }
+        yield* Effect.promise(() => Promise.resolve())
+        expect(fake.context()?.bufferSources).toHaveLength(usesAsset ? 2 : 0)
+        expect(fake.context()?.oscillators).toHaveLength(usesAsset ? 0 : 2)
+        expect((yield* audio.preloadAudioAssets).requested).toBe(1)
+        expect((yield* audio.playTone({ ...CUE, soundId: SoundCueId('blockBreak') })).accepted).toBe(true)
+        expect(fake.context()?.bufferSources).toHaveLength(usesAsset ? 3 : 1)
+        expect(fake.context()?.oscillators).toHaveLength(usesAsset ? 0 : 2)
+        yield* audio.dispose
+      }
     }),
   )
 

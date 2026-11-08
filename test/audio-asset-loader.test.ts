@@ -43,11 +43,11 @@ describe('audio asset loader', () => {
     const samples = audioAssetSampleManifest(decodedManifest())
 
     expect([...samples.entries()]).toEqual([
-      [AudioSampleId('mc-audio.asset:blockBreak:0'), { kind: 'url', url: 'audio/break-a.ogg' }],
-      [AudioSampleId('mc-audio.asset:blockBreak:1'), { kind: 'url', url: 'audio/break-b.ogg' }],
-      [AudioSampleId('mc-audio.asset:footstepGrass:0'), { kind: 'url', url: 'audio/step-generic.ogg' }],
-      [AudioSampleId('mc-audio.asset:footstepGrass:1'), { kind: 'url', url: 'audio/step-grass.ogg' }],
-      [AudioSampleId('mc-audio.asset:footstepGrass:2'), { kind: 'url', url: 'audio/step-stone.ogg' }],
+      [AudioSampleId('mc-audio.asset:blockBreak:0'), { kind: 'url', preload: true, url: 'audio/break-a.ogg' }],
+      [AudioSampleId('mc-audio.asset:blockBreak:1'), { kind: 'url', preload: true, url: 'audio/break-b.ogg' }],
+      [AudioSampleId('mc-audio.asset:footstepGrass:0'), { kind: 'url', preload: true, url: 'audio/step-generic.ogg' }],
+      [AudioSampleId('mc-audio.asset:footstepGrass:1'), { kind: 'url', preload: true, url: 'audio/step-grass.ogg' }],
+      [AudioSampleId('mc-audio.asset:footstepGrass:2'), { kind: 'url', preload: true, url: 'audio/step-stone.ogg' }],
     ])
   })
 

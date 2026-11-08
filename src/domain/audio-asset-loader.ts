@@ -76,7 +76,7 @@ const sampleEntriesForCue = (
 ): ReadonlyArray<readonly [AudioSampleIdType, AudioSampleSource]> =>
   variants.map((variant, variantIndex): readonly [AudioSampleIdType, AudioSampleSource] => [
     assetSampleId(cueId, variantIndex),
-    { kind: 'url', url: AudioSampleUrl(variant.file) },
+    { kind: 'url', preload: true, url: AudioSampleUrl(variant.file) },
   ])
 
 /** Convert cue variants into sample entries consumed by the existing WebAudio cache. */

@@ -55,6 +55,7 @@ describe('public API', () => {
         "CUE_DEFINITIONS",
         "CaptionStream",
         "DEFAULT_CAVE_THRESHOLD_Y",
+        "DEFAULT_EFFECT_SAMPLE_LOAD_TIMEOUT_MS",
         "DEFAULT_MAX_CONCURRENT_TONES",
         "DEFAULT_MAX_SIMULTANEOUS_END_SOUNDS",
         "DEFAULT_SAMPLE_LOAD_TIMEOUT_MS",

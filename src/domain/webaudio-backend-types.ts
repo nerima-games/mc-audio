@@ -42,6 +42,8 @@ export type WebAudioOptions = {
   readonly loadSampleData?: (url: AudioSampleUrl) => PromiseLike<ArrayBuffer>
   /** Maximum time in milliseconds for loading and decoding one sample. Omitted defaults to 15,000; zero expires immediately. Invalid values are reported as typed sample failures. */
   readonly sampleLoadTimeoutMs?: AudioTimeoutMs
+  /** Maximum time in milliseconds a cue playback event waits for its sample. Omitted defaults to 250; zero expires immediately. */
+  readonly effectSampleLoadTimeoutMs?: AudioTimeoutMs
   /** Host-owned source creation for sounds that must remain streamed. */
   readonly createStreamSource?: (options: WebAudioStreamSourceOptions) => AudioScheduledSourceSurface | null
   /** Host-owned preload for streamed sounds that cannot be decoded as buffers. */

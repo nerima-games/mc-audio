@@ -126,10 +126,15 @@ export { DEFAULT_TONE_WAVE } from './webaudio-tone-graph.js'
 /** A conservative ceiling that prevents pathological cue bursts from exhausting nodes. */
 export const DEFAULT_MAX_CONCURRENT_TONES: AudioCount = AudioCount(32)
 export const DEFAULT_SAMPLE_LOAD_TIMEOUT_MS: AudioTimeoutMs = AudioTimeoutMs(15_000)
+/** The 250 ms cue budget keeps slow interactive events from queuing stale sounds. */
+export const DEFAULT_EFFECT_SAMPLE_LOAD_TIMEOUT_MS: AudioTimeoutMs = AudioTimeoutMs(250)
 
-const resolveSampleLoadTimeoutMs = (value: AudioTimeoutMs | undefined): AudioTimeoutMs | null => {
+const resolveSampleLoadTimeoutMs = (
+  value: AudioTimeoutMs | undefined,
+  defaultValue: AudioTimeoutMs = DEFAULT_SAMPLE_LOAD_TIMEOUT_MS,
+): AudioTimeoutMs | null => {
   if (value === undefined) {
-    return DEFAULT_SAMPLE_LOAD_TIMEOUT_MS
+    return defaultValue
   }
   return Number.isFinite(value) && value >= 0 ? value : null
 }
@@ -353,12 +358,18 @@ export const makeWebAudioBackend = (
       initialMasterGain = 0.8,
       loadSampleData,
       sampleManifest: configuredSampleManifest = new Map(),
+      effectSampleLoadTimeoutMs: configuredEffectSampleLoadTimeoutMs,
       sampleLoadTimeoutMs: configuredSampleLoadTimeoutMs,
     } = options
     const sampleLoadTimeoutMs = resolveSampleLoadTimeoutMs(configuredSampleLoadTimeoutMs)
+    const effectSampleLoadTimeoutMs = resolveSampleLoadTimeoutMs(
+      configuredEffectSampleLoadTimeoutMs,
+      DEFAULT_EFFECT_SAMPLE_LOAD_TIMEOUT_MS,
+    )
     const generatedAssetSamples: AudioSampleManifest = audioAssetManifest === undefined
       ? new Map()
       : audioAssetSampleManifest(audioAssetManifest)
+    const effectSampleIds = new Set(generatedAssetSamples.keys())
     const configuredManifest = mergeAudioSampleManifests(configuredSampleManifest, generatedAssetSamples)
     const runtimeRef = yield* Ref.make<Option.Option<ContextRuntime>>(Option.none())
     const attemptedRef = yield* Ref.make(false)
@@ -500,15 +511,6 @@ export const makeWebAudioBackend = (
         }
         const file = makeAudioDiagnosticPath(source.kind === 'url' ? source.url : String(sampleId))
         const loadBytes = sampleLoadBytes(source, loadSampleData)
-        if (sampleLoadTimeoutMs === null) {
-          yield* recordSampleLoadFailure({
-            _tag: 'AudioSampleLoadFailure',
-            file,
-            reason: 'invalid-timeout',
-            sampleId,
-          })
-          return null
-        }
         if (loadBytes === undefined) {
           yield* recordSampleLoadFailure({
             _tag: 'AudioSampleLoadFailure',
@@ -522,11 +524,14 @@ export const makeWebAudioBackend = (
         let failureReason: AudioSampleLoadFailure['reason'] = 'load-failed'
         const loading = Effect.tryPromise({
           catch: (cause) => cause,
-          try: () => loadBytes().then((data) => {
+          try: (signal) => loadBytes().then((data) => {
+            if (signal.aborted) {
+              return Promise.reject(signal.reason)
+            }
             failureReason = 'decode-failed'
             return runtime.value.context.decodeAudioData(data)
           }),
-        }).pipe(Effect.timeoutOption(sampleLoadTimeoutMs))
+        })
         const result = yield* Effect.result(loading)
         if (Result.isFailure(result)) {
           yield* recordSampleLoadFailure({
@@ -537,20 +542,11 @@ export const makeWebAudioBackend = (
           })
           return null
         }
-        if (Option.isNone(result.success)) {
-          yield* recordSampleLoadFailure({
-            _tag: 'AudioSampleLoadFailure',
-            file,
-            reason: 'load-timeout',
-            sampleId,
-          })
-          return null
-        }
         if (yield* Ref.get(disposedRef)) {
           return null
         }
         yield* clearSampleLoadFailure(sampleId)
-        return result.success.value
+        return result.success
       })
 
     const recordMissingSampleFailures = (report: AudioSampleLoadReport): Effect.Effect<void> =>
@@ -569,21 +565,31 @@ export const makeWebAudioBackend = (
     const preloadSamplesWithOptions = (
       soundIds: ReadonlyArray<AudioSampleId> | undefined,
       onlyPreload: boolean,
+      useEffectSampleDeadline: boolean,
     ): Effect.Effect<AudioSampleLoadReport> =>
       preloadAudioSamples(soundIds, {
         cache: sampleCache,
+        effectSampleIds,
+        effectSampleLoadTimeoutMs,
         loadSample,
         manifest: sampleManifest,
         ...(onlyPreload ? { onlyPreload: true } : {}),
         pendingLoads: sampleLoads,
         preloadStream: options.preloadStream,
         preloadedStreams,
+        recordLoadFailure: (sampleId, source, reason) => recordSampleLoadFailure({
+          _tag: 'AudioSampleLoadFailure',
+          file: makeAudioDiagnosticPath(source.kind === 'url' ? source.url : String(sampleId)),
+          reason,
+          sampleId,
+        }),
         sampleLoadTimeoutMs,
+        useEffectSampleDeadline,
       })
         .pipe(Effect.tap(recordMissingSampleFailures))
 
     const preloadSamples = (soundIds?: ReadonlyArray<AudioSampleId>): Effect.Effect<AudioSampleLoadReport> =>
-      preloadSamplesWithOptions(soundIds, false)
+      preloadSamplesWithOptions(soundIds, false, false)
 
     const assetLoader = audioAssetManifest === undefined
       ? undefined
@@ -923,7 +929,7 @@ export const makeWebAudioBackend = (
         if (Option.isNone(runtime) || runtime.value.context.state !== 'running') {
           return yield* scheduleTone(request)
         }
-        yield* preloadSamples([selection.sampleId]).pipe(Effect.asVoid)
+        yield* preloadSamplesWithOptions([selection.sampleId], false, true).pipe(Effect.asVoid)
         if (!sampleCache.has(selection.sampleId)) {
           yield* recordAudioAssetFailure({
             _tag: 'AudioAssetLoadFailure',
@@ -1096,7 +1102,7 @@ export const makeWebAudioBackend = (
     // No Effect.catch wrapper: `preloadAudioSamples` types its error channel
     // As `never` (per-sample failures are reported in the returned counts,
     // Not thrown), so there is nothing for a catch here to ever handle.
-    const autoPreload = preloadSamplesWithOptions(undefined, true).pipe(Effect.asVoid)
+    const autoPreload = preloadSamplesWithOptions(undefined, true, false).pipe(Effect.asVoid)
     yield* Ref.set(autoPreloadEffectRef, autoPreload)
 
     const report: Effect.Effect<WebAudioReport> = Effect.gen(function*  report() {
