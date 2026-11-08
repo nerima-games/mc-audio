@@ -67,17 +67,8 @@ export type AudioAssetLoader = {
 const assetSampleId = (cueId: SoundCueId, variantIndex: number): AudioSampleIdType =>
   AudioSampleId(`${GENERIC_SAMPLE_NAMESPACE}:${cueId}:${variantIndex}`)
 
-const variantsFor = (manifest: AudioAssetManifest, cueId: SoundCueId): ReadonlyArray<CueAudioAssetVariant> => {
-  const foundEntry = Object.entries(manifest).find(([registeredCueId]) => registeredCueId === cueId)
-  if (!foundEntry) {
-    return []
-  }
-  const [, variants] = foundEntry
-  if (!variants) {
-    return []
-  }
-  return variants
-}
+const variantsFor = (manifest: AudioAssetManifest, cueId: SoundCueId): ReadonlyArray<CueAudioAssetVariant> =>
+  manifest[cueId] ?? []
 
 const sampleEntriesForCue = (
   cueId: SoundCueId,

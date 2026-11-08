@@ -49,6 +49,7 @@ const DEFAULT_MUSIC_GAIN_SCALE = 1
 const GAME_TICKS_PER_SECOND = 20
 const NEXT_COMMAND_INDEX_OFFSET = 1
 const ZERO_TICKS = 0
+const NO_CROSSFADE_SECS = makeAudioDurationSecs(ZERO_TICKS)
 
 const isMissing = (value: unknown): value is undefined => Object.is(value, globalThis.undefined)
 
@@ -117,7 +118,7 @@ type BiomeMusicSelection = {
 }
 
 type SceneMusicSelection = {
-  readonly crossfadeSecs: AudioDurationSecs | null
+  readonly crossfadeSecs: AudioDurationSecs
   readonly definition: MinecraftMusicDefinition | null
   readonly fallbackDefinition: MinecraftMusicDefinition | null
 }
@@ -176,7 +177,7 @@ type StartMusicPlaybackOptions = {
 }
 
 type StartMusicCommandOptions = StartMusicCommandWithResolution & {
-  readonly crossfadeSecs: AudioDurationSecs | null
+  readonly crossfadeSecs: AudioDurationSecs
 }
 
 type MusicPlayerRefs = {
@@ -233,8 +234,8 @@ const makeMusicPlayerRefs = (): Effect.Effect<MusicPlayerRefs> => Effect.gen(fun
 const skipPairedCrossfadeStop = (
   command: ResolvedMusicCommand,
   next: ResolvedMusicCommand | undefined,
-  crossfadeSecs: AudioDurationSecs | null,
-): boolean => command.kind === 'stop' && next?.kind === 'start' && crossfadeSecs !== null
+  crossfadeSecs: AudioDurationSecs,
+): boolean => command.kind === 'stop' && next?.kind === 'start' && crossfadeSecs > NO_CROSSFADE_SECS
 
 const stopActiveHandle = ({
   backend,
@@ -290,7 +291,7 @@ const makeMusicCommandApplier = ({
 }: MusicCommandApplierOptions): (
   plan: MinecraftMusicPlan,
   fallbackDefinition: MinecraftMusicDefinition | null,
-  crossfadeSecs: AudioDurationSecs | null,
+  crossfadeSecs: AudioDurationSecs,
 ) => Effect.Effect<AppliedMusicPlan, MinecraftMusicPlaybackError> => {
   const applyGainCommand = (gain: AudioVolume): Effect.Effect<void> =>
     Effect.gen(function* applyGainCommandEffect() {
@@ -377,15 +378,12 @@ const makeMusicCommandApplier = ({
     previousActive,
     previousHandle,
   }: {
-    readonly crossfadeSecs: AudioDurationSecs | null
+    readonly crossfadeSecs: AudioDurationSecs
     readonly previousActive: boolean
     readonly previousHandle: ToneHandle | null
   }): Effect.Effect<void> => {
     if (previousHandle === null || !previousActive) {
       return Effect.void
-    }
-    if (crossfadeSecs === null) {
-      return backend.stopTone(previousHandle)
     }
     return backend.stopTone(previousHandle, crossfadeSecs)
   }
@@ -397,7 +395,7 @@ const makeMusicCommandApplier = ({
     resolvedVolume,
     crossfadeSecs,
   }: {
-    readonly crossfadeSecs: AudioDurationSecs | null
+    readonly crossfadeSecs: AudioDurationSecs
     readonly playback: TonePlayback
     readonly previousActive: boolean
     readonly previousHandle: ToneHandle | null
@@ -445,7 +443,7 @@ const makeMusicCommandApplier = ({
 
   const applyMusicCommand = (
     command: ResolvedMusicCommand,
-    crossfadeSecs: AudioDurationSecs | null,
+    crossfadeSecs: AudioDurationSecs,
   ): Effect.Effect<boolean, MinecraftMusicPlaybackError> => {
     if (command.kind === 'stop') {
       return stopActiveHandle({ backend, gainScaleRef, handleRef }).pipe(Effect.as(false))
@@ -458,7 +456,7 @@ const makeMusicCommandApplier = ({
 
   const applyMusicCommands = (
     plan: ReadonlyArray<ResolvedMusicCommand>,
-    crossfadeSecs: AudioDurationSecs | null,
+    crossfadeSecs: AudioDurationSecs,
   ): Effect.Effect<boolean, MinecraftMusicPlaybackError> =>
     Effect.gen(function* applyMinecraftMusicCommands() {
       for (const [index, command] of plan.entries()) {
@@ -606,7 +604,7 @@ const cachedSceneTrack = ({
 }
 
 const emptySceneMusicSelection: SceneMusicSelection = {
-  crossfadeSecs: null,
+  crossfadeSecs: NO_CROSSFADE_SECS,
   definition: null,
   fallbackDefinition: null,
 }
@@ -805,7 +803,7 @@ export const makeMinecraftMusicPlayer = (
     const prepareTick = (
       input: MinecraftMusicTickInput,
     ): Effect.Effect<{
-      readonly crossfadeSecs: AudioDurationSecs | null
+      readonly crossfadeSecs: AudioDurationSecs
       readonly desired: MinecraftMusicDefinition | null
       readonly enabled: boolean
       readonly fallbackDefinition: MinecraftMusicDefinition | null
@@ -834,7 +832,7 @@ export const makeMinecraftMusicPlayer = (
           state,
         })).pipe(Effect.mapError((cause: MinecraftMusicDataFailure) => playbackError(selected.desired?.sound ?? null, cause)))
         return {
-          crossfadeSecs: selected.sceneSelection?.crossfadeSecs ?? null,
+          crossfadeSecs: selected.sceneSelection?.crossfadeSecs ?? NO_CROSSFADE_SECS,
           desired: selected.desired,
           enabled,
           fallbackDefinition: selected.sceneSelection?.fallbackDefinition ?? null,

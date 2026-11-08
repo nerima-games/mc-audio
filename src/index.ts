@@ -32,7 +32,24 @@
 export * from './domain/backend-port.js'
 export * from './domain/audio-brands.js'
 export * from './domain/audio-asset-loader.js'
-export * from './domain/audio-asset-manifest.js'
+export { AudioAssetManifestSchema, AudioAssetPathSchema, audioAssetCredits, decodeAudioAssetManifest } from './domain/audio-asset-manifest.js'
+export type {
+  AudioAssetAttribution,
+  AudioAssetAuthor,
+  AudioAssetCredit,
+  AudioAssetExternalAttribution,
+  AudioAssetGeneratedAttribution,
+  AudioAssetLicenseName,
+  AudioAssetLicenseSpdx,
+  AudioAssetManifest,
+  AudioAssetManifestFailure,
+  AudioAssetPath,
+  AudioAssetPitchRange,
+  AudioAssetUrl,
+  AudioAssetVolume,
+  AudioAssetWorkTitle,
+  CueAudioAssetVariant,
+} from './domain/audio-asset-manifest.js'
 export * from './domain/audio-event-map.js'
 export * from './domain/audio-sample.js'
 export * from './domain/audio-runtime.js'

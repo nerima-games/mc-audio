@@ -30,6 +30,16 @@ const generatedAttribution = {
   type: 'generated',
 } as const
 
+const externalAttribution = {
+  author: 'Example artist',
+  licenseName: 'CC0 1.0 Universal',
+  licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+  modified: false,
+  sourceUrl: 'https://example.org/audio/title.ogg',
+  type: 'external',
+  workTitle: 'Title',
+} as const
+
 const track = (eventId: string, file: string, attribution: unknown = generatedAttribution) => ({
   attribution,
   eventId,
@@ -113,11 +123,28 @@ describe('Minecraft music scene playlists', () => {
     expect(Result.isFailure(decode({ title: { ...playlist(), maximumSilenceTicks: 199 } }))).toBe(true)
     expect(Result.isFailure(decode({ title: { ...playlist(), crossfadeTicks: 0 } }))).toBe(true)
     expect(Result.isFailure(decode({ title: { ...playlist(), crossfadeTicks: MINECRAFT_MUSIC_PLAYLIST_CROSSFADE_TICK_LIMIT + 1 } }))).toBe(true)
+    expect(Result.isFailure(decode({ title: { ...playlist(), minimumSilenceTicks: '200' } }))).toBe(true)
+    expect(Result.isFailure(decode({ title: { ...playlist(), maximumSilenceTicks: Number.NaN } }))).toBe(true)
+    expect(Result.isFailure(decode({ title: { ...playlist(), crossfadeTicks: 1.5 } }))).toBe(true)
   })
 
   it('requires package-scoped event ids to avoid collisions with context fallback music', () => {
     expect(Result.isFailure(decode({ title: playlist([track('minecraft:music.game', 'audio/title.ogg')]) }))).toBe(true)
     expect(Result.isFailure(decode({ title: playlist([track('mc-audio:music/', 'audio/title.ogg')]) }))).toBe(true)
+    expect(Result.isFailure(decode({ title: playlist([track('', 'audio/title.ogg')]) }))).toBe(true)
+    expect(Result.isFailure(decode({ title: playlist([{ ...track('mc-audio:music/title/01', 'audio/title.ogg'), eventId: 1 }]) }))).toBe(true)
+  })
+
+  it('rejects unknown keys, unknown scenes, and malformed playlist or track values', () => {
+    expect(Result.isFailure(decode(null))).toBe(true)
+    expect(Result.isFailure(decode({ other: playlist() }))).toBe(true)
+    expect(Result.isFailure(decode({ title: null }))).toBe(true)
+    expect(Result.isFailure(decode({ title: { ...playlist(), extra: true } }))).toBe(true)
+    expect(Result.isFailure(decode({ title: playlist([]) }))).toBe(true)
+    expect(Result.isFailure(decode({ title: { ...playlist(), tracks: null } }))).toBe(true)
+    expect(Result.isFailure(decode({ title: playlist([null]) }))).toBe(true)
+    expect(Result.isFailure(decode({ title: playlist([{ ...track('mc-audio:music/title/01', 'audio/title.ogg'), extra: true }]) }))).toBe(true)
+    expect(Result.isFailure(decode({ title: playlist([track('mc-audio:music/title/01', 'audio/title.ogg', { ...generatedAttribution, generatorScript: '../generate.ts' })]) }))).toBe(true)
   })
 
   it('selects tracks at random boundaries and returns a typed failure for invalid randomness', () => {
@@ -151,10 +178,60 @@ describe('Minecraft music scene playlists', () => {
       return
     }
     expect(minecraftMusicScenePlaylistCredits(decoded.success)).toHaveLength(1)
+    expect(minecraftMusicScenePlaylistSampleManifest(decoded.success).size).toBe(1)
+    expect(minecraftMusicScenePlaylistRegistry(decoded.success).events.size).toBe(1)
     expect(Result.isFailure(decode({
       title: playlist([sameTrack]),
       day: playlist([track('mc-audio:music/title/01', 'audio/other.ogg')]),
     }))).toBe(true)
+    expect(Result.isFailure(decode({
+      title: playlist([sameTrack]),
+      day: playlist([track('mc-audio:music/title/01', 'audio/title.ogg', externalAttribution)]),
+    }))).toBe(true)
+  })
+
+  it('accepts distinct events that reuse a file and handles empty scene manifests', () => {
+    const decoded = decode({
+      title: playlist([
+        track('mc-audio:music/title/01', 'audio/music/shared.ogg'),
+        track('mc-audio:music/title/02', 'audio/music/shared.ogg'),
+      ]),
+    })
+    expect(Result.isSuccess(decoded)).toBe(true)
+    if (Result.isFailure(decoded)) {
+      return
+    }
+    expect(minecraftMusicScenePlaylistSampleManifest(decoded.success).size).toBe(1)
+    expect(minecraftMusicScenePlaylistRegistry(decoded.success).events.size).toBe(2)
+
+    const empty = decode({})
+    expect(Result.isSuccess(empty)).toBe(true)
+    if (Result.isFailure(empty)) {
+      return
+    }
+    expect(minecraftMusicScenePlaylistSampleManifest(empty.success).size).toBe(0)
+    expect(minecraftMusicScenePlaylistRegistry(empty.success).events.size).toBe(0)
+    expect(minecraftMusicScenePlaylistCredits(empty.success)).toEqual([])
+
+    const missingPlaylist = { unknownScene: undefined }
+    expect(minecraftMusicScenePlaylistSampleManifest(missingPlaylist).size).toBe(0)
+    expect(minecraftMusicScenePlaylistRegistry(missingPlaylist).events.size).toBe(0)
+    expect(minecraftMusicScenePlaylistCredits(missingPlaylist)).toEqual([])
+  })
+
+  it('returns null for absent scenes and empty caller-built playlists', () => {
+    const decoded = decode({ title: playlist() })
+    expect(Result.isSuccess(decoded)).toBe(true)
+    if (Result.isFailure(decoded)) {
+      return
+    }
+    expect(selectMinecraftMusicSceneTrack({ manifest: decoded.success, random: 0, scene: 'day' })).toEqual(Result.succeed(null))
+    const titlePlaylist = decoded.success.title
+    if (titlePlaylist === undefined) {
+      throw new Error('expected the title playlist')
+    }
+    const emptyManifest = { title: { ...titlePlaylist, tracks: [] } }
+    expect(selectMinecraftMusicSceneTrack({ manifest: emptyManifest, random: 0, scene: 'title' })).toEqual(Result.succeed(null))
   })
 
   it('returns a typed result without throwing for arbitrary manifest input', () => {
@@ -163,5 +240,12 @@ describe('Minecraft music scene playlists', () => {
       const decoded = decode(input)
       expect(Result.isSuccess(decoded) || Result.isFailure(decoded)).toBe(true)
     }), { numRuns: 500 })
+    const uninspectable = new Proxy({}, {
+      ownKeys: () => {
+        throw new Error('cannot enumerate scene manifest')
+      },
+    })
+    expect(() => decode(uninspectable)).not.toThrow()
+    expect(Result.isFailure(decode(uninspectable))).toBe(true)
   })
 })

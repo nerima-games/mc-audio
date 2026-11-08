@@ -19,22 +19,31 @@ export type AudioEventMapping = {
   readonly surface?: FootstepSurface
 }
 
-export type AudioEventMapFailure = {
-  readonly _tag: 'AudioEventMapFailure'
-  readonly kind: 'mining' | 'place' | 'footstep'
-  readonly blockType: AudioDiagnosticMessageType | null
-  readonly reason: 'unknown-block-type' | 'invalid-type'
-}
+export type AudioEventMapFailure =
+  | {
+      readonly _tag: 'AudioEventMapFailure'
+      readonly kind: 'mining' | 'place' | 'footstep'
+      readonly blockType: AudioDiagnosticMessageType | null
+      readonly reason: 'unknown-block-type' | 'invalid-type'
+    }
+  | {
+      readonly _tag: 'AudioEventMapFailure'
+      readonly eventKind: AudioDiagnosticMessageType | null
+      readonly kind: 'event'
+      readonly reason: 'unknown-event'
+    }
 
 type RawSoundCueId = Parameters<typeof makeSoundCueId>[number]
+type SurfaceEventKind = 'mining' | 'place' | 'footstep'
+type SurfaceEventMapFailure = Extract<AudioEventMapFailure, { readonly kind: SurfaceEventKind }>
 
 const cue = (cueId: RawSoundCueId): SoundCueId => makeSoundCueId(cueId)
 
 const surfaceFailure = (
-  kind: AudioEventMapFailure['kind'],
+  kind: SurfaceEventKind,
   blockType: unknown,
-): Result.Result<never, AudioEventMapFailure> => {
-  let reason: AudioEventMapFailure['reason'] = 'invalid-type'
+): Result.Result<never, SurfaceEventMapFailure> => {
+  let reason: SurfaceEventMapFailure['reason'] = 'invalid-type'
   let safeBlockType: AudioDiagnosticMessageType | null = null
   if (typeof blockType === 'string') {
     reason = 'unknown-block-type'
@@ -65,6 +74,19 @@ const mapSurfaceEvent = (
   return Result.succeed({ cueId: cueForSurface(surface.success) ?? null, surface: surface.success })
 }
 
+const unknownEventFailure = (event: unknown): Result.Result<never, AudioEventMapFailure> => {
+  let eventKind: AudioDiagnosticMessageType | null = null
+  if (typeof event === 'object' && event !== null && 'kind' in event && typeof event.kind === 'string') {
+    eventKind = AudioDiagnosticMessage(event.kind)
+  }
+  return Result.fail({
+    _tag: 'AudioEventMapFailure',
+    eventKind,
+    kind: 'event',
+    reason: 'unknown-event',
+  })
+}
+
 /** Map host events to the established sound cue roster without changing kernel event types. */
 export const mapAudioEvent = (event: AudioEvent): Result.Result<AudioEventMapping, AudioEventMapFailure> => {
   switch (event.kind) {
@@ -91,8 +113,7 @@ export const mapAudioEvent = (event: AudioEvent): Result.Result<AudioEventMappin
       return Result.succeed({ cueId: cue('rainAmbient') })
     }
     default: {
-      const exhaustive: never = event
-      return exhaustive
+      return unknownEventFailure(event)
     }
   }
 }

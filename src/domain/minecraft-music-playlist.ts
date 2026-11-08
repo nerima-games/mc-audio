@@ -1,7 +1,7 @@
 import {
   type AudioAssetAttribution,
   type AudioAssetPath,
-  decodeAudioAssetManifest,
+  decodeAudioAssetVariant,
 } from './audio-asset-manifest.js'
 import {
   type AudioDelayTicks as AudioDelayTicksType,
@@ -131,28 +131,20 @@ const readTickRange = ({
   return Result.succeed(makeAudioDelayTicks(value))
 }
 
-const attributionManifest = (raw: Readonly<Record<string, unknown>>): unknown => ({
-  blockBreak: [{
-    attribution: raw['attribution'],
-    file: raw['file'],
-    pitchRange: { maximum: UNITY, minimum: UNITY },
-    volume: UNITY,
-  }],
-})
-
 const fileAttributionFor = (
   raw: Readonly<Record<string, unknown>>,
   path: string,
 ): Result.Result<{ readonly attribution: AudioAssetAttribution; readonly file: AudioAssetPath }, MinecraftMusicScenePlaylistManifestFailure> => {
-  const decodedAsset = decodeAudioAssetManifest(attributionManifest(raw))
+  const decodedAsset = decodeAudioAssetVariant({
+    attribution: raw['attribution'],
+    file: raw['file'],
+    pitchRange: { maximum: UNITY, minimum: UNITY },
+    volume: UNITY,
+  })
   if (Result.isFailure(decodedAsset)) {
     return manifestFailure(path, decodedAsset.failure.message)
   }
-  const [variant] = decodedAsset.success['blockBreak'] ?? []
-  if (isMissing(variant)) {
-    return manifestFailure(path, 'Music playlist track requires an audio file and attribution')
-  }
-  return Result.succeed({ attribution: variant.attribution, file: variant.file })
+  return Result.succeed({ attribution: decodedAsset.success.attribution, file: decodedAsset.success.file })
 }
 
 const eventIdFor = (

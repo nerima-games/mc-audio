@@ -280,6 +280,105 @@ describe('Minecraft music player', () => {
     }),
   )
 
+  it.effect('reselects a scene track when its cached backend handle has stopped unexpectedly', () =>
+    Effect.gen(function* () {
+      const { player, recorded } = yield* makeHarness('ready', () => 0, SCENE_REGISTRY)
+      const titleInput = { ...START_INPUT, scene: 'title' as const, scenePlaylists: SCENE_PLAYLISTS }
+      yield* tickToStart(player, titleInput)
+      yield* recorded.backend.stopTone(handle(1))
+
+      const stopped = yield* player.tick(titleInput)
+      expect(stopped.played).toBe(false)
+      expect(stopped.soundId).toBeNull()
+
+      let changed = yield* player.tick({ ...titleInput, scene: 'nether' })
+      for (let index = 0; !changed.played && index < 5; index += 1) {
+        changed = yield* player.tick({ ...titleInput, scene: 'nether' })
+      }
+      expect(changed.played).toBe(true)
+      expect(changed.soundId).toBe('mc-audio:music/nether/01')
+      expect(yield* recorded.backend.isToneActive(handle(1))).toBe(false)
+    }),
+  )
+
+  it.effect('clears scene selection when a scene playlist is absent', () =>
+    Effect.gen(function* () {
+      const { player, recorded } = yield* makeHarness('ready', () => 0, SCENE_REGISTRY)
+      const titleInput = { ...START_INPUT, scene: 'title' as const, scenePlaylists: SCENE_PLAYLISTS }
+      yield* tickToStart(player, titleInput)
+
+      const noManifest = yield* player.tick({
+        context: titleInput.context,
+        definition: START_DEFINITION,
+        musicVolume: AudioVolume(1),
+        scene: titleInput.scene,
+      })
+      expect(noManifest.soundId).toBeNull()
+      const missingScene = yield* player.tick({ ...titleInput, scene: 'creative' })
+      expect(missingScene.soundId).toBeNull()
+      expect(yield* recorded.backend.isToneActive(handle(1))).toBe(false)
+    }),
+  )
+
+  it.effect('clears a selected track when its scene playlist has no tracks', () =>
+    Effect.gen(function* () {
+      const { player, recorded } = yield* makeHarness('ready', () => 0, SCENE_REGISTRY)
+      const input = { ...START_INPUT, scene: 'title' as const, scenePlaylists: SCENE_PLAYLISTS }
+      yield* tickToStart(player, input)
+      yield* recorded.backend.stopTone(handle(1))
+
+      const titlePlaylist = SCENE_PLAYLISTS.title
+      if (titlePlaylist === undefined) {
+        throw new Error('expected the title playlist')
+      }
+      const emptyTitle = { ...titlePlaylist, tracks: [] }
+      const scenePlaylists = { ...SCENE_PLAYLISTS, title: emptyTitle }
+      const result = yield* player.tick({ ...input, scenePlaylists })
+
+      expect(result.played).toBe(false)
+      expect(result.soundId).toBeNull()
+      expect(yield* recorded.backend.isToneActive(handle(1))).toBe(false)
+    }),
+  )
+
+  it.effect('starts a scene track when the optional context fallback event is absent', () =>
+    Effect.gen(function* () {
+      const sceneRegistry = minecraftMusicScenePlaylistRegistry(SCENE_PLAYLISTS)
+      const { player } = yield* makeHarness('ready', () => 0, sceneRegistry)
+      const result = yield* tickToStart(player, { ...START_INPUT, scene: 'title', scenePlaylists: SCENE_PLAYLISTS })
+
+      expect(result.played).toBe(true)
+      expect(result.soundId).toBe('mc-audio:music/title/01')
+    }),
+  )
+
+  it.effect('stops the active track when a replacement start is refused', () =>
+    Effect.gen(function* () {
+      const recorded = yield* makeRecordingBackend('ready')
+      let attempt = 0
+      const backend: AudioBackend = {
+        ...recorded.backend,
+        playMusic: (request) => {
+          attempt += 1
+          if (attempt === 1) {
+            return recorded.backend.playMusic(request)
+          }
+          return Effect.succeed({ accepted: false, id: AudioHandleId(50) })
+        },
+      }
+      const player = yield* makeMinecraftMusicPlayer(SCENE_REGISTRY, () => 0).pipe(
+        Effect.provide(Layer.succeed(AudioBackendPort, backend)),
+      )
+      const titleInput = { ...START_INPUT, scene: 'title' as const, scenePlaylists: SCENE_PLAYLISTS }
+      yield* tickToStart(player, titleInput)
+
+      const refused = yield* player.tick({ ...titleInput, scene: 'nether' })
+
+      expect(refused.played).toBe(false)
+      expect(yield* recorded.backend.isToneActive(handle(1))).toBe(false)
+    }),
+  )
+
   it.effect('retries a refused scene asset with the existing free music fallback', () =>
     Effect.gen(function* () {
       const recorded = yield* makeRecordingBackend('ready')
@@ -492,9 +591,24 @@ describe('Minecraft music player', () => {
     }),
   )
 
-  it.effect('replaces a track only when replace_current_music is true', () =>
+  it.effect('stops before starting a no-crossfade replacement', () =>
     Effect.gen(function* () {
-      const { player, recorded } = yield* makeHarness()
+      const recorded = yield* makeRecordingBackend('ready')
+      const order = yield* Ref.make<ReadonlyArray<string>>([])
+      const backend: AudioBackend = {
+        ...recorded.backend,
+        playMusic: (request) => Effect.gen(function* () {
+          yield* Ref.update(order, (current) => [...current, 'start'])
+          return yield* recorded.backend.playMusic(request)
+        }),
+        stopTone: (activeHandle) => Effect.gen(function* () {
+          yield* Ref.update(order, (current) => [...current, 'stop'])
+          yield* recorded.backend.stopTone(activeHandle)
+        }),
+      }
+      const player = yield* makeMinecraftMusicPlayer(REGISTRY, () => 0).pipe(
+        Effect.provide(Layer.succeed(AudioBackendPort, backend)),
+      )
       yield* tickToStart(player)
 
       const replacement: MinecraftMusicDefinition = {
@@ -513,6 +627,7 @@ describe('Minecraft music player', () => {
       ])
       expect(yield* recorded.backend.isToneActive(handle(1))).toBe(false)
       expect(yield* recorded.backend.isToneActive(handle(2))).toBe(true)
+      expect(yield* Ref.get(order)).toEqual(['start', 'stop', 'start'])
     }),
   )
 

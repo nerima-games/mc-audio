@@ -1,7 +1,13 @@
 import * as publicApi from '../src/index'
-import { describe, expect, it } from 'vitest'
+import type { AudioAssetWorkTitle as InternalAudioAssetWorkTitle } from '../src/domain/audio-asset-manifest'
+import type { AudioAssetWorkTitle as PublicAudioAssetWorkTitle } from '../src/index'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
 describe('public API', () => {
+  it('exports the branded asset work title type', () => {
+    expectTypeOf<PublicAudioAssetWorkTitle>().toEqualTypeOf<InternalAudioAssetWorkTitle>()
+  })
+
   it('matches the reviewed runtime export surface', () => {
     expect(Object.keys(publicApi).sort()).toMatchInlineSnapshot(`
       [

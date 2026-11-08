@@ -1,7 +1,7 @@
 import { Result } from 'effect'
 import * as fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { audioAssetCredits, decodeAudioAssetManifest } from '../src/domain/audio-asset-manifest.js'
+import { audioAssetCredits, decodeAudioAssetManifest, decodeAudioAssetVariant } from '../src/domain/audio-asset-manifest.js'
 
 const externalAttribution = {
   author: 'Example artist',
@@ -58,8 +58,28 @@ describe('audio asset manifest', () => {
     }
   })
 
+  it('decodes one asset variant without throwing for arbitrary input', () => {
+    expect(Result.isSuccess(decodeAudioAssetVariant(assetVariant()))).toBe(true)
+    expect(Result.isFailure(decodeAudioAssetVariant(assetVariant({ file: '../outside.ogg' })))).toBe(true)
+    fc.assert(
+      fc.property(fc.anything(), (input) => {
+        const result = decodeAudioAssetVariant(input)
+        return Result.isSuccess(result) || Result.isFailure(result)
+      }),
+      { numRuns: 500 },
+    )
+    const uninspectable = new Proxy({}, {
+      ownKeys: () => {
+        throw new Error('cannot enumerate asset variant')
+      },
+    })
+    expect(() => decodeAudioAssetVariant(uninspectable)).not.toThrow()
+    expect(Result.isFailure(decodeAudioAssetVariant(uninspectable))).toBe(true)
+  })
+
   it('accepts an empty manifest for procedural-only playback', () => {
     expect(decodeAudioAssetManifest({})).toEqual(Result.succeed({}))
+    expect(audioAssetCredits({ unknownCue: undefined })).toEqual([])
   })
 
   it('rejects unknown cues and missing required fields', () => {
@@ -81,6 +101,12 @@ describe('audio asset manifest', () => {
     expectFailure({ blockBreak: [assetVariant({
       attribution: { ...generatedAttribution, licenseFile: '/LICENSE' },
     })] })
+    expectFailure({ blockBreak: [assetVariant({
+      attribution: { ...generatedAttribution, licenseSpdx: 'MIT License' },
+    })] })
+    expectFailure({ blockBreak: [assetVariant({ attribution: { ...externalAttribution, author: '  ' } })] })
+    expectFailure({ blockBreak: [assetVariant({ attribution: { ...externalAttribution, workTitle: '\t' } })] })
+    expectFailure({ blockBreak: [assetVariant({ attribution: { ...externalAttribution, licenseName: '' } })] })
   })
 
   it('rejects empty, absolute, traversing, encoded, and malformed relative paths', () => {
@@ -94,9 +120,24 @@ describe('audio asset manifest', () => {
       'not a URL',
       'ftp://example.org/work',
       'https://user:secret@example.org/work',
+      'https://:80/work',
+      `https://${'a'.repeat(254)}/work`,
+      'https://256.1.1.1/work',
+      'https://-bad.example/work',
+      'https://[gg::1]/work',
+      'https://[1::2::3]/work',
+      'https://[12345::1]/work',
+      'https://[1:2:3:4:5:6:7]/work',
+      'https://[1:2:3:4:5:6:7:8::]/work',
+      'https://[::1]suffix/work',
+      'https://[::1]:abc/work',
+      'https://example.org:80:90/work',
       'https://example.org:65536/work',
       'https://example.org:/work',
       'https://[2001:db8::1/work',
+      'https://example.org/%zz',
+      'https://example.org/a b',
+      'https://example.org/a\u0001b',
     ]) {
       expectFailure({ blockBreak: [assetVariant({ attribution: { ...externalAttribution, sourceUrl } })] })
     }
@@ -109,6 +150,19 @@ describe('audio asset manifest', () => {
       })],
     })
     expect(Result.isSuccess(validIpv6Url)).toBe(true)
+
+    for (const sourceUrl of [
+      'http://example.org/work',
+      'https://example.org./work',
+      'https://1a.2b.3c.4d/work',
+      'https://127.0.0.1/work',
+      'https://[::1]/work',
+      'https://[1:2:3:4:5:6:7:8]/work',
+    ]) {
+      expect(Result.isSuccess(decodeAudioAssetManifest({
+        blockBreak: [assetVariant({ attribution: { ...externalAttribution, sourceUrl } })],
+      }))).toBe(true)
+    }
   })
 
   it('enforces AudioVolume bounds and the documented finite pitch range', () => {
@@ -134,5 +188,15 @@ describe('audio asset manifest', () => {
       }),
       { numRuns: 500 },
     )
+    expect(() => decodeAudioAssetManifest(new Proxy({}, {
+      ownKeys: () => {
+        throw new Error('cannot enumerate manifest')
+      },
+    }))).not.toThrow()
+    expectFailure(new Proxy({}, {
+      ownKeys: () => {
+        throw new Error('cannot enumerate manifest')
+      },
+    }))
   })
 })

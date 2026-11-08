@@ -7,7 +7,7 @@ import {
   selectAudioAsset,
   type AudioAssetSampleAdapter,
 } from '../src/domain/audio-asset-loader.js'
-import { decodeAudioAssetManifest } from '../src/domain/audio-asset-manifest.js'
+import { decodeAudioAssetManifest, type AudioAssetManifest } from '../src/domain/audio-asset-manifest.js'
 import { SoundCueId } from '../src/domain/cue.js'
 
 const externalAttribution = {
@@ -120,6 +120,63 @@ describe('audio asset loader', () => {
     })
   })
 
+  it('normalizes invalid runtime indexes and handles sparse or unmatched variant lists', () => {
+    const manifest = decodedManifest()
+    for (const variantIndex of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+      const request = JSON.parse(JSON.stringify({ cueId: SoundCueId('blockBreak'), manifest, variantIndex }))
+      expect(selectAudioAsset(request)).toMatchObject({ success: { variantIndex: AudioCount(0) } })
+    }
+
+    const sparseVariants = new Array(1)
+    const sparseManifest: AudioAssetManifest = { blockBreak: sparseVariants }
+    expect(selectAudioAsset({ cueId: SoundCueId('blockBreak'), manifest: sparseManifest })).toMatchObject({
+      failure: { _tag: 'AudioAssetSelectionFailure', reason: 'no-variants' },
+    })
+
+    const surfaceOnly = decodeAudioAssetManifest({
+      footstepGrass: [
+        { attribution: externalAttribution, file: 'audio/step-stone.ogg', pitchRange: { minimum: 1, maximum: 1 }, surface: 'stone', volume: 1 },
+        { attribution: externalAttribution, file: 'audio/step-grass.ogg', pitchRange: { minimum: 1, maximum: 1 }, surface: 'grass', volume: 1 },
+      ],
+    })
+    if (Result.isFailure(surfaceOnly)) {
+      throw new Error(surfaceOnly.failure.message)
+    }
+    expect(selectAudioAsset({ cueId: SoundCueId('footstepGrass'), manifest: surfaceOnly.success, surface: 'wood' })).toMatchObject({
+      success: { sampleId: AudioSampleId('mc-audio.asset:footstepGrass:0') },
+    })
+  })
+
+  it('skips unknown and undefined cue entries while building manifests', async () => {
+    const manifest: AudioAssetManifest = { unknownCue: [], blockBreak: undefined }
+    expect(audioAssetSampleManifest(manifest)).toEqual(new Map())
+
+    let preloadCalls = 0
+    const loader = makeAudioAssetLoader({
+      adapter: {
+        preloadSamples: (sampleIds = []) => {
+          preloadCalls += 1
+          return Effect.succeed({
+            cached: AudioCount(0),
+            failed: AudioCount(0),
+            loaded: AudioCount(sampleIds.length),
+            requested: AudioCount(sampleIds.length),
+          })
+        },
+      },
+      manifest,
+    })
+    expect(loader.sampleManifest).toEqual(new Map())
+    await expect(Effect.runPromise(loader.preload)).resolves.toEqual({
+      cached: 0,
+      failed: 0,
+      failures: [],
+      loaded: 0,
+      requested: 0,
+    })
+    expect(preloadCalls).toBe(0)
+  })
+
   it('does not attribute a failed file when an adapter reports only aggregate failures', async () => {
     const loader = makeAudioAssetLoader({
       adapter: {
@@ -138,6 +195,29 @@ describe('audio asset loader', () => {
 
     await expect(Effect.runPromise(loader.preload)).resolves.toMatchObject({
       failures: [{ failedVariants: 1, files: [] }],
+    })
+  })
+
+  it('reports a successful preload without creating failure rows', async () => {
+    const manifest = decodedManifest()
+    const loader = makeAudioAssetLoader({
+      adapter: {
+        preloadSamples: (sampleIds = []) => Effect.succeed({
+          cached: AudioCount(0),
+          failed: AudioCount(0),
+          loaded: AudioCount(sampleIds.length),
+          requested: AudioCount(sampleIds.length),
+        }),
+      },
+      manifest,
+    })
+
+    await expect(Effect.runPromise(loader.preload)).resolves.toEqual({
+      cached: 0,
+      failed: 0,
+      failures: [],
+      loaded: 5,
+      requested: 5,
     })
   })
 })

@@ -197,6 +197,31 @@ describe('decoded sample playback', () => {
     }),
   )
 
+  it.effect('refuses sample playback while the audio context is interrupted', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      let loads = 0
+      const audio = yield* makeWebAudioBackend({
+        audioAssetManifest: cueAssetManifest(),
+        global: fake.global,
+        loadSampleData: async () => {
+          loads += 1
+          return new ArrayBuffer(4)
+        },
+      })
+
+      yield* audio.unlock
+      fake.context()?.interrupt()
+      const playback = yield* audio.playTone({ ...CUE, soundId: SoundCueId('blockBreak') })
+
+      expect(playback.accepted).toBe(false)
+      expect(loads).toBe(0)
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+      expect((yield* audio.report).refusedTones).toBe(1)
+    }),
+  )
+
   it.effect('reports decode failure by cue and retains procedural playback', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio({ decodeThrows: true })
@@ -245,6 +270,7 @@ describe('decoded sample playback', () => {
           reason: 'asset-load-failed',
         }],
       })
+      expect(yield* audio.preloadAudioAssets).toMatchObject({ failed: 1 })
       const playback = yield* audio.playTone({ ...CUE, soundId: SoundCueId('blockBreak') })
 
       expect(playback.accepted).toBe(true)
@@ -264,7 +290,7 @@ describe('decoded sample playback', () => {
       })
       yield* audio.unlock
 
-      for (let variant = 0; variant < 3; variant += 1) {
+      for (let variant = 0; variant < 4; variant += 1) {
         const playback = yield* audio.playTone({ ...CUE, soundId: SoundCueId('blockBreak') })
         expect(playback.accepted).toBe(true)
       }
@@ -278,6 +304,28 @@ describe('decoded sample playback', () => {
         ['audio/block-c.ogg'],
       ])
       expect(failures.every((failure) => failure.failedVariants === 1 && failure.reason === 'asset-load-failed')).toBe(true)
+    }),
+  )
+
+  it.effect('deduplicates repeated aggregate reports while keeping cue failures separate', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const manifest = cueAssetManifest()
+      Object.assign(manifest, { blockPlace: manifest['blockBreak'] })
+      const audio = yield* makeWebAudioBackend({
+        audioAssetManifest: manifest,
+        global: fake.global,
+        loadSampleData: async () => Promise.reject(new Error('asset fetch failed')),
+      })
+      yield* audio.unlock
+
+      yield* audio.preloadAudioAssets
+      yield* audio.preloadAudioAssets
+
+      expect((yield* audio.report).audioAssetFailures.map((failure) => failure.cueId)).toEqual([
+        SoundCueId('blockBreak'),
+        SoundCueId('blockPlace'),
+      ])
     }),
   )
 
@@ -310,6 +358,13 @@ describe('decoded sample playback', () => {
       const audio = yield* makeWebAudioBackend({ global: fake.global })
 
       expect(yield* audio.preloadSamples()).toEqual({ cached: 0, failed: 0, loaded: 0, requested: 0 })
+      expect(yield* audio.preloadAudioAssets).toEqual({
+        cached: 0,
+        failed: 0,
+        failures: [],
+        loaded: 0,
+        requested: 0,
+      })
     }),
   )
 
@@ -959,6 +1014,28 @@ describe('decoded sample playback', () => {
       const context = fake.contexts()[0]
       expect(context?.bufferSources[0]?.playbackRate.value).toBe(2)
       expect(context?.log.stopped).toEqual([{ atSecs: 0.06, node: 'buffer#2' }])
+    }),
+  )
+
+  it.effect('keeps the requested playback rate when cue pitch multiplication overflows', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        audioAssetManifest: cueAssetManifest(),
+        global: fake.global,
+        loadSampleData: async () => new ArrayBuffer(4),
+      })
+      yield* audio.unlock
+
+      const playbackRate = AudioPlaybackRate(Number.MAX_VALUE)
+      const playback = yield* audio.playTone({
+        ...CUE,
+        playbackRate,
+        soundId: SoundCueId('blockBreak'),
+      })
+
+      expect(playback.accepted).toBe(true)
+      expect(fake.context()?.bufferSources[0]?.playbackRate.value).toBe(playbackRate)
     }),
   )
 

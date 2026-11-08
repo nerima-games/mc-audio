@@ -357,8 +357,6 @@ export const makeWebAudioBackend = (
     const autoPreloadEffectRef = yield* Ref.make<Effect.Effect<void>>(Effect.void)
     const recordAudioAssetFailure = (failure: AudioAssetLoadFailure): Effect.Effect<void> =>
       Ref.update(audioAssetFailuresRef, (current) => {
-        const sameFiles = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean =>
-          left.length === right.length && left.every((file, index) => file === right[index])
         const alreadyRecorded = current.some((recorded) => {
           if (recorded.cueId !== failure.cueId || recorded.reason !== failure.reason) {
             return false
@@ -366,7 +364,7 @@ export const makeWebAudioBackend = (
           if (failure.variantIndex !== undefined || recorded.variantIndex !== undefined) {
             return failure.variantIndex === recorded.variantIndex
           }
-          return recorded.failedVariants === failure.failedVariants && sameFiles(recorded.files, failure.files)
+          return recorded.failedVariants === failure.failedVariants
         })
         if (alreadyRecorded) {
           return current

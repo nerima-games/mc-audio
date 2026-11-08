@@ -68,4 +68,20 @@ describe('audio event map', () => {
       reason: 'invalid-type',
     }))
   })
+
+  it('returns a typed failure for an invalid JavaScript event', () => {
+    const invalidEvent = JSON.parse('{"kind":"unknown"}')
+    expect(mapAudioEvent(invalidEvent)).toEqual(Result.fail({
+      _tag: 'AudioEventMapFailure',
+      eventKind: 'unknown',
+      kind: 'event',
+      reason: 'unknown-event',
+    }))
+    expect(mapAudioEvent(JSON.parse('{"kind":null}'))).toEqual(Result.fail({
+      _tag: 'AudioEventMapFailure',
+      eventKind: null,
+      kind: 'event',
+      reason: 'unknown-event',
+    }))
+  })
 })

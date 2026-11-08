@@ -289,6 +289,26 @@ const manifestFailure = (message: string): Result.Result<never, AudioAssetManife
     path: makeAudioDiagnosticPath('$'),
   })
 
+/** Decode one cue variant using the same constraints as a full asset manifest. */
+export const decodeAudioAssetVariant = (
+  input: unknown,
+): Result.Result<CueAudioAssetVariant, AudioAssetManifestFailure> =>
+  Result.match(
+    Result.try({
+      catch: () => 'Audio asset variant could not be decoded',
+      try: () => Schema.decodeUnknownResult(assetVariantSchema)(input, { onExcessProperty: 'error' }),
+    }),
+    {
+      onFailure: (message) => manifestFailure(message),
+      onSuccess: (decoded) => {
+        if (Result.isFailure(decoded)) {
+          return manifestFailure(decoded.failure.message)
+        }
+        return Result.succeed(decoded.success)
+      },
+    },
+  )
+
 /** Decode unknown manifest input without throwing. Extra cue keys are errors. */
 export const decodeAudioAssetManifest = (
   input: unknown,
