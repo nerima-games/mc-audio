@@ -1,12 +1,13 @@
 /* oxlint-disable max-statements, no-magic-numbers */
 import { describe, expect, it } from '@effect/vitest'
-import { Effect, Layer, Result } from 'effect'
+import { Effect, Exit, Layer, Ref, Result } from 'effect'
 import {
   AudioDistance,
   AudioGain,
   AudioHandleId,
   AudioPlaybackRate,
   AudioDelayTicks,
+  AudioDurationSecs,
   AudioVolume,
   AudioWeight,
   MinecraftSoundEventId,
@@ -19,11 +20,14 @@ import {
   makeRecordingBackend,
 } from '../src/domain/backend-port.js'
 import {
+  decodeMinecraftMusicScenePlaylistManifest,
   MINECRAFT_MUSIC_STARTING_DELAY_TICKS,
+  minecraftMusicScenePlaylistRegistry,
+  minecraftMusicScenePlaylistSampleManifest,
   type MinecraftMusicDefinition,
 } from '../src/domain/minecraft-music.js'
 import { normalizeMinecraftAudioComponent } from '../src/domain/minecraft-audio.js'
-import type { MinecraftSoundRegistry } from '../src/domain/minecraft-sounds.js'
+import { mergeMinecraftSoundRegistries, type MinecraftSoundRegistry } from '../src/domain/minecraft-sounds.js'
 import {
   makeMinecraftMusicPlayer,
   type MinecraftMusicPlayer,
@@ -88,6 +92,67 @@ const START_INPUT: MinecraftMusicTickInput = {
   musicVolume: AudioVolume(1),
 }
 
+const SCENE_PLAYLISTS = success(decodeMinecraftMusicScenePlaylistManifest({
+  title: {
+    crossfadeTicks: 40,
+    maximumSilenceTicks: 400,
+    minimumSilenceTicks: 2,
+    tracks: [{
+      attribution: {
+        generatorScript: 'scripts/audio/generate-title.ts',
+        licenseFile: 'LICENSE',
+        licenseName: 'MIT License',
+        licenseSpdx: 'MIT',
+        licenseUrl: 'https://opensource.org/license/MIT',
+        type: 'generated',
+      },
+      eventId: 'mc-audio:music/title/01',
+      file: 'audio/music/title-01.ogg',
+    }, {
+      attribution: {
+        generatorScript: 'scripts/audio/generate-title.ts',
+        licenseFile: 'LICENSE',
+        licenseName: 'MIT License',
+        licenseSpdx: 'MIT',
+        licenseUrl: 'https://opensource.org/license/MIT',
+        type: 'generated',
+      },
+      eventId: 'mc-audio:music/title/02',
+      file: 'audio/music/title-02.ogg',
+    }],
+  },
+  nether: {
+    crossfadeTicks: 40,
+    maximumSilenceTicks: 400,
+    minimumSilenceTicks: 2,
+    tracks: [{
+      attribution: {
+        generatorScript: 'scripts/audio/generate-nether.ts',
+        licenseFile: 'LICENSE',
+        licenseName: 'MIT License',
+        licenseSpdx: 'MIT',
+        licenseUrl: 'https://opensource.org/license/MIT',
+        type: 'generated',
+      },
+      eventId: 'mc-audio:music/nether/01',
+      file: 'audio/music/nether-01.ogg',
+    }, {
+      attribution: {
+        generatorScript: 'scripts/audio/generate-nether.ts',
+        licenseFile: 'LICENSE',
+        licenseName: 'MIT License',
+        licenseSpdx: 'MIT',
+        licenseUrl: 'https://opensource.org/license/MIT',
+        type: 'generated',
+      },
+      eventId: 'mc-audio:music/nether/02',
+      file: 'audio/music/nether-02.ogg',
+    }],
+  },
+}))
+const SCENE_REGISTRY = mergeMinecraftSoundRegistries(REGISTRY, minecraftMusicScenePlaylistRegistry(SCENE_PLAYLISTS))
+const SCENE_SAMPLE_MANIFEST = minecraftMusicScenePlaylistSampleManifest(SCENE_PLAYLISTS)
+
 const makeHarness = (
   availability: AudioAvailability = 'ready',
   randomSource: () => number = () => 0,
@@ -111,6 +176,160 @@ const tickToStart = (player: MinecraftMusicPlayer, input: MinecraftMusicTickInpu
   })
 
 describe('Minecraft music player', () => {
+  it.effect('crossfades scene tracks while preserving the silence gap before the next track', () =>
+    Effect.gen(function* () {
+      const recorded = yield* makeRecordingBackend('ready')
+      const fades = yield* Ref.make<ReadonlyArray<AudioDurationSecs>>([])
+      const order = yield* Ref.make<ReadonlyArray<string>>([])
+      let trackChoice = 0
+      const backend: AudioBackend = {
+        ...recorded.backend,
+        playMusic: (request) => Effect.gen(function* () {
+          yield* Ref.update(order, (current) => [...current, 'start'])
+          return yield* recorded.backend.playMusic(request)
+        }),
+        stopTone: (activeHandle, fadeOutSecs) => Effect.gen(function* () {
+          yield* Ref.update(order, (current) => [...current, 'stop'])
+          if (fadeOutSecs !== undefined) {
+            yield* Ref.update(fades, (current) => [...current, fadeOutSecs])
+          }
+          yield* recorded.backend.stopTone(activeHandle)
+        }),
+      }
+      const player = yield* makeMinecraftMusicPlayer(SCENE_REGISTRY, () => trackChoice).pipe(
+        Effect.provide(Layer.succeed(AudioBackendPort, backend)),
+      )
+      const titleInput = { ...START_INPUT, scene: 'title' as const, scenePlaylists: SCENE_PLAYLISTS }
+      yield* tickToStart(player, titleInput)
+
+      trackChoice = 0.99
+      const stableTitle = yield* player.tick(titleInput)
+      expect(stableTitle.soundId).toBe('mc-audio:music/title/01')
+      expect(yield* recorded.musicPlayed).toHaveLength(1)
+
+      trackChoice = 0
+      const changed = yield* player.tick({ ...titleInput, scene: 'nether' })
+      expect(changed.played).toBe(true)
+      expect(changed.soundId).toBe('mc-audio:music/nether/01')
+      expect(yield* recorded.musicPlayed).toMatchObject([
+        { soundId: 'audio/music/title-01.ogg' },
+        { fadeInSecs: AudioDurationSecs(2), soundId: 'audio/music/nether-01.ogg' },
+      ])
+      expect(yield* Ref.get(fades)).toEqual([AudioDurationSecs(2)])
+      expect(yield* Ref.get(order)).toEqual(['start', 'start', 'stop'])
+
+      yield* recorded.backend.stopTone(handle(2))
+      trackChoice = 0
+      for (let tick = 0; tick < 3; tick += 1) {
+        const silent = yield* player.tick({ ...START_INPUT, scene: 'nether', scenePlaylists: SCENE_PLAYLISTS })
+        expect(silent.played).toBe(false)
+      }
+      expect(yield* recorded.musicPlayed).toHaveLength(2)
+      trackChoice = 0.99
+      const afterGap = yield* player.tick({ ...START_INPUT, scene: 'nether', scenePlaylists: SCENE_PLAYLISTS })
+      expect(afterGap.played).toBe(true)
+      expect(afterGap.soundId).toBe('mc-audio:music/nether/02')
+      expect(yield* recorded.musicPlayed).toHaveLength(3)
+      expect(SCENE_SAMPLE_MANIFEST.size).toBe(4)
+    }),
+  )
+
+  it.effect('selects from an updated scene playlist during an existing silence gap', () =>
+    Effect.gen(function* () {
+      const { player, recorded } = yield* makeHarness('ready', () => 0, SCENE_REGISTRY)
+      const originalInput = { ...START_INPUT, scene: 'title' as const, scenePlaylists: SCENE_PLAYLISTS }
+      yield* tickToStart(player, originalInput)
+      yield* recorded.backend.stopTone(handle(1))
+
+      const enteredGap = yield* player.tick(originalInput)
+      expect(enteredGap.played).toBe(false)
+      expect(enteredGap.plan.state.currentSound).toBeNull()
+      expect(enteredGap.plan.state.nextSongDelayTicks).toBeGreaterThan(0)
+
+      const updatedPlaylists = success(decodeMinecraftMusicScenePlaylistManifest({
+        title: {
+          crossfadeTicks: 20,
+          maximumSilenceTicks: 400,
+          minimumSilenceTicks: 2,
+          tracks: [{
+            attribution: {
+              generatorScript: 'scripts/audio/generate-title.ts',
+              licenseFile: 'LICENSE',
+              licenseName: 'MIT License',
+              licenseSpdx: 'MIT',
+              licenseUrl: 'https://opensource.org/license/MIT',
+              type: 'generated',
+            },
+            eventId: 'mc-audio:music/title/02',
+            file: 'audio/music/title-02.ogg',
+          }],
+        },
+      }))
+      const updatedInput = { ...originalInput, scenePlaylists: updatedPlaylists }
+      let result = enteredGap
+      for (let tick = 0; tick < 3; tick += 1) {
+        result = yield* player.tick(updatedInput)
+      }
+
+      expect(result.played).toBe(true)
+      expect(result.soundId).toBe('mc-audio:music/title/02')
+      expect(yield* recorded.musicPlayed).toMatchObject([
+        { soundId: 'audio/music/title-01.ogg' },
+        { soundId: 'audio/music/title-02.ogg' },
+      ])
+    }),
+  )
+
+  it.effect('retries a refused scene asset with the existing free music fallback', () =>
+    Effect.gen(function* () {
+      const recorded = yield* makeRecordingBackend('ready')
+      const attempts = yield* Ref.make(0)
+      const backend: AudioBackend = {
+        ...recorded.backend,
+        playMusic: (request) => Effect.gen(function* () {
+          const attempt = yield* Ref.updateAndGet(attempts, (value) => value + 1)
+          if (attempt === 1) {
+            return { accepted: false, id: AudioHandleId(50) }
+          }
+          return yield* recorded.backend.playMusic(request)
+        }),
+      }
+      const player = yield* makeMinecraftMusicPlayer(SCENE_REGISTRY, () => 0).pipe(
+        Effect.provide(Layer.succeed(AudioBackendPort, backend)),
+      )
+      const result = yield* tickToStart(player, { ...START_INPUT, scene: 'title', scenePlaylists: SCENE_PLAYLISTS })
+
+      expect(result.played).toBe(true)
+      expect(yield* Ref.get(attempts)).toBe(2)
+      expect(yield* recorded.musicPlayed).toMatchObject([
+        { soundId: 'minecraft:music/free_game' },
+      ])
+    }),
+  )
+
+  it.effect('clears scene selection while disabled without sampling randomness', () =>
+    Effect.gen(function* () {
+      let randomValue = 0
+      let randomCalls = 0
+      const recorded = yield* makeRecordingBackend('ready')
+      const player = yield* makeMinecraftMusicPlayer(SCENE_REGISTRY, () => {
+        randomCalls += 1
+        return randomValue
+      }).pipe(Effect.provide(Layer.succeed(AudioBackendPort, recorded.backend)))
+      const sceneInput = { ...START_INPUT, scene: 'title' as const, scenePlaylists: SCENE_PLAYLISTS }
+      yield* tickToStart(player, sceneInput)
+
+      const callsAfterStart = randomCalls
+      randomValue = Number.NaN
+      const disabled = yield* player.tick({ ...sceneInput, enabled: false })
+      expect(disabled.played).toBe(false)
+      expect(randomCalls).toBe(callsAfterStart)
+
+      const reenabled = yield* Effect.exit(player.tick(sceneInput))
+      expect(Exit.isFailure(reenabled)).toBe(true)
+    }),
+  )
+
   it.effect('uses the context definition and waits through the startup delay', () =>
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness()

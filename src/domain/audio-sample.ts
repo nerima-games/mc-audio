@@ -4,6 +4,7 @@ import {
   type AudioDiagnosticMessage,
   type AudioDiagnosticPath,
   AudioSampleId,
+  type AudioSampleId as AudioSampleIdType,
   AudioSampleUrl,
   AudioDiagnosticMessage as makeAudioDiagnosticMessage,
   AudioDiagnosticPath as makeAudioDiagnosticPath,
@@ -42,6 +43,7 @@ export type AudioSampleLoadReport = {
   readonly loaded: AudioCount
   readonly cached: AudioCount
   readonly failed: AudioCount
+  readonly failedSampleIds?: ReadonlyArray<AudioSampleIdType>
 }
 
 

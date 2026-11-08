@@ -4,7 +4,7 @@
  * Loading and cache state are separate from node scheduling so that the
  * backend can keep its platform boundary focused on AudioContext operations.
  */
-import { AudioSampleId, AudioCount as audioCount } from './audio-brands.js'
+import { AudioSampleId, type AudioSampleId as AudioSampleIdType, AudioCount as audioCount } from './audio-brands.js'
 import type { AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
 import { Deferred, Effect } from 'effect'
 import type { AudioBufferSurface } from './webaudio-surface.js'
@@ -25,14 +25,19 @@ export type AudioSamplePreloadOptions = {
   ) => Effect.Effect<AudioBufferSurface | null>
 }
 
-type PreloadResult = 'cached' | 'failed' | 'loaded'
+type PreloadStatus = 'cached' | 'failed' | 'loaded'
+type PreloadResult = { readonly sampleId: AudioSampleIdType; readonly status: PreloadStatus }
 
 const addPreloadResult = (summary: AudioSampleLoadReport, result: PreloadResult): AudioSampleLoadReport => {
-  if (result === 'cached') {
+  if (result.status === 'cached') {
     return { ...summary, cached: audioCount(summary.cached + COUNT_STEP) }
   }
-  if (result === 'failed') {
-    return { ...summary, failed: audioCount(summary.failed + COUNT_STEP) }
+  if (result.status === 'failed') {
+    return {
+      ...summary,
+      failed: audioCount(summary.failed + COUNT_STEP),
+      failedSampleIds: [...(summary.failedSampleIds ?? []), result.sampleId],
+    }
   }
   return { ...summary, loaded: audioCount(summary.loaded + COUNT_STEP) }
 }
@@ -128,7 +133,7 @@ const preloadStatus = (
   soundId: AudioSampleId,
   source: AudioSampleSource,
   options: AudioSamplePreloadOptions,
-): PreloadResult | null => {
+): PreloadStatus | null => {
   if (source.stream === true && options.preloadedStreams.has(soundId)) {
     return 'cached'
   }
@@ -136,7 +141,7 @@ const preloadStatus = (
 }
 
 type PreloadDecision =
-  | { readonly kind: 'result'; readonly result: PreloadResult }
+  | { readonly kind: 'result'; readonly result: PreloadStatus }
   | { readonly kind: 'load'; readonly source: AudioSampleSource }
 
 const preloadDecision = (soundId: AudioSampleId, options: AudioSamplePreloadOptions): PreloadDecision => {
@@ -153,20 +158,21 @@ const preloadDecision = (soundId: AudioSampleId, options: AudioSamplePreloadOpti
 
 const preloadOneSample = (soundId: AudioSampleId, options: AudioSamplePreloadOptions): Effect.Effect<PreloadResult> =>
   Effect.gen(function* preloadOneSampleEffect() {
+    const resultFor = (status: PreloadStatus): PreloadResult => ({ sampleId: soundId, status })
     if (options.cache.has(soundId)) {
-      return 'cached'
+      return resultFor('cached')
     }
 
     const decision = preloadDecision(soundId, options)
     if (decision.kind === 'result') {
-      return decision.result
+      return resultFor(decision.result)
     }
 
     const loaded = yield* startSampleLoad(soundId, decision.source, options)
     if (loaded) {
-      return 'loaded'
+      return resultFor('loaded')
     }
-    return 'failed'
+    return resultFor('failed')
   })
 
 /** Load each requested sample once and report cache hits, loads, and failures. */

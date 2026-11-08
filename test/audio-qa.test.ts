@@ -20,6 +20,7 @@ const report: WebAudioReport = {
   refusedTones: AudioCount(0),
   capacityRefusals: AudioCount(0),
   activeTones: AudioCount(0),
+  audioAssetFailures: [],
   spontaneousStateChanges: AudioCount(0),
   muted: false,
   disposed: false,

@@ -96,6 +96,8 @@ export type MusicRequest = {
   readonly playbackRate: AudioPlaybackRate
   /** Whether the Minecraft sound variant requests a streaming source. */
   readonly stream: boolean
+  /** Fade a newly selected scene track in over this many seconds. */
+  readonly fadeInSecs?: AudioDurationSecs
 }
 
 export type ToneHandle = {
@@ -116,7 +118,7 @@ export type AudioBackend = {
   readonly availability: Effect.Effect<AudioAvailability>
   readonly playTone: (request: ToneRequest) => Effect.Effect<TonePlayback>
   readonly playMusic: (request: MusicRequest) => Effect.Effect<TonePlayback>
-  readonly stopTone: (handle: ToneHandle) => Effect.Effect<void>
+  readonly stopTone: (handle: ToneHandle, fadeOutSecs?: AudioDurationSecs) => Effect.Effect<void>
   readonly setToneGain: (handle: ToneHandle, gain: AudioGain) => Effect.Effect<void>
   readonly isToneActive: (handle: ToneHandle) => Effect.Effect<boolean>
   /**

@@ -31,6 +31,9 @@
 
 export * from './domain/backend-port.js'
 export * from './domain/audio-brands.js'
+export * from './domain/audio-asset-loader.js'
+export * from './domain/audio-asset-manifest.js'
+export * from './domain/audio-event-map.js'
 export * from './domain/audio-sample.js'
 export * from './domain/audio-runtime.js'
 export * from './domain/caption.js'

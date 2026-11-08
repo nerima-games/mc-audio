@@ -53,6 +53,7 @@ import { AudioBackendPort, type ToneRequest } from '../src/domain/backend-port'
 import type { AudioSampleManifest, AudioSampleSource } from '../src/domain/audio-sample'
 import { type CaptionEvent, CaptionStream } from '../src/domain/caption'
 import { SoundCueId } from '../src/domain/cue'
+import { decodeAudioAssetManifest } from '../src/domain/audio-asset-manifest'
 import { makeSoundCueService } from '../src/domain/engine'
 import { ATTACK_SECS, RELEASE_SECS, toneEnvelope } from '../src/domain/envelope'
 import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
@@ -85,6 +86,52 @@ const audioSampleManifest = (entries: Readonly<Record<string, SampleFixture>>): 
 
 const sampleId = (id: string) => AudioSampleId(id)
 
+const cueAssetManifest = () => {
+  const result = decodeAudioAssetManifest({
+    blockBreak: [{
+      attribution: {
+        author: 'Example artist',
+        licenseName: 'CC0 1.0 Universal',
+        licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+        modified: false,
+        sourceUrl: 'https://example.org/audio/block-break.ogg',
+        type: 'external',
+        workTitle: 'Block break',
+      },
+      file: 'audio/block-break.ogg',
+      pitchRange: { maximum: 1.4, minimum: 1.2 },
+      volume: 0.5,
+    }],
+  })
+  if (Result.isFailure(result)) {
+    throw new Error(result.failure.message)
+  }
+  return result.success
+}
+
+const cueAssetManifestWithVariants = () => {
+  const result = decodeAudioAssetManifest({
+    blockBreak: ['audio/block-a.ogg', 'audio/block-b.ogg', 'audio/block-c.ogg'].map((file) => ({
+      attribution: {
+        author: 'Example artist',
+        licenseName: 'CC0 1.0 Universal',
+        licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+        modified: false,
+        sourceUrl: `https://example.org/${file}`,
+        type: 'external',
+        workTitle: file,
+      },
+      file,
+      pitchRange: { maximum: 1, minimum: 1 },
+      volume: 1,
+    })),
+  })
+  if (Result.isFailure(result)) {
+    throw new Error(result.failure.message)
+  }
+  return result.success
+}
+
 const audioTimeFromSurface = (seconds: number) => {
   const result = AudioDurationSecs.result(seconds)
   if (Result.isFailure(result)) {
@@ -99,6 +146,164 @@ const withFake = (options: FakeWebAudioOptions = {}) => {
 }
 
 describe('decoded sample playback', () => {
+  it.effect('refuses a missing music sample instead of synthesizing a normal playback', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({ global: fake.global })
+      yield* audio.unlock
+
+      const playback = yield* audio.playMusic({
+        gain: AudioGain(1),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('missing/music-track'),
+        stream: true,
+      })
+
+      expect(playback.accepted).toBe(false)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+    }),
+  )
+
+  it.effect('fetches, decodes, caches, and plays a cue asset through the sample adapter', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ decodedDurationSecs: 0.25 })
+      let loads = 0
+      const audio = yield* makeWebAudioBackend({
+        audioAssetManifest: cueAssetManifest(),
+        global: fake.global,
+        loadSampleData: async (url) => {
+          expect(url).toBe('audio/block-break.ogg')
+          loads += 1
+          return new ArrayBuffer(4)
+        },
+      })
+
+      yield* audio.unlock
+      const playback = yield* audio.playTone({ ...CUE, soundId: SoundCueId('blockBreak') })
+
+      expect(playback.accepted).toBe(true)
+      expect(loads).toBe(1)
+      expect(fake.context()?.decodedData).toHaveLength(1)
+      expect(fake.context()?.bufferSources[0]?.buffer?.duration).toBe(0.25)
+      expect(fake.context()?.bufferSources[0]?.playbackRate.value).toBeCloseTo(1.3)
+      expect(fake.context()?.oscillators).toHaveLength(0)
+      expect(yield* audio.preloadAudioAssets).toEqual({
+        cached: 1,
+        failed: 0,
+        failures: [],
+        loaded: 0,
+        requested: 1,
+      })
+    }),
+  )
+
+  it.effect('reports decode failure by cue and retains procedural playback', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ decodeThrows: true })
+      const audio = yield* makeWebAudioBackend({
+        audioAssetManifest: cueAssetManifest(),
+        global: fake.global,
+        loadSampleData: async () => new ArrayBuffer(4),
+      })
+      yield* audio.unlock
+
+      expect(yield* audio.preloadAudioAssets).toMatchObject({
+        failed: 1,
+        failures: [{
+          _tag: 'AudioAssetLoadFailure',
+          cueId: SoundCueId('blockBreak'),
+          failedVariants: 1,
+          reason: 'asset-load-failed',
+        }],
+        requested: 1,
+      })
+      const playback = yield* audio.playTone({ ...CUE, soundId: SoundCueId('blockBreak') })
+
+      expect(playback.accepted).toBe(true)
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(1)
+    }),
+  )
+
+  it.effect('reports fetch failure by cue and retains procedural playback', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        audioAssetManifest: cueAssetManifest(),
+        global: fake.global,
+        loadSampleData: async () => Promise.reject(new Error('asset fetch failed')),
+      })
+      yield* audio.unlock
+
+      expect(yield* audio.preloadAudioAssets).toMatchObject({
+        failed: 1,
+        failures: [{
+          _tag: 'AudioAssetLoadFailure',
+          cueId: SoundCueId('blockBreak'),
+          failedVariants: 1,
+          files: ['audio/block-break.ogg'],
+          reason: 'asset-load-failed',
+        }],
+      })
+      const playback = yield* audio.playTone({ ...CUE, soundId: SoundCueId('blockBreak') })
+
+      expect(playback.accepted).toBe(true)
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(1)
+      expect((yield* audio.report).audioAssetFailures).toHaveLength(2)
+    }),
+  )
+
+  it.effect('keeps each failed lazy variant distinct in the typed report', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        audioAssetManifest: cueAssetManifestWithVariants(),
+        global: fake.global,
+        loadSampleData: async () => Promise.reject(new Error('asset fetch failed')),
+      })
+      yield* audio.unlock
+
+      for (let variant = 0; variant < 3; variant += 1) {
+        const playback = yield* audio.playTone({ ...CUE, soundId: SoundCueId('blockBreak') })
+        expect(playback.accepted).toBe(true)
+      }
+
+      const failures = (yield* audio.report).audioAssetFailures
+      expect(failures).toHaveLength(3)
+      expect(failures.map((failure) => failure.variantIndex)).toEqual([0, 1, 2])
+      expect(failures.map((failure) => failure.files)).toEqual([
+        ['audio/block-a.ogg'],
+        ['audio/block-b.ogg'],
+        ['audio/block-c.ogg'],
+      ])
+      expect(failures.every((failure) => failure.failedVariants === 1 && failure.reason === 'asset-load-failed')).toBe(true)
+    }),
+  )
+
+  it.effect('records a typed missing-cue failure before procedural fallback', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        audioAssetManifest: cueAssetManifest(),
+        global: fake.global,
+      })
+      yield* audio.unlock
+
+      const playback = yield* audio.playTone({ ...CUE, soundId: SoundCueId('blockPlace') })
+
+      expect(playback.accepted).toBe(true)
+      expect(fake.context()?.oscillators).toHaveLength(1)
+      expect((yield* audio.report).audioAssetFailures).toEqual([{
+        _tag: 'AudioAssetLoadFailure',
+        cueId: SoundCueId('blockPlace'),
+        failedVariants: 0,
+        files: [],
+        reason: 'asset-missing',
+      }])
+    }),
+  )
+
   it.effect('reports an empty preload when no sample manifest is configured', () =>
     Effect.gen(function* () {
       const fake = makeFakeWebAudio()
@@ -230,7 +435,13 @@ describe('decoded sample playback', () => {
         sampleManifest: audioSampleManifest({ missing: { data: new ArrayBuffer(4), kind: 'array-buffer' } }),
       })
 
-      expect(yield* audio.preloadSamples([sampleId('missing')])).toEqual({ cached: 0, failed: 1, loaded: 0, requested: 1 })
+      expect(yield* audio.preloadSamples([sampleId('missing')])).toEqual({
+        cached: 0,
+        failed: 1,
+        failedSampleIds: [sampleId('missing')],
+        loaded: 0,
+        requested: 1,
+      })
       yield* audio.unlock
       yield* audio.playTone({ ...CUE, soundId: sampleId('missing') })
       expect(fake.context()?.bufferSources).toHaveLength(0)
@@ -249,6 +460,7 @@ describe('decoded sample playback', () => {
       expect(yield* audio.preloadSamples([sampleId('step'), sampleId('unknown-id')])).toEqual({
         cached: 0,
         failed: 1,
+        failedSampleIds: [sampleId('unknown-id')],
         loaded: 1,
         requested: 2,
       })
@@ -266,6 +478,7 @@ describe('decoded sample playback', () => {
       expect(yield* audio.preloadSamples([sampleId('step')])).toEqual({
         cached: 0,
         failed: 1,
+        failedSampleIds: [sampleId('step')],
         loaded: 0,
         requested: 1,
       })
@@ -290,6 +503,7 @@ describe('decoded sample playback', () => {
       expect(yield* audio.preloadSamples([sampleId('step')])).toEqual({
         cached: 0,
         failed: 1,
+        failedSampleIds: [sampleId('step')],
         loaded: 0,
         requested: 1,
       })
@@ -680,6 +894,7 @@ describe('decoded sample playback', () => {
       expect(yield* audio.preloadSamples([sampleId('stream')])).toEqual({
         cached: 0,
         failed: 1,
+        failedSampleIds: [sampleId('stream')],
         loaded: 0,
         requested: 1,
       })
@@ -1334,6 +1549,54 @@ describe('the node graph the adapter builds', () => {
     }),
   )
 
+  it.effect('schedules overlapping BGM fade ramps and stops the old source at their end', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ decodedDurationSecs: 10 })
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        sampleManifest: audioSampleManifest({
+          'music/old': { data: new ArrayBuffer(8), kind: 'array-buffer' },
+          'music/new': { data: new ArrayBuffer(8), kind: 'array-buffer' },
+        }),
+      })
+      yield* audio.unlock
+      const oldTrack = yield* audio.playMusic({
+        gain: AudioGain(0.7),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('music/old'),
+        stream: false,
+      })
+      fake.context()?.advance(5)
+      yield* audio.playMusic({
+        fadeInSecs: AudioDurationSecs(2),
+        gain: AudioGain(0.6),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('music/new'),
+        stream: false,
+      })
+      yield* audio.stopTone(oldTrack, AudioDurationSecs(2))
+
+      const musicRamps = fake.context()?.log.params.filter(
+        (call) => call.kind === 'ramp' && (call.node === 'gain#3' || call.node === 'gain#6'),
+      )
+      expect(musicRamps).toContainEqual({
+        atSecs: 7,
+        kind: 'ramp',
+        node: 'gain#3',
+        param: 'gain',
+        value: 0,
+      })
+      expect(musicRamps).toContainEqual({
+        atSecs: 7,
+        kind: 'ramp',
+        node: 'gain#6',
+        param: 'gain',
+        value: 0.6,
+      })
+      expect(fake.context()?.log.stopped).toContainEqual({ atSecs: 7, node: 'buffer#2' })
+    }),
+  )
+
   it.effect('keeps an official per-tone gain above unity on the Web Audio graph', () =>
     Effect.gen(function* () {
       const { fake, backend } = withFake()
@@ -1660,7 +1923,13 @@ describe('resource limits and lifecycle', () => {
       expect(yield* audio.preloadSamples()).toMatchObject({ loaded: 1 })
       yield* audio.dispose
 
-      expect(yield* audio.preloadSamples()).toEqual({ cached: 0, failed: 1, loaded: 0, requested: 1 })
+      expect(yield* audio.preloadSamples()).toEqual({
+        cached: 0,
+        failed: 1,
+        failedSampleIds: [sampleId('step')],
+        loaded: 0,
+        requested: 1,
+      })
     }),
   )
 

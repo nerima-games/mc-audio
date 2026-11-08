@@ -204,7 +204,11 @@ const envelopeScale = (shaped: number, duration: number): number => {
  * a triangle with no sustain, which is the right shape for a click-length
  * sound, and never a shape whose points are out of order.
  */
-export const toneEnvelope = (request: ToneRequest, startSecs: AudioDurationSecs): ToneEnvelope => {
+export const toneEnvelope = (
+  request: ToneRequest,
+  startSecs: AudioDurationSecs,
+  fadeInSecs: AudioDurationSecs = ATTACK_SECS,
+): ToneEnvelope => {
   const peakGain = clampNonNegative(request.gain)
   const start = resolveStart(startSecs)
 
@@ -216,7 +220,7 @@ export const toneEnvelope = (request: ToneRequest, startSecs: AudioDurationSecs)
       peakGain,
       points: [
         { atSecs: start, gain: audioGain(SILENT_GAIN_VALUE), kind: 'set' },
-        { atSecs: audioDurationSecs(start + ATTACK_SECS), gain: peakGain, kind: 'ramp' },
+        { atSecs: audioDurationSecs(start + fadeInSecs), gain: peakGain, kind: 'ramp' },
       ],
       startSecs: start,
       stopAtSecs: null,
