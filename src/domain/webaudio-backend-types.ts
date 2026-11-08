@@ -13,6 +13,18 @@ import type { AudioAssetManifest } from './audio-asset-manifest.js'
 import type { Effect } from 'effect'
 import type { WebAudioConstructorName } from './webaudio-runtime.js'
 
+type AudioSampleAbortSignalSurface = {
+  readonly aborted: boolean
+  readonly reason: unknown
+  addEventListener(type: 'abort', listener: () => void): void
+  removeEventListener(type: 'abort', listener: () => void): void
+}
+
+/** Use the host's standard signal when available without adding DOM or Node types to the domain build. */
+export type AudioSampleAbortSignal = typeof globalThis extends { AbortSignal: { prototype: infer Signal } }
+  ? Signal
+  : AudioSampleAbortSignalSurface
+
 export type WebAudioOptions = {
   /**
    * Where to look for a constructor. In a browser this is `globalThis`; in a
@@ -38,8 +50,8 @@ export type WebAudioOptions = {
   readonly sampleManifest?: AudioSampleManifest
   /** Licensed cue assets. Missing or failed files retain oscillator fallback. */
   readonly audioAssetManifest?: AudioAssetManifest
-  /** Host-owned URL transport, keeping fetch and DOM types outside the domain. */
-  readonly loadSampleData?: (url: AudioSampleUrl) => PromiseLike<ArrayBuffer>
+  /** Host-owned URL transport. The signal is aborted when the load times out or the backend is disposed. */
+  readonly loadSampleData?: (url: AudioSampleUrl, signal: AudioSampleAbortSignal) => PromiseLike<ArrayBuffer>
   /** Maximum time in milliseconds for loading and decoding one sample. Omitted defaults to 15,000; zero expires immediately. Invalid values are reported as typed sample failures. */
   readonly sampleLoadTimeoutMs?: AudioTimeoutMs
   /** Maximum time in milliseconds a cue playback event waits for its sample. Omitted defaults to 250; zero expires immediately. */

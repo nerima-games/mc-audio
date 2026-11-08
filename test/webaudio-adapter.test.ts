@@ -53,7 +53,7 @@ import {
 } from '../src/domain/audio-brands'
 import { AudioBackendPort, type ToneRequest } from '../src/domain/backend-port'
 import type { AudioSampleManifest, AudioSampleSource } from '../src/domain/audio-sample'
-import type { WebAudioOptions } from '../src/domain/webaudio-backend-types'
+import type { AudioSampleAbortSignal, WebAudioOptions } from '../src/domain/webaudio-backend-types'
 import { type CaptionEvent, CaptionStream } from '../src/domain/caption'
 import { SoundCueId } from '../src/domain/cue'
 import { decodeAudioAssetManifest } from '../src/domain/audio-asset-manifest'
@@ -487,6 +487,8 @@ describe('decoded sample playback', () => {
       let resolveLoadStarted = (): void => {
         throw new Error('sample loader did not start')
       }
+      const loadState: { signal: AudioSampleAbortSignal | null } = { signal: null }
+      let hostAbortEvents = 0
       const loadStarted = new Promise<void>((resolve) => {
         resolveLoadStarted = resolve
       })
@@ -495,7 +497,12 @@ describe('decoded sample playback', () => {
       })
       const audio = yield* makeWebAudioBackend({
         global: fake.global,
-        loadSampleData: async () => {
+        loadSampleData: async (url, signal) => {
+          expect(url).toBe('/audio/step.ogg')
+          loadState.signal = signal
+          signal.addEventListener('abort', () => {
+            hostAbortEvents += 1
+          })
           resolveLoadStarted?.()
           return loadResult
         },
@@ -506,9 +513,13 @@ describe('decoded sample playback', () => {
       const playback = yield* Effect.forkScoped(audio.playTone({ ...CUE, soundId: sampleId('step') }))
       yield* Effect.promise(() => loadStarted)
       yield* audio.dispose
+      expect(loadState.signal?.aborted).toBe(true)
+      expect(hostAbortEvents).toBe(1)
       resolveLoad(new ArrayBuffer(4))
+      yield* Effect.promise(() => Promise.resolve())
 
       expect(yield* Fiber.join(playback)).toEqual({ accepted: false, id: 1, refusalReason: 'context-unavailable' })
+      expect(fake.context()?.decodedData).toHaveLength(0)
       expect(fake.context()?.bufferSources).toHaveLength(0)
       expect(fake.context()?.oscillators).toHaveLength(0)
       expect(yield* audio.report).toMatchObject({ activeTones: 0, disposed: true, refusedTones: 1 })
@@ -612,6 +623,20 @@ describe('decoded sample playback', () => {
       // rather than a decoded buffer.
       expect(fake.context()?.bufferSources).toHaveLength(0)
       expect(fake.context()?.oscillators).toHaveLength(1)
+    }),
+  )
+
+  it.effect('fails a sample load when the audio context is unavailable', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio({ present: false })
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        sampleManifest: audioSampleManifest({ step: { data: new ArrayBuffer(4), kind: 'array-buffer' } }),
+      })
+
+      expect(yield* audio.preloadSamples([sampleId('step')])).toMatchObject({ failed: 1 })
+      expect(fake.context()).toBeNull()
+      yield* audio.dispose
     }),
   )
 
@@ -738,13 +763,15 @@ describe('decoded sample playback', () => {
       let finishSampleRead: ((data: ArrayBuffer) => void) | null = null
       let signalStreamStarted: (() => void) | null = null
       let sampleReads = 0
+      const loadState: { signal: AudioSampleAbortSignal | null } = { signal: null }
       const streamStarted = new Promise<void>((resolve) => {
         signalStreamStarted = resolve
       })
       const audio = yield* makeWebAudioBackend({
         global: fake.global,
-        loadSampleData: () => {
+        loadSampleData: (_url, signal) => {
           sampleReads += 1
+          loadState.signal = signal
           return new Promise<ArrayBuffer>((resolve) => {
             finishSampleRead = resolve
           })
@@ -772,6 +799,7 @@ describe('decoded sample playback', () => {
       const playback = yield* Fiber.join(playbackFiber)
       expect(playback).toMatchObject({ accepted: false, refusalReason: 'asset-load-failed' })
       expect(sampleReads).toBe(1)
+      expect(loadState.signal?.aborted).toBe(true)
       expect((yield* audio.report).sampleLoadFailures).toMatchObject([
         { file: '/audio/title.ogg', reason: 'load-timeout' },
       ])

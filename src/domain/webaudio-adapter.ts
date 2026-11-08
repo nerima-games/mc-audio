@@ -72,7 +72,7 @@
  * shrugging one, and it is why `docs/design-notes.md` DN-1 is the invariant
  * this repository protects hardest.
  */
-import { Deferred, Effect, Layer, Option, Ref, Result } from 'effect'
+import { Deferred, Effect, Exit, Layer, Option, Ref, Result, Scope } from 'effect'
 import { AudioCount, AudioDiagnosticPath as makeAudioDiagnosticPath, AudioDurationSecs, AudioFrequencyHz, AudioGain, AudioHandleId, AudioPan, AudioPlaybackRate, AudioSampleId, AudioTimeoutMs, AudioVolume } from './audio-brands.js'
 import {
   type AudioAvailability,
@@ -114,6 +114,7 @@ import type {
   AudioScheduledSourceSurface,
 } from './webaudio-surface.js'
 import type {
+  AudioSampleAbortSignal,
   WebAudioBackend,
   WebAudioOptions,
   WebAudioReport,
@@ -142,14 +143,14 @@ const resolveSampleLoadTimeoutMs = (
 const sampleLoadBytes = (
   source: AudioSampleSource,
   loadSampleData: WebAudioOptions['loadSampleData'],
-): (() => PromiseLike<ArrayBuffer>) | undefined => {
+): ((signal: AudioSampleAbortSignal) => PromiseLike<ArrayBuffer>) | undefined => {
   if (source.kind === 'array-buffer') {
     return () => Promise.resolve(source.data.slice(0))
   }
   if (loadSampleData === undefined) {
     return undefined
   }
-  return () => loadSampleData(source.url)
+  return (signal) => loadSampleData(source.url, signal)
 }
 
 const FOOTSTEP_SURFACE_BY_CUE: ReadonlyMap<SoundCueId, FootstepSurface> = new Map<SoundCueId, FootstepSurface>([
@@ -163,6 +164,7 @@ export type { AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } fr
 export { availabilityForState } from './webaudio-runtime.js'
 export type { WebAudioConstructorName } from './webaudio-runtime.js'
 export type {
+  AudioSampleAbortSignal,
   WebAudioBackend,
   WebAudioOptions,
   WebAudioReport,
@@ -376,6 +378,7 @@ export const makeWebAudioBackend = (
     const masterGainValueRef = yield* Ref.make(clamp01(initialMasterGain))
     const mutedRef = yield* Ref.make(false)
     const disposedRef = yield* Ref.make(false)
+    let disposed = false
     const maxConcurrentTones = resolveMaxConcurrentTones(options.maxConcurrentTones)
     const activeTones = new Map<AudioHandleId, ActiveTone>()
     const nextIdRef = yield* Ref.make(0)
@@ -388,6 +391,7 @@ export const makeWebAudioBackend = (
     let spontaneousStateChanges = 0
     const sampleCache = new Map<AudioSampleId, AudioBufferSurface>()
     const sampleLoads = new Map<AudioSampleId, Deferred.Deferred<boolean>>()
+    const sampleLoadScope = yield* Scope.make()
     const preloadedStreams = new Set<AudioSampleId>()
     const sampleManifest = configuredManifest
     const assetVariantCursors = new Map<SoundCueId, number>()
@@ -524,8 +528,8 @@ export const makeWebAudioBackend = (
         let failureReason: AudioSampleLoadFailure['reason'] = 'load-failed'
         const loading = Effect.tryPromise({
           catch: (cause) => cause,
-          try: (signal) => loadBytes().then((data) => {
-            if (signal.aborted) {
+          try: (signal) => loadBytes(signal).then((data) => {
+            if (disposed || signal.aborted) {
               return Promise.reject(signal.reason)
             }
             failureReason = 'decode-failed'
@@ -540,9 +544,6 @@ export const makeWebAudioBackend = (
             reason: failureReason,
             sampleId,
           })
-          return null
-        }
-        if (yield* Ref.get(disposedRef)) {
           return null
         }
         yield* clearSampleLoadFailure(sampleId)
@@ -569,9 +570,11 @@ export const makeWebAudioBackend = (
     ): Effect.Effect<AudioSampleLoadReport> =>
       preloadAudioSamples(soundIds, {
         cache: sampleCache,
+        disposed: disposedRef,
         effectSampleIds,
         effectSampleLoadTimeoutMs,
         loadSample,
+        loadScope: sampleLoadScope,
         manifest: sampleManifest,
         ...(onlyPreload ? { onlyPreload: true } : {}),
         pendingLoads: sampleLoads,
@@ -1135,14 +1138,17 @@ export const makeWebAudioBackend = (
     })
 
     const dispose: Effect.Effect<void> = Effect.gen(function*  dispose() {
-      if (yield* Ref.getAndSet(disposedRef, true)) {
+      if (disposed) {
         return
       }
+      disposed = true
+      yield* Ref.set(disposedRef, true)
+      sampleLoads.clear()
+      yield* Scope.close(sampleLoadScope, Exit.void)
       const runtime = yield* Ref.get(runtimeRef)
       if (Option.isNone(runtime)) {
         sampleCache.clear()
         preloadedStreams.clear()
-        sampleLoads.clear()
         return
       }
       for (const tone of activeTones.values()) {
@@ -1152,7 +1158,6 @@ export const makeWebAudioBackend = (
       activeTones.clear()
       sampleCache.clear()
       preloadedStreams.clear()
-      sampleLoads.clear()
       yield* closeContext(runtime.value.context)
     })
 

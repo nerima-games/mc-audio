@@ -6,7 +6,7 @@
  */
 import { AudioSampleId, type AudioSampleId as AudioSampleIdType, type AudioTimeoutMs, AudioCount as audioCount } from './audio-brands.js'
 import type { AudioSampleLoadFailure, AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
-import { Deferred, Effect, Option } from 'effect'
+import { Cause, Deferred, Effect, Exit, Option, Ref, type Scope } from 'effect'
 import type { AudioBufferSurface } from './webaudio-surface.js'
 
 const INITIAL_COUNT = 0
@@ -22,6 +22,8 @@ export type AudioSamplePreloadOptions = {
   readonly sampleLoadTimeoutMs: AudioTimeoutMs | null
   readonly effectSampleIds: ReadonlySet<AudioSampleId>
   readonly effectSampleLoadTimeoutMs: AudioTimeoutMs | null
+  readonly loadScope: Scope.Scope
+  readonly disposed: Ref.Ref<boolean>
   readonly useEffectSampleDeadline: boolean
   readonly recordLoadFailure: (
     soundId: AudioSampleId,
@@ -136,6 +138,13 @@ const waitForSampleLoad = (input: {
     })),
   )
 
+const loadExitForWaiters = (exit: Exit.Exit<boolean, never>): Exit.Exit<boolean, never> => {
+  if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
+    return Exit.succeed(false)
+  }
+  return exit
+}
+
 const loadWithDeadline = (
   soundId: AudioSampleId,
   source: AudioSampleSource,
@@ -175,23 +184,39 @@ const getOrStartSampleLoad = (
       options.pendingLoads.delete(soundId)
     }
   })
-  const completeLoad = Effect.exit(load).pipe(
-    Effect.flatMap((exit) => Deferred.done(deferred, exit)),
+  // Disposal interrupts shared loads; complete their waiters as failed preloads.
+  const completeLoad = load.pipe(
+    Effect.onExit((exit) => Deferred.done(deferred, loadExitForWaiters(exit))),
     Effect.ensuring(cleanup),
   )
-  yield* Effect.forkDetach(completeLoad)
+  yield* Effect.forkIn(completeLoad, options.loadScope)
   return deferred
+})
+
+const resolveSampleWaitTimeout = (
+  soundId: AudioSampleId,
+  source: AudioSampleSource,
+  options: AudioSamplePreloadOptions,
+): Effect.Effect<AudioTimeoutMs | null> => Effect.gen(function* resolveSampleWaitTimeoutEffect() {
+  if (yield* Ref.get(options.disposed)) {
+    return null
+  }
+  const timeoutMs = sampleWaitTimeoutFor(soundId, options)
+  if (timeoutMs === null) {
+    yield* options.recordLoadFailure(soundId, source, 'invalid-timeout')
+    return null
+  }
+  if (timeoutMs === IMMEDIATE_TIMEOUT_MS) {
+    yield* options.recordLoadFailure(soundId, source, 'load-timeout')
+    return null
+  }
+  return timeoutMs
 })
 
 const startSampleLoad = (soundId: AudioSampleId, source: AudioSampleSource, options: AudioSamplePreloadOptions): Effect.Effect<boolean> =>
   Effect.gen(function* startSampleLoadEffect() {
-    const waitTimeoutMs = sampleWaitTimeoutFor(soundId, options)
+    const waitTimeoutMs = yield* resolveSampleWaitTimeout(soundId, source, options)
     if (waitTimeoutMs === null) {
-      yield* options.recordLoadFailure(soundId, source, 'invalid-timeout')
-      return false
-    }
-    if (waitTimeoutMs === IMMEDIATE_TIMEOUT_MS) {
-      yield* options.recordLoadFailure(soundId, source, 'load-timeout')
       return false
     }
 
