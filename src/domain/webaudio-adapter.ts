@@ -522,11 +522,10 @@ export const makeWebAudioBackend = (
         let failureReason: AudioSampleLoadFailure['reason'] = 'load-failed'
         const loading = Effect.tryPromise({
           catch: (cause) => cause,
-          try: async () => {
-            const data = await loadBytes()
+          try: () => loadBytes().then((data) => {
             failureReason = 'decode-failed'
-            return await runtime.value.context.decodeAudioData(data)
-          },
+            return runtime.value.context.decodeAudioData(data)
+          }),
         }).pipe(Effect.timeoutOption(sampleLoadTimeoutMs))
         const result = yield* Effect.result(loading)
         if (Result.isFailure(result)) {
