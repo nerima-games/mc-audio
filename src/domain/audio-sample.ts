@@ -27,6 +27,13 @@ export type AudioSampleSource =
 
 export type AudioSampleManifest = ReadonlyMap<AudioSampleId, AudioSampleSource>
 
+export type AudioSampleLoadFailure = {
+  readonly _tag: 'AudioSampleLoadFailure'
+  readonly sampleId: AudioSampleIdType
+  readonly file: string
+  readonly reason: 'asset-missing' | 'decode-failed' | 'invalid-timeout' | 'load-failed' | 'load-timeout' | 'loader-unavailable'
+}
+
 export const mergeAudioSampleManifests = (
   base: AudioSampleManifest,
   additions: AudioSampleManifest,

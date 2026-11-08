@@ -23,17 +23,17 @@ import {
   type MinecraftMusicDataFailure,
   type MinecraftMusicDefinition,
   type MinecraftMusicPlan,
-  type MinecraftMusicScene,
-  type MinecraftMusicScenePlaylist,
-  type MinecraftMusicScenePlaylistManifest,
   type MinecraftMusicState,
+  type MusicScene,
+  type MusicScenePlaylist,
+  type MusicScenePlaylistManifest,
   initialMinecraftMusicState,
-  minecraftMusicDefinitionForSceneTrack,
+  musicDefinitionForSceneTrack,
   planMinecraftMusic,
   resolveMinecraftBackgroundMusicDefinition,
   resolveMinecraftMusicDefinition,
   selectMinecraftBiomeMusicDefinition,
-  selectMinecraftMusicSceneTrack,
+  selectMusicSceneTrack,
 } from './minecraft-music.js'
 import { type MinecraftSoundRegistry, resolveMinecraftSound } from './minecraft-sounds.js'
 import type { ResolvedMinecraftSound } from './minecraft-sounds-types.js'
@@ -60,8 +60,8 @@ export type MinecraftMusicTickInput = {
   readonly backgroundMusic?: MinecraftBackgroundMusic | null
   readonly biomeMusic?: MinecraftBiomeMusic
   readonly definition?: MinecraftMusicDefinition | null
-  readonly scene?: MinecraftMusicScene
-  readonly scenePlaylists?: MinecraftMusicScenePlaylistManifest
+  readonly scene?: MusicScene
+  readonly scenePlaylists?: MusicScenePlaylistManifest
 }
 
 export type MinecraftMusicTickResult = {
@@ -124,8 +124,8 @@ type SceneMusicSelection = {
 }
 
 type SceneMusicSelectionCache = {
-  readonly scene: MinecraftMusicScene
-  readonly track: MinecraftMusicScenePlaylist['tracks'][number]
+  readonly scene: MusicScene
+  readonly track: MusicScenePlaylist['tracks'][number]
 }
 
 type SceneMusicSelectionOptions = {
@@ -137,16 +137,16 @@ type SceneMusicSelectionOptions = {
 }
 
 type SceneTrackSelectionOptions = Omit<SceneMusicSelectionOptions, 'input'> & {
-  readonly manifest: MinecraftMusicScenePlaylistManifest
-  readonly playlist: MinecraftMusicScenePlaylist
-  readonly scene: MinecraftMusicScene
+  readonly manifest: MusicScenePlaylistManifest
+  readonly playlist: MusicScenePlaylist
+  readonly scene: MusicScene
 }
 
 type CachedSceneTrackOptions = {
   readonly currentActive: boolean
   readonly previousSelection: SceneMusicSelectionCache | null
-  readonly playlist: MinecraftMusicScenePlaylist
-  readonly scene: MinecraftMusicScene
+  readonly playlist: MusicScenePlaylist
+  readonly scene: MusicScene
   readonly state: MinecraftMusicState
 }
 
@@ -363,7 +363,11 @@ const makeMusicCommandApplier = ({
       }
       const primaryVolume = clampNonNegative(resolved.volume)
       const primaryPlayback = yield* playResolvedMusic(resolved)
-      if (primaryPlayback.accepted || fallbackResolved === null) {
+      if (
+        primaryPlayback.accepted ||
+        fallbackResolved === null ||
+        primaryPlayback.refusalReason !== 'asset-load-failed'
+      ) {
         return { playback: primaryPlayback, resolvedVolume: primaryVolume }
       }
       const fallbackPlayback = yield* playResolvedMusic(fallbackResolved)
@@ -565,13 +569,13 @@ const selectBiomeMusicForTick = ({
 
 const sceneMusicSelectionFor = (
   input: MinecraftMusicTickInput,
-  playlist: MinecraftMusicScenePlaylist,
+  playlist: MusicScenePlaylist,
   track: SceneMusicSelectionCache['track'] | null,
 ): SceneMusicSelection => {
   let definition: MinecraftMusicDefinition | null = null
   let fallbackDefinition: MinecraftMusicDefinition | null = null
   if (track !== null) {
-    definition = minecraftMusicDefinitionForSceneTrack(playlist, track)
+    definition = musicDefinitionForSceneTrack(playlist, track)
     fallbackDefinition = resolveMinecraftMusicDefinition(input.context)
   }
   return {
@@ -631,7 +635,7 @@ const selectSceneTrackForTick = ({
     if (cachedTrack !== null) {
       return cachedTrack
     }
-    const track = yield* Effect.fromResult(selectMinecraftMusicSceneTrack({
+    const track = yield* Effect.fromResult(selectMusicSceneTrack({
       manifest,
       random: randomSource(),
       scene,
@@ -646,8 +650,8 @@ const selectSceneTrackForTick = ({
 
 type ScenePlaylistSelectionOptions = Omit<SceneMusicSelectionOptions, 'input'> & {
   readonly input: MinecraftMusicTickInput
-  readonly manifest: MinecraftMusicScenePlaylistManifest
-  readonly scene: MinecraftMusicScene
+  readonly manifest: MusicScenePlaylistManifest
+  readonly scene: MusicScene
 }
 
 const selectScenePlaylistForTick = ({

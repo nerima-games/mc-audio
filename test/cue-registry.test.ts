@@ -21,6 +21,7 @@ const EXPECTED_CUE_IDS = [
   'inventoryOpen',
   'itemPickup',
   'inventoryClose',
+  'footstepDefault',
   'footstepGrass',
   'footstepStone',
   'footstepWood',
@@ -35,7 +36,7 @@ describe('sound cue contract', () => {
     expect(footstepCueFor('grass')).toBe('footstepGrass')
     expect(footstepCueFor('wood')).toBe('footstepWood')
     expect(footstepCueFor('stone')).toBe('footstepStone')
-    expect(footstepCueFor('default')).toBeUndefined()
+    expect(footstepCueFor('default')).toBe('footstepDefault')
   })
 
   it('pins the complete reference roster and the unknown-id boundary', () => {

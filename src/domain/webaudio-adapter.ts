@@ -85,6 +85,7 @@ import {
 } from './backend-port.js'
 import {
   mergeAudioSampleManifests,
+  type AudioSampleLoadFailure,
   type AudioSampleLoadReport,
   type AudioSampleManifest,
   type AudioSampleSource,
@@ -124,8 +125,30 @@ export { DEFAULT_TONE_WAVE } from './webaudio-tone-graph.js'
 
 /** A conservative ceiling that prevents pathological cue bursts from exhausting nodes. */
 export const DEFAULT_MAX_CONCURRENT_TONES: AudioCount = AudioCount(32)
+export const DEFAULT_SAMPLE_LOAD_TIMEOUT_MS = 15_000
+
+const resolveSampleLoadTimeoutMs = (value: number | undefined): number | null => {
+  if (value === undefined) {
+    return DEFAULT_SAMPLE_LOAD_TIMEOUT_MS
+  }
+  return Number.isFinite(value) && value >= 0 ? value : null
+}
+
+const sampleLoadBytes = (
+  source: AudioSampleSource,
+  loadSampleData: WebAudioOptions['loadSampleData'],
+): (() => PromiseLike<ArrayBuffer>) | undefined => {
+  if (source.kind === 'array-buffer') {
+    return () => Promise.resolve(source.data.slice(0))
+  }
+  if (loadSampleData === undefined) {
+    return undefined
+  }
+  return () => loadSampleData(source.url)
+}
 
 const FOOTSTEP_SURFACE_BY_CUE: ReadonlyMap<SoundCueId, FootstepSurface> = new Map<SoundCueId, FootstepSurface>([
+  [makeSoundCueId('footstepDefault'), 'default'],
   [makeSoundCueId('footstepGrass'), 'grass'],
   [makeSoundCueId('footstepStone'), 'stone'],
   [makeSoundCueId('footstepWood'), 'wood'],
@@ -328,8 +351,11 @@ export const makeWebAudioBackend = (
     const {
       audioAssetManifest,
       initialMasterGain = 0.8,
+      loadSampleData,
       sampleManifest: configuredSampleManifest = new Map(),
+      sampleLoadTimeoutMs: configuredSampleLoadTimeoutMs,
     } = options
+    const sampleLoadTimeoutMs = resolveSampleLoadTimeoutMs(configuredSampleLoadTimeoutMs)
     const generatedAssetSamples: AudioSampleManifest = audioAssetManifest === undefined
       ? new Map()
       : audioAssetSampleManifest(audioAssetManifest)
@@ -347,6 +373,7 @@ export const makeWebAudioBackend = (
     const refusedTonesRef = yield* Ref.make(0)
     const capacityRefusalsRef = yield* Ref.make(0)
     const audioAssetFailuresRef = yield* Ref.make<ReadonlyArray<AudioAssetLoadFailure>>([])
+    const sampleLoadFailuresRef = yield* Ref.make<ReadonlyArray<AudioSampleLoadFailure>>([])
     let spontaneousStateChanges = 0
     const sampleCache = new Map<AudioSampleId, AudioBufferSurface>()
     const sampleLoads = new Map<AudioSampleId, Deferred.Deferred<boolean>>()
@@ -371,6 +398,16 @@ export const makeWebAudioBackend = (
         }
         return [...current, failure]
       })
+    const recordSampleLoadFailure = (failure: AudioSampleLoadFailure): Effect.Effect<void> =>
+      Ref.update(sampleLoadFailuresRef, (current) => {
+        const previous = current.find((recorded) => recorded.sampleId === failure.sampleId)
+        if (previous?.file === failure.file && previous.reason === failure.reason) {
+          return current
+        }
+        return [...current.filter((recorded) => recorded.sampleId !== failure.sampleId), failure]
+      })
+    const clearSampleLoadFailure = (sampleId: AudioSampleId): Effect.Effect<void> =>
+      Ref.update(sampleLoadFailuresRef, (current) => current.filter((failure) => failure.sampleId !== sampleId))
     const hasConfiguredPreloads = [...sampleManifest.values()].some((source) => source.preload === true)
 
     /** Feature detection, as a value rather than as a global read. */
@@ -453,7 +490,7 @@ export const makeWebAudioBackend = (
     )
 
     const loadSample = (
-      _soundId: AudioSampleId,
+      sampleId: AudioSampleId,
       source: AudioSampleSource,
     ): Effect.Effect<AudioBufferSurface | null> =>
       Effect.gen(function* loadSampleEffect() {
@@ -461,40 +498,93 @@ export const makeWebAudioBackend = (
         if (Option.isNone(runtime) || (yield* Ref.get(disposedRef))) {
           return null
         }
-        const { loadSampleData } = options
-        let data: ArrayBuffer | null = null
-        if (source.kind === 'array-buffer') {
-          const { data: arrayBuffer } = source
-          data = arrayBuffer.slice(0)
-        } else if (loadSampleData !== undefined) {
-          const { url } = source
-          data = yield* Effect.tryPromise({
-            catch: (cause) => cause,
-            try: () => loadSampleData(url),
-          }).pipe(Effect.catch(() => Effect.succeed(null)))
-        }
-        if (data === null) {
+        const file = source.kind === 'url' ? source.url : String(sampleId)
+        const loadBytes = sampleLoadBytes(source, loadSampleData)
+        if (sampleLoadTimeoutMs === null) {
+          yield* recordSampleLoadFailure({
+            _tag: 'AudioSampleLoadFailure',
+            file,
+            reason: 'invalid-timeout',
+            sampleId,
+          })
           return null
         }
-        const decoded = yield* Effect.tryPromise({
+        if (loadBytes === undefined) {
+          yield* recordSampleLoadFailure({
+            _tag: 'AudioSampleLoadFailure',
+            file,
+            reason: 'loader-unavailable',
+            sampleId,
+          })
+          return null
+        }
+
+        let failureReason: AudioSampleLoadFailure['reason'] = 'load-failed'
+        const loading = Effect.tryPromise({
           catch: (cause) => cause,
-          try: () => runtime.value.context.decodeAudioData(data),
-        }).pipe(Effect.catch(() => Effect.succeed(null)))
-        if (decoded === null || (yield* Ref.get(disposedRef))) {
+          try: async () => {
+            const data = await loadBytes()
+            failureReason = 'decode-failed'
+            return await runtime.value.context.decodeAudioData(data)
+          },
+        }).pipe(Effect.timeoutOption(sampleLoadTimeoutMs))
+        const result = yield* Effect.result(loading)
+        if (Result.isFailure(result)) {
+          yield* recordSampleLoadFailure({
+            _tag: 'AudioSampleLoadFailure',
+            file,
+            reason: failureReason,
+            sampleId,
+          })
           return null
         }
-        return decoded
+        if (Option.isNone(result.success)) {
+          yield* recordSampleLoadFailure({
+            _tag: 'AudioSampleLoadFailure',
+            file,
+            reason: 'load-timeout',
+            sampleId,
+          })
+          return null
+        }
+        if (yield* Ref.get(disposedRef)) {
+          return null
+        }
+        yield* clearSampleLoadFailure(sampleId)
+        return result.success.value
       })
 
-    const preloadSamples = (soundIds?: ReadonlyArray<AudioSampleId>): Effect.Effect<AudioSampleLoadReport> =>
+    const recordMissingSampleFailures = (report: AudioSampleLoadReport): Effect.Effect<void> =>
+      Effect.forEach(report.failedSampleIds ?? [], (sampleId) => {
+        if (sampleManifest.has(sampleId)) {
+          return Effect.void
+        }
+        return recordSampleLoadFailure({
+          _tag: 'AudioSampleLoadFailure',
+          file: String(sampleId),
+          reason: 'asset-missing',
+          sampleId,
+        })
+      }).pipe(Effect.asVoid)
+
+    const preloadSamplesWithOptions = (
+      soundIds: ReadonlyArray<AudioSampleId> | undefined,
+      onlyPreload: boolean,
+    ): Effect.Effect<AudioSampleLoadReport> =>
       preloadAudioSamples(soundIds, {
         cache: sampleCache,
         loadSample,
         manifest: sampleManifest,
+        ...(onlyPreload ? { onlyPreload: true } : {}),
         pendingLoads: sampleLoads,
         preloadStream: options.preloadStream,
         preloadedStreams,
+        sampleLoadTimeoutMs,
       })
+        .pipe(Effect.tap(recordMissingSampleFailures))
+
+    const preloadSamples = (soundIds?: ReadonlyArray<AudioSampleId>): Effect.Effect<AudioSampleLoadReport> =>
+      preloadSamplesWithOptions(soundIds, false)
 
     const assetLoader = audioAssetManifest === undefined
       ? undefined
@@ -534,25 +624,70 @@ export const makeWebAudioBackend = (
         yield* releaseTone(tone)
       })
 
-    const scheduleTone = (
-      request: ToneRequest,
-      fadeInSecs?: AudioDurationSecs,
+    type RefusedTonePreparation = { readonly kind: 'refused'; readonly playback: TonePlayback }
+    type ToneRequestPreparation =
+      | RefusedTonePreparation
+      | {
+          readonly context: AudioContextSurface
+          readonly kind: 'ready'
+          readonly master: ContextRuntime['master']
+          readonly maxConcurrentTones: AudioCount
+          readonly playbackRate: AudioPlaybackRate
+          readonly playbackRequest: AdmittedToneRequest
+          readonly sampleId: Option.Option<AudioSampleId>
+          readonly sampleLoadReport: AudioSampleLoadReport | undefined
+        }
+    type TonePreparation =
+      | RefusedTonePreparation
+      | {
+          readonly context: AudioContextSurface
+          readonly envelope: ReturnType<typeof toneEnvelope>
+          readonly kind: 'ready'
+          readonly master: ContextRuntime['master']
+          readonly playbackRate: AudioPlaybackRate
+          readonly playbackRequest: AdmittedToneRequest
+          readonly sampleBuffer: AudioBufferSurface | null
+          readonly streamSource: AudioScheduledSourceSurface | null
+        }
+
+    const refusedTone = (
+      id: AudioHandleId,
+      refusalReason: NonNullable<TonePlayback['refusalReason']>,
     ): Effect.Effect<TonePlayback> =>
-      Effect.gen(function* scheduleToneEffect() {
-        // Handles stay uniform across the admission gate; accepted is authoritative.
-        const id = AudioHandleId(yield* Ref.updateAndGet(nextIdRef, (value) => value + 1))
-        const refusedPlayback = (): TonePlayback => ({ accepted: false, id })
+      Effect.gen(function* refusedToneEffect() {
+        if (refusalReason !== 'silent') {
+          yield* Ref.update(refusedTonesRef, (count) => count + 1)
+        }
+        if (refusalReason === 'capacity') {
+          yield* Ref.update(capacityRefusalsRef, (count) => count + 1)
+        }
+        return { accepted: false, id, refusalReason }
+      })
+
+    const preloadRequestSample = (
+      sampleId: Option.Option<AudioSampleId>,
+    ): Effect.Effect<AudioSampleLoadReport | undefined> => {
+      if (Option.isNone(sampleId) || !sampleManifest.has(sampleId.value)) {
+        return Effect.succeed(undefined)
+      }
+      return preloadSamples([sampleId.value])
+    }
+
+    const prepareToneRequest = (
+      id: AudioHandleId,
+      request: ToneRequest,
+    ): Effect.Effect<ToneRequestPreparation> =>
+      Effect.gen(function* prepareToneRequestEffect() {
+        const refuse = (reason: NonNullable<TonePlayback['refusalReason']>): Effect.Effect<RefusedTonePreparation> =>
+          refusedTone(id, reason).pipe(Effect.map((playback): RefusedTonePreparation => ({ kind: 'refused', playback })))
         const admission = playbackAdmission(request, maxConcurrentTones)
         if (Option.isNone(admission)) {
-          yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          return refusedPlayback()
+          return yield* refuse('invalid-request')
         }
         const { maxConcurrentTones: concurrentToneLimit, playbackRate, request: playbackRequest, sampleId } = admission.value
-
         const runtime = yield* ensureRuntime
         if (Option.isNone(runtime)) {
-          yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          return refusedPlayback()
+          return yield* refuse('context-unavailable')
         }
 
         const { context, master } = runtime.value
@@ -562,23 +697,86 @@ export const makeWebAudioBackend = (
           // Swallowing that refusal is what let it build a node graph for a
           // Sound nobody could hear. Refusing early costs one counter and
           // Keeps the graph honest.
-          yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          return refusedPlayback()
+          return yield* refuse('context-locked')
         }
 
-        if (Option.isSome(sampleId) && sampleManifest.has(sampleId.value)) {
-          yield* preloadSamples([sampleId.value]).pipe(Effect.asVoid)
+        const sampleLoadReport = yield* preloadRequestSample(sampleId)
+        if (yield* Ref.get(disposedRef)) {
+          return yield* refuse('context-unavailable')
         }
+        if (context.state !== 'running') {
+          return yield* refuse('context-locked')
+        }
+        return {
+          context,
+          kind: 'ready',
+          master,
+          maxConcurrentTones: concurrentToneLimit,
+          playbackRate,
+          playbackRequest,
+          sampleId,
+          sampleLoadReport,
+        }
+      })
 
-        if ((yield* Ref.get(disposedRef)) || context.state !== 'running') {
-          yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          return refusedPlayback()
+    const sampleOnlyRefusal = ({
+      id,
+      playbackRequest,
+      sampleCanPlay,
+      sampleId,
+      sampleLoadReport,
+    }: {
+      readonly id: AudioHandleId
+      readonly playbackRequest: ToneRequest
+      readonly sampleCanPlay: boolean
+      readonly sampleId: Option.Option<AudioSampleId>
+      readonly sampleLoadReport: AudioSampleLoadReport | undefined
+    }): Effect.Effect<TonePlayback | null> =>
+      Effect.gen(function* sampleOnlyRefusalEffect() {
+        if (playbackRequest.sampleOnly !== true || Option.isNone(sampleId) || sampleCanPlay) {
+          return null
         }
+        const sampleLoadFailed = sampleLoadReport?.failedSampleIds?.includes(sampleId.value) ?? false
+        const sampleSource = sampleManifest.get(sampleId.value)
+        if (sampleLoadFailed || sampleSource === undefined) {
+          if (sampleSource === undefined) {
+            yield* recordSampleLoadFailure({
+              _tag: 'AudioSampleLoadFailure',
+              file: String(sampleId.value),
+              reason: 'asset-missing',
+              sampleId: sampleId.value,
+            })
+          }
+          return yield* refusedTone(id, 'asset-load-failed')
+        }
+        return yield* refusedTone(id, 'source-unavailable')
+      })
+
+    const prepareTone = (
+      id: AudioHandleId,
+      request: ToneRequest,
+      fadeInSecs?: AudioDurationSecs,
+    ): Effect.Effect<TonePreparation> =>
+      Effect.gen(function* prepareToneEffect() {
+        const refuse = (reason: NonNullable<TonePlayback['refusalReason']>): Effect.Effect<TonePreparation> =>
+          refusedTone(id, reason).pipe(Effect.map((playback): TonePreparation => ({ kind: 'refused', playback })))
+        const requestPreparation = yield* prepareToneRequest(id, request)
+        if (requestPreparation.kind === 'refused') {
+          return requestPreparation
+        }
+        const {
+          context,
+          master,
+          maxConcurrentTones: concurrentToneLimit,
+          playbackRate,
+          playbackRequest,
+          sampleId,
+          sampleLoadReport,
+        } = requestPreparation
 
         const sampleResolution = yield* resolveSampleBuffer(playbackRequest, options, sampleCache)
         if (sampleResolution.kind === 'invalid') {
-          yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          return refusedPlayback()
+          return yield* refuse('invalid-request')
         }
         const { buffer: sampleBuffer } = sampleResolution
         const canUseSample = sampleBuffer !== null && context.createBufferSource !== undefined
@@ -587,25 +785,21 @@ export const makeWebAudioBackend = (
             ? sampleDurationSecs(sampleBuffer, playbackRate)
             : Option.some(playbackRequest.durationSecs)
         if (Option.isNone(sampleDuration)) {
-          yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          return refusedPlayback()
+          return yield* refuse('invalid-request')
         }
         const scheduledRequest = { ...playbackRequest, durationSecs: sampleDuration.value }
         const startSecs = audioTime(context.currentTime)
         if (Option.isNone(startSecs)) {
-          yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          return refusedPlayback()
+          return yield* refuse('backend-failure')
         }
         const envelope = toneEnvelope(scheduledRequest, startSecs.value, fadeInSecs)
         if (envelope.peakGain === 0) {
-          return refusedPlayback()
+          return yield* refuse('silent')
         }
 
         const activeCount = [...activeTones.values()].filter((tone) => !tone.releasing).length
         if (activeCount >= concurrentToneLimit) {
-          yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          yield* Ref.update(capacityRefusalsRef, (count) => count + 1)
-          return refusedPlayback()
+          return yield* refuse('capacity')
         }
 
         const streamSource = yield* streamSourceForRequest({
@@ -614,20 +808,55 @@ export const makeWebAudioBackend = (
           request: playbackRequest,
           sampleManifest,
         })
+        const sampleCanPlay = canUseSample || streamSource !== null
+        const unsupportedSample = yield* sampleOnlyRefusal({
+          id,
+          playbackRequest,
+          sampleCanPlay,
+          sampleId,
+          sampleLoadReport,
+        })
+        if (unsupportedSample !== null) {
+          return { kind: 'refused', playback: unsupportedSample }
+        }
 
+        return {
+          context,
+          envelope,
+          kind: 'ready',
+          master,
+          playbackRate,
+          playbackRequest,
+          sampleBuffer: canUseSample ? sampleBuffer : null,
+          streamSource,
+        }
+      })
+
+    const scheduleTone = (
+      request: ToneRequest,
+      fadeInSecs?: AudioDurationSecs,
+    ): Effect.Effect<TonePlayback> =>
+      Effect.gen(function* scheduleToneEffect() {
+        // Handles stay uniform across the admission gate; accepted is authoritative.
+        const id = AudioHandleId(yield* Ref.updateAndGet(nextIdRef, (value) => value + 1))
+        const prepared = yield* prepareTone(id, request, fadeInSecs)
+        if (prepared.kind === 'refused') {
+          return prepared.playback
+        }
+
+        const { context, envelope, master, playbackRate, playbackRequest, sampleBuffer, streamSource } = prepared
         const built = yield* buildToneGraph({
           context,
           envelope,
           master,
           playbackRate,
           request: playbackRequest,
-          sampleBuffer: canUseSample ? sampleBuffer : null,
+          sampleBuffer,
           streamSource,
         }).pipe(Effect.catch(() => Effect.succeed(null)))
 
         if (built === null) {
-          yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          return refusedPlayback()
+          return yield* refusedTone(id, 'backend-failure')
         }
 
         activeTones.set(id, built)
@@ -641,8 +870,7 @@ export const makeWebAudioBackend = (
 
         if (!scheduled) {
           yield* discardTone(id, built)
-          yield* Ref.update(refusedTonesRef, (count) => count + 1)
-          return refusedPlayback()
+          return yield* refusedTone(id, 'backend-failure')
         }
 
         yield* Effect.forkDetach(
@@ -853,37 +1081,23 @@ export const makeWebAudioBackend = (
     })
 
     const playMusic = (request: MusicRequest): Effect.Effect<TonePlayback> =>
-      Effect.gen(function* scheduleMusic() {
-        const sampleId = AudioSampleId.option(request.soundId)
-        if (Option.isSome(sampleId)) {
-          yield* preloadSamples([sampleId.value]).pipe(Effect.asVoid)
-        }
-        return yield* scheduleTone({
-          durationSecs: AudioDurationSecs(1),
-          frequency: AudioFrequencyHz(20),
-          gain: request.gain,
-          loop: false,
-          naturalDuration: true,
-          pan: AudioPan(0),
-          playbackRate: request.playbackRate,
-          sampleOnly: true,
-          soundId: request.soundId,
-          stream: request.stream,
-        }, request.fadeInSecs)
-      })
+      scheduleTone({
+        durationSecs: AudioDurationSecs(1),
+        frequency: AudioFrequencyHz(20),
+        gain: request.gain,
+        loop: false,
+        naturalDuration: true,
+        pan: AudioPan(0),
+        playbackRate: request.playbackRate,
+        sampleOnly: true,
+        soundId: request.soundId,
+        stream: request.stream,
+      }, request.fadeInSecs)
 
     // No Effect.catch wrapper: `preloadAudioSamples` types its error channel
     // As `never` (per-sample failures are reported in the returned counts,
     // Not thrown), so there is nothing for a catch here to ever handle.
-    const autoPreload = preloadAudioSamples(undefined, {
-      cache: sampleCache,
-      loadSample,
-      manifest: sampleManifest,
-      onlyPreload: true,
-      pendingLoads: sampleLoads,
-      preloadStream: options.preloadStream,
-      preloadedStreams,
-    }).pipe(Effect.asVoid)
+    const autoPreload = preloadSamplesWithOptions(undefined, true).pipe(Effect.asVoid)
     yield* Ref.set(autoPreloadEffectRef, autoPreload)
 
     const report: Effect.Effect<WebAudioReport> = Effect.gen(function*  report() {
@@ -908,6 +1122,7 @@ export const makeWebAudioBackend = (
         disposed: yield* Ref.get(disposedRef),
         muted: yield* Ref.get(mutedRef),
         refusedTones: AudioCount(yield* Ref.get(refusedTonesRef)),
+        sampleLoadFailures: yield* Ref.get(sampleLoadFailuresRef),
         spontaneousStateChanges: AudioCount(spontaneousStateChanges),
         unlockAttempts: AudioCount(yield* Ref.get(unlockAttemptsRef)),
         unlockRefusals: AudioCount(yield* Ref.get(unlockRefusalsRef)),

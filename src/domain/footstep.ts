@@ -7,7 +7,7 @@ export const FOOTSTEP_SURFACES = ['default', 'grass', 'wood', 'stone'] as const
 export type FootstepSurface = (typeof FOOTSTEP_SURFACES)[number]
 
 /** Resolve a surface classification to the registered spatial cue. */
-export const cueForSurface = (surface: FootstepSurface): SoundCueId | undefined => {
+export const cueForSurface = (surface: FootstepSurface): SoundCueId => {
   switch (surface) {
     case 'grass':
       return soundCueId('footstepGrass')
@@ -16,7 +16,7 @@ export const cueForSurface = (surface: FootstepSurface): SoundCueId | undefined 
     case 'stone':
       return soundCueId('footstepStone')
     case 'default':
-      return
+      return soundCueId('footstepDefault')
     // Unreachable: the switch above already exhausts every FootstepSurface
     // Member, so `surface` is narrowed to `never` here. This arm exists only
     // So a future addition to FOOTSTEP_SURFACES fails to compile instead of

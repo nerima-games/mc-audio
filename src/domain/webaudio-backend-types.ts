@@ -8,7 +8,7 @@ import type {
   WebAudioGlobalSurface,
 } from './webaudio-surface.js'
 import type { AudioCount, AudioSampleId, AudioSampleUrl, AudioVolume } from './audio-brands.js'
-import type { AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
+import type { AudioSampleLoadFailure, AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
 import type { AudioAssetManifest } from './audio-asset-manifest.js'
 import type { Effect } from 'effect'
 import type { WebAudioConstructorName } from './webaudio-runtime.js'
@@ -40,6 +40,8 @@ export type WebAudioOptions = {
   readonly audioAssetManifest?: AudioAssetManifest
   /** Host-owned URL transport, keeping fetch and DOM types outside the domain. */
   readonly loadSampleData?: (url: AudioSampleUrl) => PromiseLike<ArrayBuffer>
+  /** Maximum time in milliseconds for loading and decoding one sample. Omitted defaults to 15,000; zero expires immediately. Invalid values are reported as typed sample failures. */
+  readonly sampleLoadTimeoutMs?: number
   /** Host-owned source creation for sounds that must remain streamed. */
   readonly createStreamSource?: (options: WebAudioStreamSourceOptions) => AudioScheduledSourceSurface | null
   /** Host-owned preload for streamed sounds that cannot be decoded as buffers. */
@@ -74,6 +76,8 @@ export type WebAudioReport = {
   readonly activeTones: AudioCount
   /** Cue-keyed asset failures observed during preload or playback. */
   readonly audioAssetFailures: ReadonlyArray<AudioAssetLoadFailure>
+  /** File-keyed sample failures observed during preload or playback. */
+  readonly sampleLoadFailures: ReadonlyArray<AudioSampleLoadFailure>
   /** How many times the browser changed `state` without being asked. */
   readonly spontaneousStateChanges: AudioCount
   readonly muted: boolean

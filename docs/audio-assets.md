@@ -1,6 +1,6 @@
 # Audio asset manifests
 
-`AudioAssetManifest` maps the existing `SoundCueId` values to licensed effect recordings. `MinecraftMusicScenePlaylistManifest` maps music scenes to licensed tracks. This change adds no recordings or offline asset-generation scripts; the existing procedural music bank remains the playback fallback.
+`AudioAssetManifest` maps the existing `SoundCueId` values to licensed effect recordings. `MusicScenePlaylistManifest` maps music scenes to licensed tracks. This change adds no recordings or offline asset-generation scripts; the existing procedural music bank remains the playback fallback.
 
 ## Cue recordings and attribution
 
@@ -66,9 +66,11 @@ This TypeScript example builds a manifest the decoder accepts. It uses repositor
 ```ts
 import { Result } from 'effect'
 import {
-  decodeMinecraftMusicScenePlaylistManifest,
-  minecraftMusicScenePlaylistRegistry,
-  minecraftMusicScenePlaylistSampleManifest,
+  decodeMusicScenePlaylistManifest,
+  mergeAudioSampleManifests,
+  mergeSoundRegistries,
+  musicScenePlaylistRegistry,
+  musicScenePlaylistSampleManifest,
 } from '@nerima-games/mc-audio'
 
 const generatedAttribution = {
@@ -105,29 +107,31 @@ const scenePlaylists = {
   creative: playlist(track('creative/main')),
 }
 
-const decodedMusic = decodeMinecraftMusicScenePlaylistManifest(scenePlaylists)
+const decodedMusic = decodeMusicScenePlaylistManifest(scenePlaylists)
 if (Result.isSuccess(decodedMusic)) {
   const manifest = decodedMusic.success
-  const sampleManifest = minecraftMusicScenePlaylistSampleManifest(manifest)
-  const registry = minecraftMusicScenePlaylistRegistry(manifest)
+  const registry = mergeSoundRegistries(existingMusicRegistry, musicScenePlaylistRegistry(manifest))
+  const sampleManifest = mergeAudioSampleManifests(existingSampleManifest, musicScenePlaylistSampleManifest(manifest))
 }
 ```
 
-On failure, handle `decodedMusic.failure` before using the manifest. Inside the success branch, `manifest` is the value supplied to the registry/sample helpers and to `player.tick` as `scenePlaylists`.
+`existingMusicRegistry` and `existingSampleManifest` are the host's current music maps, including its procedural fallback tracks. The registry merge applies the scene registry as an overlay; the sample merge keeps existing sample IDs on collisions.
+
+On failure, handle `decodedMusic.failure` before using the manifest. Inside the success branch, pass `manifest` to the registry and sample helpers, then to `player.tick` as `scenePlaylists`.
 
 `crossfadeTicks` must be an integer from 1 through 200. `minimumSilenceTicks` must be an integer from 1 through 24,000, and `maximumSilenceTicks` must be at least the minimum and no greater than 24,000. An `eventId` cannot map to different file or attribution values. It may recur across scenes when that mapping is identical.
 
-`decodeMinecraftMusicScenePlaylistManifest` returns a typed `Result`; check it before using the manifest. Pass its success value to `minecraftMusicScenePlaylistSampleManifest` and `minecraftMusicScenePlaylistRegistry`. The sample manifest uses the track's relative `file` path as its sample URL. `loadSampleData` receives that path as an `AudioSampleUrl`, and the host resolves it against its resource pack, base URL, or asset store. Pass the scene and manifest to `player.tick({ context, scene, scenePlaylists, musicVolume })`. `musicVolume` controls BGM independently from the effect volume.
+`decodeMusicScenePlaylistManifest` returns a typed `Result`; check it before using the manifest. Pass its success value to `musicScenePlaylistSampleManifest` and `musicScenePlaylistRegistry`. The sample manifest uses the track's relative `file` path as its sample URL. `loadSampleData` receives that path as an `AudioSampleUrl`, and the host resolves it against its resource pack, base URL, or asset store. Pass the scene and manifest to `player.tick({ context, scene, scenePlaylists, musicVolume })`. `musicVolume` controls BGM independently from the effect volume.
 
-Use `createFreeMinecraftMusicPack` for the existing procedural fallback. After checking the pack result, merge `pack.registry` with `minecraftMusicScenePlaylistRegistry(manifest)` using `mergeMinecraftSoundRegistries`. Merge `pack.manifest` with `minecraftMusicScenePlaylistSampleManifest(manifest)` using `mergeAudioSampleManifests`. The WebAudio music path refuses its `sampleOnly` request when a scene file cannot load or decode. The player retries the matching procedural track only after that refusal; successful scene asset playback does not invoke the fallback.
+Merge `musicScenePlaylistRegistry(manifest)` into the host's existing music registry with `mergeSoundRegistries(existingRegistry, musicScenePlaylistRegistry(manifest))`. Merge `musicScenePlaylistSampleManifest(manifest)` into the host's existing sample map with `mergeAudioSampleManifests(existingSamples, musicScenePlaylistSampleManifest(manifest))`. Keep the existing generated-track registry available as the procedural fallback. A failed or timed-out BGM asset read or decode is recorded in `backend.report.sampleLoadFailures` with its file and reason; only that asset-load refusal selects the procedural track. Context unavailable or locked and capacity refusals remain playback failures and do not select the fallback.
 
-Call `audioAssetCredits` for cue attribution and `minecraftMusicScenePlaylistCredits` for music attribution. Both return distinct rows for in-game credits and distribution notices. Generated rows include the generator path, SPDX identifier, license name, repository `LICENSE` path, and canonical license URL. External rows include the author, work title, source page, and license details.
+Call `audioAssetCredits` for cue attribution and `musicScenePlaylistCredits` for music attribution. Both return distinct rows for credits and distribution notices. Generated rows include the generator path, SPDX identifier, license name, repository `LICENSE` path, and canonical license URL. External rows include the author, work title, source page, and license details.
 
 ## Loading and cue playback
 
-Pass the decoded cue manifest to `makeWebAudioBackend` as `audioAssetManifest`, provide the host-owned `loadSampleData` path transport, and call `backend.preloadAudioAssets` when preloading is needed. It returns an `Effect.Effect<AudioAssetLoadReport>` with aggregate sample counts and typed `AudioAssetLoadFailure` entries naming the failed cue files. After lazy playback, read the `backend.report` Effect and inspect `audioAssetFailures` for typed failures recorded before procedural fallback. A Promise-based host can evaluate it with `Effect.runPromise(backend.report)`.
+Pass the decoded cue manifest to `makeWebAudioBackend` as `audioAssetManifest`, provide the host-owned `loadSampleData` path transport, and call `backend.preloadAudioAssets` when preloading is needed. It returns an `Effect.Effect<AudioAssetLoadReport>` with aggregate sample counts and typed `AudioAssetLoadFailure` entries naming failed cue files. The default sample-load deadline is `DEFAULT_SAMPLE_LOAD_TIMEOUT_MS` (15,000 ms); set `sampleLoadTimeoutMs` to change it. Zero expires immediately. The deadline covers host stream preloads, file reads, and decoding. Invalid negative or non-finite values appear as `invalid-timeout` failures instead of using the default. Rejected reads, failed decodes, and timeouts appear by file in `backend.report.sampleLoadFailures`; cue-specific entries also appear in `audioAssetFailures`. A Promise-based host can evaluate the report with `Effect.runPromise(backend.report)`.
 
-The registered cue IDs are `blockBreak`, `blockPlace`, `playerHurt`, `entityHit`, `mobHurt`, `mobDeath`, `enchant`, `inventoryOpen`, `itemPickup`, `inventoryClose`, `footstepGrass`, `footstepStone`, `footstepWood`, `rainAmbient`, `thunderClap`, `levelUp`, and `achievementUnlock`. The source of truth is [`src/data/cue-definitions.ts`](../src/data/cue-definitions.ts).
+The registered cue IDs are `blockBreak`, `blockPlace`, `playerHurt`, `entityHit`, `mobHurt`, `mobDeath`, `enchant`, `inventoryOpen`, `itemPickup`, `inventoryClose`, `footstepDefault`, `footstepGrass`, `footstepStone`, `footstepWood`, `rainAmbient`, `thunderClap`, `levelUp`, and `achievementUnlock`. The source of truth is [`src/data/cue-definitions.ts`](../src/data/cue-definitions.ts).
 
 `mapAudioEvent` maps the host event kinds as follows:
 
@@ -140,10 +144,15 @@ The registered cue IDs are `blockBreak`, `blockPlace`, `playerHurt`, `entityHit`
 | `hurt` targeting the player | `playerHurt` | None |
 | `hurt` targeting a mob | `mobHurt` | None |
 | `mobDeath` | `mobDeath` | None |
-| `footstep` | Grass: `footstepGrass`; stone: `footstepStone`; wood: `footstepWood`; default: no cue | Resolved by `surfaceForBlockType` |
+| `footstep` | Default: `footstepDefault`; grass: `footstepGrass`; stone: `footstepStone`; wood: `footstepWood` | Resolved by `surfaceForBlockType` |
 | `ambient` with `layer: 'thunder'` | `thunderClap` | None |
 | `ambient` with `layer: 'rain'` or no layer | `rainAmbient` | None |
+| `enchant` | `enchant` | None |
+| `inventoryOpen` | `inventoryOpen` | None |
+| `inventoryClose` | `inventoryClose` | None |
+| `levelUp` | `levelUp` | None |
+| `achievementUnlock` | `achievementUnlock` | None |
 
-`enchant`, `inventoryOpen`, `inventoryClose`, `levelUp`, and `achievementUnlock` remain registered for direct cue requests; `mapAudioEvent` does not currently map event kinds to them. The `SoundCueService` emits captions before calling the existing `AudioBackend.playTone`, including when an asset fails. Mining, placement, and footstep mappings return the resolved surface. Footsteps on the default surface return `cueId: null` because no default footstep cue is registered.
+`mapAudioEvent` returns a cue for every listed event. The `SoundCueService` emits captions before calling `AudioBackend.playTone`, including when an asset fails. Mining, placement, and footstep mappings return the resolved surface.
 
-The WebAudio adapter infers the surface from grass, stone, and wood footstep cues. It prefers exact-surface variants, then variants without a surface, and otherwise considers all variants. It cycles through eligible variants in manifest order. Hosts that need surface selection for mining or placement can call `selectAudioAsset({ manifest, cueId, variantIndex: AudioCount(0), surface })`; `AudioCount` brands the zero-based variant index as a non-negative integer. The helper returns a typed failure if that cue has no variants.
+The WebAudio adapter infers the surface from default, grass, stone, and wood footstep cues. It prefers exact-surface variants, then variants without a surface, and otherwise considers all variants. It cycles through eligible variants in manifest order. Hosts that need surface selection for mining or placement can call `selectAudioAsset({ manifest, cueId, variantIndex: AudioCount(0), surface })`; `AudioCount` brands the zero-based variant index as a non-negative integer. The helper returns a typed failure if that cue has no variants.

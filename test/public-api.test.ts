@@ -1,11 +1,19 @@
 import * as publicApi from '../src/index'
 import type { AudioAssetWorkTitle as InternalAudioAssetWorkTitle } from '../src/domain/audio-asset-manifest'
-import type { AudioAssetWorkTitle as PublicAudioAssetWorkTitle } from '../src/index'
+import type { AudioSampleLoadFailure as InternalAudioSampleLoadFailure } from '../src/domain/audio-sample'
+import type {
+  AudioAssetWorkTitle as PublicAudioAssetWorkTitle,
+  AudioSampleLoadFailure as PublicAudioSampleLoadFailure,
+} from '../src/index'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 describe('public API', () => {
   it('exports the branded asset work title type', () => {
     expectTypeOf<PublicAudioAssetWorkTitle>().toEqualTypeOf<InternalAudioAssetWorkTitle>()
+  })
+
+  it('exports the typed sample load failure', () => {
+    expectTypeOf<PublicAudioSampleLoadFailure>().toEqualTypeOf<InternalAudioSampleLoadFailure>()
   })
 
   it('matches the reviewed runtime export surface', () => {
@@ -48,6 +56,7 @@ describe('public API', () => {
         "DEFAULT_CAVE_THRESHOLD_Y",
         "DEFAULT_MAX_CONCURRENT_TONES",
         "DEFAULT_MAX_SIMULTANEOUS_END_SOUNDS",
+        "DEFAULT_SAMPLE_LOAD_TIMEOUT_MS",
         "DEFAULT_TONE_WAVE",
         "DEFAULT_VOLUME_SETTINGS",
         "DRAGON_BATTLE_PHASES",
@@ -77,13 +86,13 @@ describe('public API', () => {
         "MINECRAFT_MUSIC_DEFAULT_MAX_DELAY_TICKS",
         "MINECRAFT_MUSIC_DEFAULT_MIN_DELAY_TICKS",
         "MINECRAFT_MUSIC_GAIN_STEP",
-        "MINECRAFT_MUSIC_PLAYLIST_CROSSFADE_TICK_LIMIT",
-        "MINECRAFT_MUSIC_PLAYLIST_SILENCE_TICK_LIMIT",
-        "MINECRAFT_MUSIC_SCENES",
         "MINECRAFT_MUSIC_STARTING_DELAY_TICKS",
         "MIN_DURATION_SECS",
         "MIN_FREQUENCY_HZ",
         "MUSIC_ENVIRONMENTS",
+        "MUSIC_SCENES",
+        "MUSIC_SCENE_PLAYLIST_CROSSFADE_TICK_LIMIT",
+        "MUSIC_SCENE_PLAYLIST_SILENCE_TICK_LIMIT",
         "MUSIC_TRACKS",
         "MinecraftMobSoundVariantId",
         "MinecraftSoundEventId",
@@ -121,7 +130,7 @@ describe('public API', () => {
         "cueForSurface",
         "currentAvailability",
         "decodeAudioAssetManifest",
-        "decodeMinecraftMusicScenePlaylistManifest",
+        "decodeMusicScenePlaylistManifest",
         "drivenFrequency",
         "effectiveMusicGain",
         "effectiveSfxGain",
@@ -153,15 +162,16 @@ describe('public API', () => {
         "masterNodeGain",
         "mergeAudioSampleManifests",
         "mergeMinecraftSoundRegistries",
-        "minecraftMusicDefinitionForSceneTrack",
-        "minecraftMusicScenePlaylistCredits",
-        "minecraftMusicScenePlaylistRegistry",
-        "minecraftMusicScenePlaylistSampleManifest",
+        "mergeSoundRegistries",
         "minecraftSoundAssetUrl",
         "minecraftSoundManifest",
         "minecraftSpatialise",
         "missingMinecraft26_2SoundEvents",
         "missingMinecraft26_3Snapshot9SoundEvents",
+        "musicDefinitionForSceneTrack",
+        "musicScenePlaylistCredits",
+        "musicScenePlaylistRegistry",
+        "musicScenePlaylistSampleManifest",
         "musicTrackGain",
         "normalizeMinecraftAmbientSoundsDefinition",
         "normalizeMinecraftAudioComponent",
@@ -196,8 +206,8 @@ describe('public API', () => {
         "resolveMusicPlan",
         "selectAudioAsset",
         "selectMinecraftBiomeMusicDefinition",
-        "selectMinecraftMusicSceneTrack",
         "selectMinecraftSoundVariant",
+        "selectMusicSceneTrack",
         "spatialise",
         "surfaceForBlockType",
         "toneEnvelope",

@@ -112,6 +112,7 @@ export type ToneHandle = {
  */
 export type TonePlayback = ToneHandle & {
   readonly accepted: boolean
+  readonly refusalReason?: 'asset-load-failed' | 'capacity' | 'context-locked' | 'context-unavailable' | 'invalid-request' | 'source-unavailable' | 'silent' | 'backend-failure'
 }
 
 export type AudioBackend = {

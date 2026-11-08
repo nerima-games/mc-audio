@@ -15,7 +15,7 @@ describe('footstep audio mapping', () => {
     expect(cueForSurface('grass')).toBe('footstepGrass')
     expect(cueForSurface('wood')).toBe('footstepWood')
     expect(cueForSurface('stone')).toBe('footstepStone')
-    expect(cueForSurface('default')).toBeUndefined()
+    expect(cueForSurface('default')).toBe('footstepDefault')
     expect(footstepCueFor).toBe(cueForSurface)
   })
 

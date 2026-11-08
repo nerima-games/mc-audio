@@ -35,7 +35,7 @@ describe('audio event map', () => {
     }
   })
 
-  it('maps footsteps by surface and returns no custom cue for the default surface', () => {
+  it('maps footsteps by surface including the default cue', () => {
     expect(mapAudioEvent({ kind: 'footstep', blockType: 'grass_block' })).toEqual(Result.succeed({
       cueId: 'footstepGrass',
       surface: 'grass',
@@ -49,9 +49,23 @@ describe('audio event map', () => {
       surface: 'stone',
     }))
     expect(mapAudioEvent({ kind: 'footstep', blockType: 'glass' })).toEqual(Result.succeed({
-      cueId: null,
+      cueId: 'footstepDefault',
       surface: 'default',
     }))
+  })
+
+  it('maps enchant, inventory, level-up, and achievement events', () => {
+    const cues = [
+      [{ kind: 'enchant' }, 'enchant'],
+      [{ kind: 'inventoryOpen' }, 'inventoryOpen'],
+      [{ kind: 'inventoryClose' }, 'inventoryClose'],
+      [{ kind: 'levelUp' }, 'levelUp'],
+      [{ kind: 'achievementUnlock' }, 'achievementUnlock'],
+    ] as const
+
+    for (const [event, cueId] of cues) {
+      expect(mapAudioEvent(event)).toEqual(Result.succeed({ cueId }))
+    }
   })
 
   it('returns typed failures for invalid and unknown block types', () => {

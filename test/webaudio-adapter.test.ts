@@ -58,6 +58,7 @@ import { makeSoundCueService } from '../src/domain/engine'
 import { ATTACK_SECS, RELEASE_SECS, toneEnvelope } from '../src/domain/envelope'
 import { DEFAULT_VOLUME_SETTINGS } from '../src/domain/volume'
 import {
+  DEFAULT_SAMPLE_LOAD_TIMEOUT_MS,
   DEFAULT_TONE_WAVE,
   availabilityForState,
   makeWebAudioBackend,
@@ -85,6 +86,9 @@ const audioSampleManifest = (entries: Readonly<Record<string, SampleFixture>>): 
   ] as const))
 
 const sampleId = (id: string) => AudioSampleId(id)
+const neverSettlingPromise = <A>(): Promise<A> => new Promise((resolve) => {
+  void resolve
+})
 
 const cueAssetManifest = () => {
   const result = decodeAudioAssetManifest({
@@ -475,10 +479,46 @@ describe('decoded sample playback', () => {
       yield* audio.dispose
       resolveLoad(new ArrayBuffer(4))
 
-      expect(yield* Fiber.join(playback)).toEqual({ accepted: false, id: 1 })
+      expect(yield* Fiber.join(playback)).toEqual({ accepted: false, id: 1, refusalReason: 'context-unavailable' })
       expect(fake.context()?.bufferSources).toHaveLength(0)
       expect(fake.context()?.oscillators).toHaveLength(0)
       expect(yield* audio.report).toMatchObject({ activeTones: 0, disposed: true, refusedTones: 1 })
+    }),
+  )
+
+  it.effect('refuses a sample when the context locks during its asynchronous preload', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      let resolveLoad = (_data: ArrayBuffer): void => {
+        throw new Error('sample loader did not start')
+      }
+      let resolveLoadStarted = (): void => {
+        throw new Error('sample loader did not start')
+      }
+      const loadStarted = new Promise<void>((resolve) => {
+        resolveLoadStarted = resolve
+      })
+      const loadResult = new Promise<ArrayBuffer>((resolve) => {
+        resolveLoad = resolve
+      })
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        loadSampleData: async () => {
+          resolveLoadStarted?.()
+          return loadResult
+        },
+        sampleManifest: audioSampleManifest({ step: { kind: 'url', url: '/audio/step.ogg' } }),
+      })
+
+      yield* audio.unlock
+      const playback = yield* Effect.forkScoped(audio.playTone({ ...CUE, soundId: sampleId('step') }))
+      yield* Effect.promise(() => loadStarted)
+      fake.context()?.interrupt()
+      resolveLoad(new ArrayBuffer(4))
+
+      expect(yield* Fiber.join(playback)).toEqual({ accepted: false, id: 1, refusalReason: 'context-locked' })
+      expect(fake.context()?.bufferSources).toHaveLength(0)
+      expect(fake.context()?.oscillators).toHaveLength(0)
     }),
   )
 
@@ -563,6 +603,155 @@ describe('decoded sample playback', () => {
         requested: 1,
       })
       expect(fake.context()?.decodedData).toHaveLength(0)
+    }),
+  )
+
+  it.effect('clears a file failure after a later preload succeeds', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      let loads = 0
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        loadSampleData: async () => {
+          loads += 1
+          if (loads === 1) {
+            throw new Error('temporary sample read failure')
+          }
+          return new ArrayBuffer(4)
+        },
+        sampleManifest: audioSampleManifest({ step: { kind: 'url', url: '/audio/step.ogg' } }),
+      })
+
+      expect(yield* audio.preloadSamples([sampleId('step')])).toMatchObject({ failed: 1 })
+      expect((yield* audio.report).sampleLoadFailures).toMatchObject([
+        { file: '/audio/step.ogg', reason: 'load-failed' },
+      ])
+      yield* Effect.promise(() => Promise.resolve())
+      expect(yield* audio.preloadSamples([sampleId('step')])).toMatchObject({ loaded: 1 })
+      expect((yield* audio.report).sampleLoadFailures).toEqual([])
+      expect(loads).toBe(2)
+    }),
+  )
+
+  it.effect('times out a pending music sample and reports the failed file', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        loadSampleData: () => neverSettlingPromise<ArrayBuffer>(),
+        sampleLoadTimeoutMs: 0,
+        sampleManifest: audioSampleManifest({ title: { kind: 'url', stream: false, url: '/audio/title.ogg' } }),
+      })
+      yield* audio.unlock
+
+      const playback = yield* audio.playMusic({
+        gain: AudioGain(1),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('title'),
+        stream: false,
+      })
+
+      expect(DEFAULT_SAMPLE_LOAD_TIMEOUT_MS).toBe(15_000)
+      expect(playback).toMatchObject({ accepted: false, refusalReason: 'asset-load-failed' })
+      expect((yield* audio.report).sampleLoadFailures).toEqual([{
+        _tag: 'AudioSampleLoadFailure',
+        file: '/audio/title.ogg',
+        reason: 'load-timeout',
+        sampleId: sampleId('title'),
+      }])
+    }),
+  )
+
+  it.effect('bounds a pending host stream preload before its decoded-file fallback', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      let streamPreloads = 0
+      let sampleReads = 0
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        loadSampleData: () => {
+          sampleReads += 1
+          return neverSettlingPromise<ArrayBuffer>()
+        },
+        preloadStream: () => {
+          streamPreloads += 1
+          return Effect.never
+        },
+        sampleLoadTimeoutMs: 0,
+        sampleManifest: audioSampleManifest({ title: { kind: 'url', stream: true, url: '/audio/title.ogg' } }),
+      })
+      yield* audio.unlock
+
+      const playback = yield* audio.playMusic({
+        gain: AudioGain(1),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('title'),
+        stream: true,
+      })
+
+      expect(playback).toMatchObject({ accepted: false, refusalReason: 'asset-load-failed' })
+      expect(streamPreloads).toBe(1)
+      expect(sampleReads).toBe(1)
+      expect((yield* audio.report).sampleLoadFailures).toMatchObject([
+        { file: '/audio/title.ogg', reason: 'load-timeout' },
+      ])
+    }),
+  )
+
+  it.effect('accepts a file resolved within a positive sample load deadline', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        loadSampleData: async () => new ArrayBuffer(4),
+        sampleLoadTimeoutMs: 1_000,
+        sampleManifest: audioSampleManifest({ title: { kind: 'url', stream: false, url: '/audio/title.ogg' } }),
+      })
+      yield* audio.unlock
+
+      const playback = yield* audio.playMusic({
+        gain: AudioGain(1),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('title'),
+        stream: false,
+      })
+
+      expect(playback.accepted).toBe(true)
+      expect((yield* audio.report).sampleLoadFailures).toEqual([])
+    }),
+  )
+
+  it.effect('reports invalid sample load deadlines instead of substituting the default', () =>
+    Effect.gen(function* () {
+      for (const sampleLoadTimeoutMs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        const fake = makeFakeWebAudio()
+        let loads = 0
+        let streamPreloads = 0
+        const audio = yield* makeWebAudioBackend({
+          global: fake.global,
+          loadSampleData: async () => {
+            loads += 1
+            return new ArrayBuffer(4)
+          },
+          preloadStream: () => {
+            streamPreloads += 1
+            return Effect.succeed(true)
+          },
+          sampleLoadTimeoutMs,
+          sampleManifest: audioSampleManifest({ title: { kind: 'url', stream: true, url: '/audio/title.ogg' } }),
+        })
+
+        expect(yield* audio.preloadSamples([sampleId('title')])).toMatchObject({ failed: 1 })
+        expect((yield* audio.report).sampleLoadFailures).toEqual([{
+          _tag: 'AudioSampleLoadFailure',
+          file: '/audio/title.ogg',
+          reason: 'invalid-timeout',
+          sampleId: sampleId('title'),
+        }])
+        expect(loads).toBe(0)
+        expect(streamPreloads).toBe(0)
+        yield* audio.dispose
+      }
     }),
   )
 
@@ -972,6 +1161,29 @@ describe('decoded sample playback', () => {
 
       expect(fake.context()?.oscillators).toHaveLength(0)
       expect((yield* audio.report).refusedTones).toBe(1)
+    }),
+  )
+
+  it.effect('distinguishes an unavailable host music stream source from a failed file read', () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWebAudio()
+      const audio = yield* makeWebAudioBackend({
+        global: fake.global,
+        createStreamSource: () => null,
+        preloadStream: () => Effect.succeed(true),
+        sampleManifest: audioSampleManifest({ stream: { kind: 'url', stream: true, url: '/audio/stream.ogg' } }),
+      })
+      yield* audio.unlock
+
+      const playback = yield* audio.playMusic({
+        gain: AudioGain(1),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('stream'),
+        stream: true,
+      })
+
+      expect(playback).toMatchObject({ accepted: false, refusalReason: 'source-unavailable' })
+      expect((yield* audio.report).sampleLoadFailures).toEqual([])
     }),
   )
 
@@ -1469,9 +1681,40 @@ describe('a refused cue builds no nodes and is discarded, never queued', () => {
       const { backend } = withFake({ resumePolicy: 'reject' })
       const audio = yield* backend
 
-      expect(yield* audio.playTone(CUE)).toStrictEqual({ accepted: false, id: 1 })
-      expect(yield* audio.playTone(CUE)).toStrictEqual({ accepted: false, id: 2 })
+      expect(yield* audio.playTone(CUE)).toStrictEqual({ accepted: false, id: 1, refusalReason: 'context-locked' })
+      expect(yield* audio.playTone(CUE)).toStrictEqual({ accepted: false, id: 2, refusalReason: 'context-locked' })
       expect((yield* audio.report).refusedTones).toBe(2)
+    }),
+  )
+
+  it.effect('distinguishes unavailable, locked, and full-capacity music refusals', () =>
+    Effect.gen(function* () {
+      const unavailable = yield* makeWebAudioBackend({ global: makeFakeWebAudio({ present: false }).global })
+      expect(yield* unavailable.playMusic({
+        gain: AudioGain(1),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('music'),
+        stream: false,
+      })).toMatchObject({ accepted: false, refusalReason: 'context-unavailable' })
+
+      const locked = yield* makeWebAudioBackend({ global: makeFakeWebAudio({ resumePolicy: 'reject' }).global })
+      expect(yield* locked.playMusic({
+        gain: AudioGain(1),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('music'),
+        stream: false,
+      })).toMatchObject({ accepted: false, refusalReason: 'context-locked' })
+
+      const fake = makeFakeWebAudio()
+      const atCapacity = yield* makeWebAudioBackend({ global: fake.global, maxConcurrentTones: AudioCount(1) })
+      yield* atCapacity.unlock
+      yield* atCapacity.playTone({ ...CUE, loop: true })
+      expect(yield* atCapacity.playMusic({
+        gain: AudioGain(1),
+        playbackRate: AudioPlaybackRate(1),
+        soundId: MinecraftSoundResourceId('music'),
+        stream: false,
+      })).toMatchObject({ accepted: false, refusalReason: 'capacity' })
     }),
   )
 })

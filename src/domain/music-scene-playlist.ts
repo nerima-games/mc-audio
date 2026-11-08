@@ -36,7 +36,7 @@ const RANDOM_UPPER_BOUND = UNITY - Number.EPSILON
 const MUSIC_DISTANCE = 16
 const MUSIC_EVENT_PREFIX = 'mc-audio:music/'
 
-export const MINECRAFT_MUSIC_SCENES = [
+export const MUSIC_SCENES = [
   'title',
   'day',
   'night',
@@ -48,28 +48,28 @@ export const MINECRAFT_MUSIC_SCENES = [
   'creative',
 ] as const
 
-export type MinecraftMusicScene = (typeof MINECRAFT_MUSIC_SCENES)[number]
+export type MusicScene = (typeof MUSIC_SCENES)[number]
 
-export type MinecraftMusicSceneTrack = {
+export type MusicSceneTrack = {
   readonly attribution: AudioAssetAttribution
   readonly eventId: MinecraftSoundEventIdType
   readonly file: AudioAssetPath
 }
 
-export type MinecraftMusicScenePlaylist = {
+export type MusicScenePlaylist = {
   readonly crossfadeTicks: AudioDelayTicksType
   readonly maximumSilenceTicks: AudioDelayTicksType
   readonly minimumSilenceTicks: AudioDelayTicksType
-  readonly tracks: ReadonlyArray<MinecraftMusicSceneTrack>
+  readonly tracks: ReadonlyArray<MusicSceneTrack>
 }
 
-export type MinecraftMusicScenePlaylistManifest = Readonly<
-  Partial<Record<MinecraftMusicScene, MinecraftMusicScenePlaylist>> &
-  Record<string, MinecraftMusicScenePlaylist | undefined>
+export type MusicScenePlaylistManifest = Readonly<
+  Partial<Record<MusicScene, MusicScenePlaylist>> &
+  Record<string, MusicScenePlaylist | undefined>
 >
 
-export type MinecraftMusicScenePlaylistManifestFailure = {
-  readonly _tag: 'MinecraftMusicScenePlaylistManifestFailure'
+export type MusicScenePlaylistManifestFailure = {
+  readonly _tag: 'MusicScenePlaylistManifestFailure'
   readonly message: AudioDiagnosticMessage
   readonly path: AudioDiagnosticPath
 }
@@ -77,14 +77,14 @@ export type MinecraftMusicScenePlaylistManifestFailure = {
 const manifestFailure = (
   path: string,
   message: string,
-): Result.Result<never, MinecraftMusicScenePlaylistManifestFailure> => Result.fail({
-  _tag: 'MinecraftMusicScenePlaylistManifestFailure',
+): Result.Result<never, MusicScenePlaylistManifestFailure> => Result.fail({
+  _tag: 'MusicScenePlaylistManifestFailure',
   message: makeAudioDiagnosticMessage(message),
   path: makeAudioDiagnosticPath(path),
 })
 
-const failureValue = (path: string, message: string): MinecraftMusicScenePlaylistManifestFailure => ({
-  _tag: 'MinecraftMusicScenePlaylistManifestFailure',
+const failureValue = (path: string, message: string): MusicScenePlaylistManifestFailure => ({
+  _tag: 'MusicScenePlaylistManifestFailure',
   message: makeAudioDiagnosticMessage(message),
   path: makeAudioDiagnosticPath(path),
 })
@@ -94,14 +94,14 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isMissing = (value: unknown): value is undefined => Object.is(value, globalThis.undefined)
 
-const isScene = (value: string): value is MinecraftMusicScene =>
-  MINECRAFT_MUSIC_SCENES.some((scene) => scene === value)
+const isScene = (value: string): value is MusicScene =>
+  MUSIC_SCENES.some((scene) => scene === value)
 
 const onlyKeys = (
   value: Readonly<Record<string, unknown>>,
   allowed: ReadonlyArray<string>,
   path: string,
-): Result.Result<null, MinecraftMusicScenePlaylistManifestFailure> => {
+): Result.Result<null, MusicScenePlaylistManifestFailure> => {
   for (const key of Object.keys(value)) {
     if (!allowed.includes(key)) {
       return manifestFailure(path, `Unknown music playlist key: ${key}`)
@@ -124,7 +124,7 @@ const readTickRange = ({
   minimum,
   path,
   value,
-}: TickRangeInput): Result.Result<AudioDelayTicksType, MinecraftMusicScenePlaylistManifestFailure> => {
+}: TickRangeInput): Result.Result<AudioDelayTicksType, MusicScenePlaylistManifestFailure> => {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum || value > maximum) {
     return manifestFailure(path, `${label} must be an integer from ${minimum} through ${maximum}`)
   }
@@ -134,7 +134,7 @@ const readTickRange = ({
 const fileAttributionFor = (
   raw: Readonly<Record<string, unknown>>,
   path: string,
-): Result.Result<{ readonly attribution: AudioAssetAttribution; readonly file: AudioAssetPath }, MinecraftMusicScenePlaylistManifestFailure> => {
+): Result.Result<{ readonly attribution: AudioAssetAttribution; readonly file: AudioAssetPath }, MusicScenePlaylistManifestFailure> => {
   const decodedAsset = decodeAudioAssetVariant({
     attribution: raw['attribution'],
     file: raw['file'],
@@ -150,7 +150,7 @@ const fileAttributionFor = (
 const eventIdFor = (
   value: unknown,
   path: string,
-): Result.Result<MinecraftSoundEventIdType, MinecraftMusicScenePlaylistManifestFailure> => {
+): Result.Result<MinecraftSoundEventIdType, MusicScenePlaylistManifestFailure> => {
   if (typeof value !== 'string') {
     return manifestFailure(path, 'Music playlist eventId must be a non-empty string')
   }
@@ -167,7 +167,7 @@ const eventIdFor = (
 const trackRecord = (
   raw: unknown,
   path: string,
-): Result.Result<Readonly<Record<string, unknown>>, MinecraftMusicScenePlaylistManifestFailure> => {
+): Result.Result<Readonly<Record<string, unknown>>, MusicScenePlaylistManifestFailure> => {
   if (!isRecord(raw)) {
     return manifestFailure(path, 'Music playlist track must be an object')
   }
@@ -181,7 +181,7 @@ const trackRecord = (
 const trackFor = (
   raw: unknown,
   path: string,
-): Result.Result<MinecraftMusicSceneTrack, MinecraftMusicScenePlaylistManifestFailure> => {
+): Result.Result<MusicSceneTrack, MusicScenePlaylistManifestFailure> => {
   const record = trackRecord(raw, path)
   if (Result.isFailure(record)) {
     return Result.fail(record.failure)
@@ -205,10 +205,10 @@ type AppendTrackOptions = {
   readonly index: number
   readonly path: string
   readonly raw: unknown
-  readonly tracks: MinecraftMusicSceneTrack[]
+  readonly tracks: MusicSceneTrack[]
 }
 
-const appendTrack = ({ tracks, raw, index, path }: AppendTrackOptions): Result.Result<null, MinecraftMusicScenePlaylistManifestFailure> => {
+const appendTrack = ({ tracks, raw, index, path }: AppendTrackOptions): Result.Result<null, MusicScenePlaylistManifestFailure> => {
   const parsed = trackFor(raw, `${path}.tracks[${index}]`)
   if (Result.isFailure(parsed)) {
     return Result.fail(parsed.failure)
@@ -220,11 +220,11 @@ const appendTrack = ({ tracks, raw, index, path }: AppendTrackOptions): Result.R
 const trackListFor = (
   raw: unknown,
   path: string,
-): Result.Result<ReadonlyArray<MinecraftMusicSceneTrack>, MinecraftMusicScenePlaylistManifestFailure> => {
+): Result.Result<ReadonlyArray<MusicSceneTrack>, MusicScenePlaylistManifestFailure> => {
   if (!Array.isArray(raw) || raw.length === EMPTY_LENGTH) {
     return manifestFailure(`${path}.tracks`, 'Music scene playlist requires at least one track')
   }
-  const tracks: MinecraftMusicSceneTrack[] = []
+  const tracks: MusicSceneTrack[] = []
   for (const [index, track] of raw.entries()) {
     const parsed = appendTrack({ index, path, raw: track, tracks })
     if (Result.isFailure(parsed)) {
@@ -237,7 +237,7 @@ const trackListFor = (
 const playlistFor = (
   raw: unknown,
   path: string,
-): Result.Result<MinecraftMusicScenePlaylist, MinecraftMusicScenePlaylistManifestFailure> => Result.gen(
+): Result.Result<MusicScenePlaylist, MusicScenePlaylistManifestFailure> => Result.gen(
   function* parseMusicScenePlaylist() {
     if (!isRecord(raw)) {
       return yield* manifestFailure(path, 'Music scene playlist must be an object')
@@ -291,14 +291,14 @@ const attributionKey = (attribution: AudioAssetAttribution): string => {
   ].map((value) => `${value.length}:${value}`).join('')
 }
 
-const sameTrack = (left: MinecraftMusicSceneTrack, right: MinecraftMusicSceneTrack): boolean =>
+const sameTrack = (left: MusicSceneTrack, right: MusicSceneTrack): boolean =>
   left.file === right.file && attributionKey(left.attribution) === attributionKey(right.attribution)
 
 const registerPlaylistEvents = (
-  scene: MinecraftMusicScene,
-  playlist: MinecraftMusicScenePlaylist,
-  eventTracks: Map<string, MinecraftMusicSceneTrack>,
-): Result.Result<null, MinecraftMusicScenePlaylistManifestFailure> => {
+  scene: MusicScene,
+  playlist: MusicScenePlaylist,
+  eventTracks: Map<string, MusicSceneTrack>,
+): Result.Result<null, MusicScenePlaylistManifestFailure> => {
   for (const track of playlist.tracks) {
     const existing = eventTracks.get(track.eventId)
     if (!isMissing(existing) && !sameTrack(existing, track)) {
@@ -312,8 +312,8 @@ const registerPlaylistEvents = (
 const playlistEntryFor = (
   scene: string,
   rawPlaylist: unknown,
-  eventTracks: Map<string, MinecraftMusicSceneTrack>,
-): Result.Result<{ readonly playlist: MinecraftMusicScenePlaylist; readonly scene: MinecraftMusicScene }, MinecraftMusicScenePlaylistManifestFailure> => {
+  eventTracks: Map<string, MusicSceneTrack>,
+): Result.Result<{ readonly playlist: MusicScenePlaylist; readonly scene: MusicScene }, MusicScenePlaylistManifestFailure> => {
   if (!isScene(scene)) {
     return manifestFailure(scene, `Unknown music scene: ${scene}`)
   }
@@ -330,13 +330,13 @@ const playlistEntryFor = (
 
 const parseManifest = (
   input: unknown,
-): Result.Result<MinecraftMusicScenePlaylistManifest, MinecraftMusicScenePlaylistManifestFailure> => Result.gen(
+): Result.Result<MusicScenePlaylistManifest, MusicScenePlaylistManifestFailure> => Result.gen(
   function* parseMusicScenePlaylistManifest() {
     if (!isRecord(input)) {
       return yield* manifestFailure('$', 'Music scene playlist manifest must be an object')
     }
-    const entries: Partial<Record<MinecraftMusicScene, MinecraftMusicScenePlaylist>> = {}
-    const eventTracks = new Map<string, MinecraftMusicSceneTrack>()
+    const entries: Partial<Record<MusicScene, MusicScenePlaylist>> = {}
+    const eventTracks = new Map<string, MusicSceneTrack>()
     for (const [scene, rawPlaylist] of Object.entries(input)) {
       const entry = yield* playlistEntryFor(scene, rawPlaylist, eventTracks)
       entries[entry.scene] = entry.playlist
@@ -346,11 +346,11 @@ const parseManifest = (
 )
 
 /** Decode scene playlists without throwing on unknown input. */
-export const decodeMinecraftMusicScenePlaylistManifest = (
+export const decodeMusicScenePlaylistManifest = (
   input: unknown,
-): Result.Result<MinecraftMusicScenePlaylistManifest, MinecraftMusicScenePlaylistManifestFailure> => {
+): Result.Result<MusicScenePlaylistManifest, MusicScenePlaylistManifestFailure> => {
   const attempted = Result.try({
-    catch: (): MinecraftMusicScenePlaylistManifestFailure => failureValue('$', 'Music scene playlist manifest could not be decoded'),
+    catch: (): MusicScenePlaylistManifestFailure => failureValue('$', 'Music scene playlist manifest could not be decoded'),
     try: () => parseManifest(input),
   })
   return Result.match(attempted, {
@@ -359,7 +359,7 @@ export const decodeMinecraftMusicScenePlaylistManifest = (
   })
 }
 
-const randomTrackIndex = (length: number, random: unknown): Result.Result<number, MinecraftMusicScenePlaylistManifestFailure> => {
+const randomTrackIndex = (length: number, random: unknown): Result.Result<number, MusicScenePlaylistManifestFailure> => {
   if (typeof random !== 'number' || !Number.isFinite(random)) {
     return manifestFailure('random', 'Music playlist random value must be finite')
   }
@@ -368,9 +368,9 @@ const randomTrackIndex = (length: number, random: unknown): Result.Result<number
 }
 
 /** Select one track uniformly from the requested scene. */
-export const selectMinecraftMusicSceneTrack = (
-  input: { readonly manifest: MinecraftMusicScenePlaylistManifest; readonly random: unknown; readonly scene: MinecraftMusicScene },
-): Result.Result<MinecraftMusicSceneTrack | null, MinecraftMusicScenePlaylistManifestFailure> => {
+export const selectMusicSceneTrack = (
+  input: { readonly manifest: MusicScenePlaylistManifest; readonly random: unknown; readonly scene: MusicScene },
+): Result.Result<MusicSceneTrack | null, MusicScenePlaylistManifestFailure> => {
   const playlist = input.manifest[input.scene]
   if (isMissing(playlist)) {
     return Result.succeed(null)
@@ -379,8 +379,8 @@ export const selectMinecraftMusicSceneTrack = (
 }
 
 /** Convert licensed playlist paths to sample URLs used by the existing WebAudio cache. */
-export const minecraftMusicScenePlaylistSampleManifest = (
-  manifest: MinecraftMusicScenePlaylistManifest,
+export const musicScenePlaylistSampleManifest = (
+  manifest: MusicScenePlaylistManifest,
 ): AudioSampleManifest => {
   const entries = new Map<AudioSampleIdType, AudioSampleSource>()
   for (const playlist of Object.values(manifest)) {
@@ -397,8 +397,8 @@ export const minecraftMusicScenePlaylistSampleManifest = (
 }
 
 /** Build the event registry needed by the existing sound resolver and music player. */
-export const minecraftMusicScenePlaylistRegistry = (
-  manifest: MinecraftMusicScenePlaylistManifest,
+export const musicScenePlaylistRegistry = (
+  manifest: MusicScenePlaylistManifest,
 ): MinecraftSoundRegistry => {
   const events = new Map<MinecraftSoundEvent['id'], MinecraftSoundEvent>()
   for (const playlist of Object.values(manifest)) {
@@ -428,8 +428,8 @@ export const minecraftMusicScenePlaylistRegistry = (
 }
 
 /** Return distinct attribution rows for tracks in a scene playlist manifest. */
-export const minecraftMusicScenePlaylistCredits = (
-  manifest: MinecraftMusicScenePlaylistManifest,
+export const musicScenePlaylistCredits = (
+  manifest: MusicScenePlaylistManifest,
 ): ReadonlyArray<AudioAssetAttribution> => {
   const credits = new Map<string, AudioAssetAttribution>()
   for (const playlist of Object.values(manifest)) {
@@ -443,9 +443,9 @@ export const minecraftMusicScenePlaylistCredits = (
 }
 
 /** Create the existing player definition for one selected playlist track. */
-export const minecraftMusicDefinitionForSceneTrack = (
-  playlist: MinecraftMusicScenePlaylist,
-  track: MinecraftMusicSceneTrack,
+export const musicDefinitionForSceneTrack = (
+  playlist: MusicScenePlaylist,
+  track: MusicSceneTrack,
 ): MinecraftMusicDefinition => ({
   max_delay: playlist.maximumSilenceTicks,
   min_delay: playlist.minimumSilenceTicks,
@@ -453,5 +453,5 @@ export const minecraftMusicDefinitionForSceneTrack = (
   sound: track.eventId,
 })
 
-export const MINECRAFT_MUSIC_PLAYLIST_SILENCE_TICK_LIMIT: number = MAX_SILENCE_TICKS
-export const MINECRAFT_MUSIC_PLAYLIST_CROSSFADE_TICK_LIMIT: number = MAX_CROSSFADE_TICKS
+export const MUSIC_SCENE_PLAYLIST_SILENCE_TICK_LIMIT: number = MAX_SILENCE_TICKS
+export const MUSIC_SCENE_PLAYLIST_CROSSFADE_TICK_LIMIT: number = MAX_CROSSFADE_TICKS

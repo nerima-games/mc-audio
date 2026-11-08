@@ -6,7 +6,7 @@
  */
 import { AudioSampleId, type AudioSampleId as AudioSampleIdType, AudioCount as audioCount } from './audio-brands.js'
 import type { AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
-import { Deferred, Effect } from 'effect'
+import { Deferred, Effect, Option } from 'effect'
 import type { AudioBufferSurface } from './webaudio-surface.js'
 
 const INITIAL_COUNT = 0
@@ -18,6 +18,7 @@ export type AudioSamplePreloadOptions = {
   readonly pendingLoads: Map<AudioSampleId, Deferred.Deferred<boolean>>
   readonly preloadedStreams: Set<AudioSampleId>
   readonly preloadStream: ((soundId: AudioSampleId, source: AudioSampleSource) => Effect.Effect<boolean, unknown>) | undefined
+  readonly sampleLoadTimeoutMs: number | null
   readonly onlyPreload?: boolean
   readonly loadSample: (
     soundId: AudioSampleId,
@@ -57,6 +58,9 @@ const startStreamLoad = (
   if (!preloadStream) {
     return Effect.succeed(false)
   }
+  if (options.sampleLoadTimeoutMs === null) {
+    return Effect.succeed(false)
+  }
   return Effect.gen(function* startStreamLoadEffect() {
     const preload = yield* Effect.try({
       catch: (cause) => cause,
@@ -64,6 +68,8 @@ const startStreamLoad = (
     })
     return yield* preload
   }).pipe(
+    Effect.timeoutOption(options.sampleLoadTimeoutMs),
+    Effect.map((loaded) => Option.match(loaded, { onNone: () => false, onSome: (value) => value })),
     Effect.catch(() => Effect.succeed(false)),
     Effect.tap((loaded) => Effect.sync(() => {
       if (loaded) {

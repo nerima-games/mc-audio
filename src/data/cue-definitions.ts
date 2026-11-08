@@ -21,6 +21,7 @@ const RAW_SOUND_CUE_IDS = [
   'inventoryOpen',
   'itemPickup',
   'inventoryClose',
+  'footstepDefault',
   'footstepGrass',
   'footstepStone',
   'footstepWood',
@@ -103,6 +104,9 @@ const ENTITY_HIT_GAIN = 0.38
 const FOOTSTEP_GRASS_FREQUENCY_HZ = 170
 const FOOTSTEP_GRASS_DURATION_SECS = 0.045
 const FOOTSTEP_GRASS_GAIN = 0.18
+const FOOTSTEP_DEFAULT_FREQUENCY_HZ = 190
+const FOOTSTEP_DEFAULT_DURATION_SECS = 0.042
+const FOOTSTEP_DEFAULT_GAIN = 0.17
 const FOOTSTEP_STONE_FREQUENCY_HZ = 260
 const FOOTSTEP_STONE_DURATION_SECS = 0.038
 const FOOTSTEP_STONE_GAIN = 0.16
@@ -143,6 +147,7 @@ export const CUE_DEFINITIONS: Readonly<Record<RawSoundCueId, CueDefinition>> = {
   blockPlace: cue({ audio: { baseGain: BLOCK_PLACE_GAIN, durationSecs: BLOCK_PLACE_DURATION_SECS, frequency: BLOCK_PLACE_FREQUENCY_HZ }, caption: 'Block placed', spatial: true, wave: 'triangle' }),
   enchant: cue({ audio: { baseGain: ENCHANT_GAIN, durationSecs: ENCHANT_DURATION_SECS, frequency: ENCHANT_FREQUENCY_HZ }, caption: 'Item enchanted', spatial: false, wave: 'triangle' }),
   entityHit: cue({ audio: { baseGain: ENTITY_HIT_GAIN, durationSecs: ENTITY_HIT_DURATION_SECS, frequency: ENTITY_HIT_FREQUENCY_HZ }, caption: 'Attack lands', spatial: true, wave: 'square' }),
+  footstepDefault: cue({ audio: { baseGain: FOOTSTEP_DEFAULT_GAIN, durationSecs: FOOTSTEP_DEFAULT_DURATION_SECS, frequency: FOOTSTEP_DEFAULT_FREQUENCY_HZ }, caption: 'Footsteps', spatial: true, wave: 'triangle' }),
   footstepGrass: cue({ audio: { baseGain: FOOTSTEP_GRASS_GAIN, durationSecs: FOOTSTEP_GRASS_DURATION_SECS, frequency: FOOTSTEP_GRASS_FREQUENCY_HZ }, caption: 'Footsteps', spatial: true, wave: 'triangle' }),
   footstepStone: cue({ audio: { baseGain: FOOTSTEP_STONE_GAIN, durationSecs: FOOTSTEP_STONE_DURATION_SECS, frequency: FOOTSTEP_STONE_FREQUENCY_HZ }, caption: 'Footsteps', spatial: true, wave: 'square' }),
   footstepWood: cue({ audio: { baseGain: FOOTSTEP_WOOD_GAIN, durationSecs: FOOTSTEP_WOOD_DURATION_SECS, frequency: FOOTSTEP_WOOD_FREQUENCY_HZ }, caption: 'Footsteps', spatial: true, wave: 'triangle' }),

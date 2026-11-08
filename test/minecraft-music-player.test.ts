@@ -20,10 +20,10 @@ import {
   makeRecordingBackend,
 } from '../src/domain/backend-port.js'
 import {
-  decodeMinecraftMusicScenePlaylistManifest,
+  decodeMusicScenePlaylistManifest,
   MINECRAFT_MUSIC_STARTING_DELAY_TICKS,
-  minecraftMusicScenePlaylistRegistry,
-  minecraftMusicScenePlaylistSampleManifest,
+  musicScenePlaylistRegistry,
+  musicScenePlaylistSampleManifest,
   type MinecraftMusicDefinition,
 } from '../src/domain/minecraft-music.js'
 import { normalizeMinecraftAudioComponent } from '../src/domain/minecraft-audio.js'
@@ -92,7 +92,7 @@ const START_INPUT: MinecraftMusicTickInput = {
   musicVolume: AudioVolume(1),
 }
 
-const SCENE_PLAYLISTS = success(decodeMinecraftMusicScenePlaylistManifest({
+const SCENE_PLAYLISTS = success(decodeMusicScenePlaylistManifest({
   title: {
     crossfadeTicks: 40,
     maximumSilenceTicks: 400,
@@ -150,8 +150,8 @@ const SCENE_PLAYLISTS = success(decodeMinecraftMusicScenePlaylistManifest({
     }],
   },
 }))
-const SCENE_REGISTRY = mergeMinecraftSoundRegistries(REGISTRY, minecraftMusicScenePlaylistRegistry(SCENE_PLAYLISTS))
-const SCENE_SAMPLE_MANIFEST = minecraftMusicScenePlaylistSampleManifest(SCENE_PLAYLISTS)
+const SCENE_REGISTRY = mergeMinecraftSoundRegistries(REGISTRY, musicScenePlaylistRegistry(SCENE_PLAYLISTS))
+const SCENE_SAMPLE_MANIFEST = musicScenePlaylistSampleManifest(SCENE_PLAYLISTS)
 
 const makeHarness = (
   availability: AudioAvailability = 'ready',
@@ -234,6 +234,52 @@ describe('Minecraft music player', () => {
     }),
   )
 
+  it.effect('waits the configured maximum silence interval before starting the next track', () =>
+    Effect.gen(function* () {
+      const playlists = success(decodeMusicScenePlaylistManifest({
+        title: {
+          crossfadeTicks: 1,
+          maximumSilenceTicks: 5,
+          minimumSilenceTicks: 2,
+          tracks: [{
+            attribution: {
+              generatorScript: 'scripts/audio/generate-title.ts',
+              licenseFile: 'LICENSE',
+              licenseName: 'MIT License',
+              licenseSpdx: 'MIT',
+              licenseUrl: 'https://opensource.org/license/MIT',
+              type: 'generated',
+            },
+            eventId: 'mc-audio:music/title/01',
+            file: 'audio/music/title-01.ogg',
+          }],
+        },
+      }))
+      const registry = mergeMinecraftSoundRegistries(REGISTRY, musicScenePlaylistRegistry(playlists))
+      const { player, recorded } = yield* makeHarness('ready', () => 1, registry)
+      const input = { ...START_INPUT, scene: 'title' as const, scenePlaylists: playlists }
+
+      const started = yield* tickToStart(player, input)
+      expect(started.played).toBe(true)
+      expect(started.plan.state.nextSongDelayTicks).toBe(5)
+      yield* recorded.backend.stopTone(handle(1))
+
+      const gap = yield* player.tick(input)
+      expect(gap.played).toBe(false)
+      expect(gap.plan.state.nextSongDelayTicks).toBe(5)
+      for (let remainingTicks = 4; remainingTicks >= 0; remainingTicks -= 1) {
+        const silentTick = yield* player.tick(input)
+        expect(silentTick.played).toBe(false)
+        expect(silentTick.plan.state.nextSongDelayTicks).toBe(remainingTicks)
+      }
+
+      const afterMaximumSilence = yield* player.tick(input)
+      expect(afterMaximumSilence.played).toBe(true)
+      expect(afterMaximumSilence.soundId).toBe('mc-audio:music/title/01')
+      expect(yield* recorded.musicPlayed).toHaveLength(2)
+    }),
+  )
+
   it.effect('selects from an updated scene playlist during an existing silence gap', () =>
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness('ready', () => 0, SCENE_REGISTRY)
@@ -246,7 +292,7 @@ describe('Minecraft music player', () => {
       expect(enteredGap.plan.state.currentSound).toBeNull()
       expect(enteredGap.plan.state.nextSongDelayTicks).toBeGreaterThan(0)
 
-      const updatedPlaylists = success(decodeMinecraftMusicScenePlaylistManifest({
+      const updatedPlaylists = success(decodeMusicScenePlaylistManifest({
         title: {
           crossfadeTicks: 20,
           maximumSilenceTicks: 400,
@@ -343,7 +389,7 @@ describe('Minecraft music player', () => {
 
   it.effect('starts a scene track when the optional context fallback event is absent', () =>
     Effect.gen(function* () {
-      const sceneRegistry = minecraftMusicScenePlaylistRegistry(SCENE_PLAYLISTS)
+      const sceneRegistry = musicScenePlaylistRegistry(SCENE_PLAYLISTS)
       const { player } = yield* makeHarness('ready', () => 0, sceneRegistry)
       const result = yield* tickToStart(player, { ...START_INPUT, scene: 'title', scenePlaylists: SCENE_PLAYLISTS })
 
@@ -388,7 +434,7 @@ describe('Minecraft music player', () => {
         playMusic: (request) => Effect.gen(function* () {
           const attempt = yield* Ref.updateAndGet(attempts, (value) => value + 1)
           if (attempt === 1) {
-            return { accepted: false, id: AudioHandleId(50) }
+            return { accepted: false, id: AudioHandleId(50), refusalReason: 'asset-load-failed' }
           }
           return yield* recorded.backend.playMusic(request)
         }),
@@ -403,6 +449,28 @@ describe('Minecraft music player', () => {
       expect(yield* recorded.musicPlayed).toMatchObject([
         { soundId: 'minecraft:music/free_game' },
       ])
+    }),
+  )
+
+  it.effect('does not retry a scene asset when playback is refused for capacity', () =>
+    Effect.gen(function* () {
+      const recorded = yield* makeRecordingBackend('ready')
+      const attempts = yield* Ref.make(0)
+      const backend: AudioBackend = {
+        ...recorded.backend,
+        playMusic: () => Effect.gen(function* () {
+          yield* Ref.update(attempts, (value) => value + 1)
+          return { accepted: false, id: AudioHandleId(50), refusalReason: 'capacity' }
+        }),
+      }
+      const player = yield* makeMinecraftMusicPlayer(SCENE_REGISTRY, () => 0).pipe(
+        Effect.provide(Layer.succeed(AudioBackendPort, backend)),
+      )
+      const result = yield* tickToStart(player, { ...START_INPUT, scene: 'title', scenePlaylists: SCENE_PLAYLISTS })
+
+      expect(result.played).toBe(false)
+      expect(yield* Ref.get(attempts)).toBe(1)
+      expect(yield* recorded.musicPlayed).toHaveLength(0)
     }),
   )
 

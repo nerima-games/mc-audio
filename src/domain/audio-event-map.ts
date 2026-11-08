@@ -13,6 +13,11 @@ export type AudioEvent =
   | { readonly kind: 'mobDeath' }
   | { readonly kind: 'footstep'; readonly blockType: unknown }
   | { readonly kind: 'ambient'; readonly layer?: 'rain' | 'thunder' }
+  | { readonly kind: 'enchant' }
+  | { readonly kind: 'inventoryOpen' }
+  | { readonly kind: 'inventoryClose' }
+  | { readonly kind: 'levelUp' }
+  | { readonly kind: 'achievementUnlock' }
 
 export type AudioEventMapping = {
   readonly cueId: SoundCueId | null
@@ -71,7 +76,7 @@ const mapSurfaceEvent = (
   if (kind === 'place') {
     return Result.succeed({ cueId: cue('blockPlace'), surface: surface.success })
   }
-  return Result.succeed({ cueId: cueForSurface(surface.success) ?? null, surface: surface.success })
+  return Result.succeed({ cueId: cueForSurface(surface.success), surface: surface.success })
 }
 
 const unknownEventFailure = (event: unknown): Result.Result<never, AudioEventMapFailure> => {
@@ -112,6 +117,16 @@ export const mapAudioEvent = (event: AudioEvent): Result.Result<AudioEventMappin
       }
       return Result.succeed({ cueId: cue('rainAmbient') })
     }
+    case 'enchant':
+      return Result.succeed({ cueId: cue('enchant') })
+    case 'inventoryOpen':
+      return Result.succeed({ cueId: cue('inventoryOpen') })
+    case 'inventoryClose':
+      return Result.succeed({ cueId: cue('inventoryClose') })
+    case 'levelUp':
+      return Result.succeed({ cueId: cue('levelUp') })
+    case 'achievementUnlock':
+      return Result.succeed({ cueId: cue('achievementUnlock') })
     default: {
       return unknownEventFailure(event)
     }

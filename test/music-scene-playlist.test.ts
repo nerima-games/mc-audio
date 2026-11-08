@@ -6,20 +6,25 @@ import {
   AudioGain,
   AudioPlaybackRate,
   AudioSampleId,
+  AudioTick,
   AudioWeight,
+  AudioVolume,
   MinecraftSoundEventId,
   MinecraftSoundResourceId,
 } from '../src/domain/audio-brands.js'
 import {
-  MINECRAFT_MUSIC_PLAYLIST_CROSSFADE_TICK_LIMIT,
-  MINECRAFT_MUSIC_PLAYLIST_SILENCE_TICK_LIMIT,
-  decodeMinecraftMusicScenePlaylistManifest,
-  minecraftMusicScenePlaylistCredits,
-  minecraftMusicScenePlaylistRegistry,
-  minecraftMusicScenePlaylistSampleManifest,
-  selectMinecraftMusicSceneTrack,
-} from '../src/domain/minecraft-music-playlist.js'
-import { mergeMinecraftSoundRegistries } from '../src/domain/minecraft-sounds.js'
+  MUSIC_SCENE_PLAYLIST_CROSSFADE_TICK_LIMIT,
+  MUSIC_SCENE_PLAYLIST_SILENCE_TICK_LIMIT,
+  MUSIC_SCENES,
+  decodeMusicScenePlaylistManifest,
+  musicDefinitionForSceneTrack,
+  musicScenePlaylistCredits,
+  musicScenePlaylistRegistry,
+  musicScenePlaylistSampleManifest,
+  selectMusicSceneTrack,
+} from '../src/domain/music-scene-playlist.js'
+import { mergeSoundRegistries } from '../src/domain/minecraft-sounds.js'
+import { initialMinecraftMusicState, planMinecraftMusic } from '../src/domain/minecraft-music-planner.js'
 
 const generatedAttribution = {
   generatorScript: 'scripts/audio/generate-title-music.ts',
@@ -53,7 +58,7 @@ const playlist = (tracks: ReadonlyArray<unknown> = [track('mc-audio:music/title/
   tracks,
 })
 
-const decode = (input: unknown) => decodeMinecraftMusicScenePlaylistManifest(input)
+const decode = (input: unknown) => decodeMusicScenePlaylistManifest(input)
 
 describe('Minecraft music scene playlists', () => {
   it('decodes generated attribution and builds the existing sample and sound registries', () => {
@@ -65,17 +70,17 @@ describe('Minecraft music scene playlists', () => {
 
     const scene = decoded.success.title
     expect(scene?.tracks[0]?.attribution).toEqual(generatedAttribution)
-    expect(minecraftMusicScenePlaylistSampleManifest(decoded.success).get(AudioSampleId('audio/music/title-01.ogg'))).toEqual({
+    expect(musicScenePlaylistSampleManifest(decoded.success).get(AudioSampleId('audio/music/title-01.ogg'))).toEqual({
       kind: 'url',
       preload: true,
       stream: true,
       url: 'audio/music/title-01.ogg',
     })
-    expect(minecraftMusicScenePlaylistRegistry(decoded.success).events.get(MinecraftSoundEventId('mc-audio:music/title/01'))).toMatchObject({
+    expect(musicScenePlaylistRegistry(decoded.success).events.get(MinecraftSoundEventId('mc-audio:music/title/01'))).toMatchObject({
       replace: true,
       sounds: [{ name: 'audio/music/title-01.ogg', stream: true, type: 'sound' }],
     })
-    expect(minecraftMusicScenePlaylistCredits(decoded.success)).toEqual([generatedAttribution])
+    expect(musicScenePlaylistCredits(decoded.success)).toEqual([generatedAttribution])
   })
 
   it('replaces a colliding registry event with the selected playlist asset', () => {
@@ -103,7 +108,7 @@ describe('Minecraft music scene playlists', () => {
       }]]),
     }
 
-    const merged = mergeMinecraftSoundRegistries(base, minecraftMusicScenePlaylistRegistry(decoded.success))
+    const merged = mergeSoundRegistries(base, musicScenePlaylistRegistry(decoded.success))
 
     expect(merged.events.get(eventId)?.sounds.map(({ name }) => name)).toEqual(['audio/music/title-01.ogg'])
   })
@@ -111,18 +116,18 @@ describe('Minecraft music scene playlists', () => {
   it('accepts range boundaries and rejects adjacent out-of-range values', () => {
     expect(Result.isSuccess(decode({
       title: {
-        crossfadeTicks: MINECRAFT_MUSIC_PLAYLIST_CROSSFADE_TICK_LIMIT,
-        maximumSilenceTicks: MINECRAFT_MUSIC_PLAYLIST_SILENCE_TICK_LIMIT,
+        crossfadeTicks: MUSIC_SCENE_PLAYLIST_CROSSFADE_TICK_LIMIT,
+        maximumSilenceTicks: MUSIC_SCENE_PLAYLIST_SILENCE_TICK_LIMIT,
         minimumSilenceTicks: 1,
         tracks: [track('mc-audio:music/title/01', 'audio/title.ogg')],
       },
     }))).toBe(true)
     expect(Result.isFailure(decode({ title: playlist([track('mc-audio:music/title/01', '../title.ogg')]) }))).toBe(true)
     expect(Result.isFailure(decode({ title: { ...playlist(), minimumSilenceTicks: 0 } }))).toBe(true)
-    expect(Result.isFailure(decode({ title: { ...playlist(), maximumSilenceTicks: MINECRAFT_MUSIC_PLAYLIST_SILENCE_TICK_LIMIT + 1 } }))).toBe(true)
+    expect(Result.isFailure(decode({ title: { ...playlist(), maximumSilenceTicks: MUSIC_SCENE_PLAYLIST_SILENCE_TICK_LIMIT + 1 } }))).toBe(true)
     expect(Result.isFailure(decode({ title: { ...playlist(), maximumSilenceTicks: 199 } }))).toBe(true)
     expect(Result.isFailure(decode({ title: { ...playlist(), crossfadeTicks: 0 } }))).toBe(true)
-    expect(Result.isFailure(decode({ title: { ...playlist(), crossfadeTicks: MINECRAFT_MUSIC_PLAYLIST_CROSSFADE_TICK_LIMIT + 1 } }))).toBe(true)
+    expect(Result.isFailure(decode({ title: { ...playlist(), crossfadeTicks: MUSIC_SCENE_PLAYLIST_CROSSFADE_TICK_LIMIT + 1 } }))).toBe(true)
     expect(Result.isFailure(decode({ title: { ...playlist(), minimumSilenceTicks: '200' } }))).toBe(true)
     expect(Result.isFailure(decode({ title: { ...playlist(), maximumSilenceTicks: Number.NaN } }))).toBe(true)
     expect(Result.isFailure(decode({ title: { ...playlist(), crossfadeTicks: 1.5 } }))).toBe(true)
@@ -157,8 +162,8 @@ describe('Minecraft music scene playlists', () => {
       return
     }
 
-    const first = selectMinecraftMusicSceneTrack({ manifest: decoded.success, random: 0, scene: 'title' })
-    const last = selectMinecraftMusicSceneTrack({ manifest: decoded.success, random: 1, scene: 'title' })
+    const first = selectMusicSceneTrack({ manifest: decoded.success, random: 0, scene: 'title' })
+    const last = selectMusicSceneTrack({ manifest: decoded.success, random: 1, scene: 'title' })
     expect(Result.isSuccess(first)).toBe(true)
     expect(Result.isSuccess(last)).toBe(true)
     if (Result.isSuccess(first)) {
@@ -167,7 +172,7 @@ describe('Minecraft music scene playlists', () => {
     if (Result.isSuccess(last)) {
       expect(last.success?.file).toBe('audio/title-02.ogg')
     }
-    expect(Result.isFailure(selectMinecraftMusicSceneTrack({ manifest: decoded.success, random: Number.NaN, scene: 'title' }))).toBe(true)
+    expect(Result.isFailure(selectMusicSceneTrack({ manifest: decoded.success, random: Number.NaN, scene: 'title' }))).toBe(true)
   })
 
   it('deduplicates identical generated attribution rows and rejects conflicting event files', () => {
@@ -177,9 +182,9 @@ describe('Minecraft music scene playlists', () => {
     if (Result.isFailure(decoded)) {
       return
     }
-    expect(minecraftMusicScenePlaylistCredits(decoded.success)).toHaveLength(1)
-    expect(minecraftMusicScenePlaylistSampleManifest(decoded.success).size).toBe(1)
-    expect(minecraftMusicScenePlaylistRegistry(decoded.success).events.size).toBe(1)
+    expect(musicScenePlaylistCredits(decoded.success)).toHaveLength(1)
+    expect(musicScenePlaylistSampleManifest(decoded.success).size).toBe(1)
+    expect(musicScenePlaylistRegistry(decoded.success).events.size).toBe(1)
     expect(Result.isFailure(decode({
       title: playlist([sameTrack]),
       day: playlist([track('mc-audio:music/title/01', 'audio/other.ogg')]),
@@ -201,22 +206,22 @@ describe('Minecraft music scene playlists', () => {
     if (Result.isFailure(decoded)) {
       return
     }
-    expect(minecraftMusicScenePlaylistSampleManifest(decoded.success).size).toBe(1)
-    expect(minecraftMusicScenePlaylistRegistry(decoded.success).events.size).toBe(2)
+    expect(musicScenePlaylistSampleManifest(decoded.success).size).toBe(1)
+    expect(musicScenePlaylistRegistry(decoded.success).events.size).toBe(2)
 
     const empty = decode({})
     expect(Result.isSuccess(empty)).toBe(true)
     if (Result.isFailure(empty)) {
       return
     }
-    expect(minecraftMusicScenePlaylistSampleManifest(empty.success).size).toBe(0)
-    expect(minecraftMusicScenePlaylistRegistry(empty.success).events.size).toBe(0)
-    expect(minecraftMusicScenePlaylistCredits(empty.success)).toEqual([])
+    expect(musicScenePlaylistSampleManifest(empty.success).size).toBe(0)
+    expect(musicScenePlaylistRegistry(empty.success).events.size).toBe(0)
+    expect(musicScenePlaylistCredits(empty.success)).toEqual([])
 
     const missingPlaylist = { unknownScene: undefined }
-    expect(minecraftMusicScenePlaylistSampleManifest(missingPlaylist).size).toBe(0)
-    expect(minecraftMusicScenePlaylistRegistry(missingPlaylist).events.size).toBe(0)
-    expect(minecraftMusicScenePlaylistCredits(missingPlaylist)).toEqual([])
+    expect(musicScenePlaylistSampleManifest(missingPlaylist).size).toBe(0)
+    expect(musicScenePlaylistRegistry(missingPlaylist).events.size).toBe(0)
+    expect(musicScenePlaylistCredits(missingPlaylist)).toEqual([])
   })
 
   it('returns null for absent scenes and empty caller-built playlists', () => {
@@ -225,13 +230,99 @@ describe('Minecraft music scene playlists', () => {
     if (Result.isFailure(decoded)) {
       return
     }
-    expect(selectMinecraftMusicSceneTrack({ manifest: decoded.success, random: 0, scene: 'day' })).toEqual(Result.succeed(null))
+    expect(selectMusicSceneTrack({ manifest: decoded.success, random: 0, scene: 'day' })).toEqual(Result.succeed(null))
     const titlePlaylist = decoded.success.title
     if (titlePlaylist === undefined) {
       throw new Error('expected the title playlist')
     }
     const emptyManifest = { title: { ...titlePlaylist, tracks: [] } }
-    expect(selectMinecraftMusicSceneTrack({ manifest: emptyManifest, random: 0, scene: 'title' })).toEqual(Result.succeed(null))
+    expect(selectMusicSceneTrack({ manifest: emptyManifest, random: 0, scene: 'title' })).toEqual(Result.succeed(null))
+  })
+
+  it('selects a track and delay that match independently calculated choices', () => {
+    fc.assert(fc.property(
+      fc.constantFrom(...MUSIC_SCENES),
+      fc.integer({ min: 1, max: 8 }),
+      fc.integer({ min: 0, max: 10_000 }),
+      fc.integer({ min: -100, max: 10_000 }),
+      fc.integer({ min: 1, max: 100 }),
+      fc.integer({ min: 0, max: 100 }),
+      (scene, trackCount, selectionBucket, delaySample, minimumSilenceTicks, silenceSpan) => {
+        const maximumSilenceTicks = minimumSilenceTicks + silenceSpan
+        const tracks = Array.from({ length: trackCount }, (_, index) => ({
+          attribution: generatedAttribution,
+          eventId: `mc-audio:music/${scene}/${index}`,
+          file: `audio/music/${scene}-${index}.ogg`,
+        }))
+        const decoded = decode({
+          [scene]: {
+            crossfadeTicks: 1,
+            maximumSilenceTicks,
+            minimumSilenceTicks,
+            tracks,
+          },
+        })
+        expect(Result.isSuccess(decoded)).toBe(true)
+        if (Result.isFailure(decoded)) {
+          return
+        }
+
+        const random = selectionBucket / 10_000
+        const expectedIndex = Math.min(trackCount - 1, Math.floor(random * trackCount))
+        const selected = selectMusicSceneTrack({ manifest: decoded.success, random, scene })
+        expect(Result.isSuccess(selected)).toBe(true)
+        if (Result.isFailure(selected) || selected.success === null) {
+          return
+        }
+        expect(selected.success.eventId).toBe(tracks[expectedIndex]?.eventId)
+
+        const scenePlaylist = decoded.success[scene]
+        expect(scenePlaylist).toBeDefined()
+        if (scenePlaylist === undefined) {
+          return
+        }
+        const definition = musicDefinitionForSceneTrack(scenePlaylist, selected.success)
+        const state = { ...initialMinecraftMusicState(), nextSongDelayTicks: AudioTick(0) }
+        const plan = planMinecraftMusic({
+          currentActive: false,
+          desired: definition,
+          enabled: true,
+          musicVolume: AudioVolume(1),
+          randomIntInclusive: () => delaySample,
+          state,
+        })
+        expect(Result.isSuccess(plan)).toBe(true)
+        if (Result.isFailure(plan)) {
+          return
+        }
+
+        const start = plan.success.commands.find((command) => command.kind === 'start')
+        expect(start?.kind === 'start' ? start.definition.sound : null).toBe(tracks[expectedIndex]?.eventId)
+        expect(plan.success.state.nextSongDelayTicks).toBe(
+          Math.min(maximumSilenceTicks, Math.max(minimumSilenceTicks, delaySample)),
+        )
+      },
+    ), { numRuns: 300 })
+  })
+
+  it('selects from each of the nine supported scenes', () => {
+    expect(MUSIC_SCENES).toHaveLength(9)
+    const manifest = decode(Object.fromEntries(MUSIC_SCENES.map((scene) => [scene, playlist([
+      track(`mc-audio:music/${scene}/only`, `audio/music/${scene}.ogg`),
+    ])])))
+    expect(Result.isSuccess(manifest)).toBe(true)
+    if (Result.isFailure(manifest)) {
+      return
+    }
+
+    for (const scene of MUSIC_SCENES) {
+      const selected = selectMusicSceneTrack({ manifest: manifest.success, random: 0.5, scene })
+      expect(selected).toEqual(Result.succeed({
+        attribution: generatedAttribution,
+        eventId: `mc-audio:music/${scene}/only`,
+        file: `audio/music/${scene}.ogg`,
+      }))
+    }
   })
 
   it('returns a typed result without throwing for arbitrary manifest input', () => {
