@@ -14,6 +14,7 @@ export type {
 } from './minecraft-sounds-types.js'
 export {
   mergeMinecraftSoundRegistries,
+  mergeMinecraftSoundRegistries as mergeSoundRegistries,
   normalizeMinecraftSoundId,
   parseMinecraftSoundsJson,
 } from './minecraft-sounds-parser.js'

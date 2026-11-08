@@ -31,6 +31,11 @@ export const AudioDurationSecs: Brand.Constructor<AudioDurationSecs> = Brand.mak
   (value) => validationResult(Number.isFinite(value) && value >= ZERO, 'Audio duration must be finite and non-negative'),
 )
 
+export type AudioTimeoutMs = number & Brand.Brand<'AudioTimeoutMs'>
+export const AudioTimeoutMs: Brand.Constructor<AudioTimeoutMs> = Brand.make<AudioTimeoutMs>(
+  (value) => validationResult(Number.isFinite(value) && value >= ZERO, 'Audio timeout must be finite and non-negative'),
+)
+
 export type AudioGain = number & Brand.Brand<'AudioGain'>
 export const AudioGain: Brand.Constructor<AudioGain> = Brand.make<AudioGain>(
   (value) => validationResult(Number.isFinite(value) && value >= ZERO, 'Audio gain must be finite and non-negative'),

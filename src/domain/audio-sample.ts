@@ -4,6 +4,7 @@ import {
   type AudioDiagnosticMessage,
   type AudioDiagnosticPath,
   AudioSampleId,
+  type AudioSampleId as AudioSampleIdType,
   AudioSampleUrl,
   AudioDiagnosticMessage as makeAudioDiagnosticMessage,
   AudioDiagnosticPath as makeAudioDiagnosticPath,
@@ -26,6 +27,13 @@ export type AudioSampleSource =
 
 export type AudioSampleManifest = ReadonlyMap<AudioSampleId, AudioSampleSource>
 
+export type AudioSampleLoadFailure = {
+  readonly _tag: 'AudioSampleLoadFailure'
+  readonly sampleId: AudioSampleIdType
+  readonly file: AudioDiagnosticPath
+  readonly reason: 'asset-missing' | 'decode-failed' | 'invalid-timeout' | 'load-failed' | 'load-timeout' | 'loader-unavailable'
+}
+
 export const mergeAudioSampleManifests = (
   base: AudioSampleManifest,
   additions: AudioSampleManifest,
@@ -42,6 +50,7 @@ export type AudioSampleLoadReport = {
   readonly loaded: AudioCount
   readonly cached: AudioCount
   readonly failed: AudioCount
+  readonly failedSampleIds?: ReadonlyArray<AudioSampleIdType>
 }
 
 

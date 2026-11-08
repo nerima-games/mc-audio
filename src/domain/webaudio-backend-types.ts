@@ -1,3 +1,4 @@
+import type { AudioAssetLoadFailure, AudioAssetLoadReport } from './audio-asset-loader.js'
 import type { AudioAvailability, AudioBackend, ToneRequest } from './backend-port.js'
 import type {
   AudioBufferSurface,
@@ -6,10 +7,23 @@ import type {
   AudioScheduledSourceSurface,
   WebAudioGlobalSurface,
 } from './webaudio-surface.js'
-import type { AudioCount, AudioSampleId, AudioSampleUrl, AudioVolume } from './audio-brands.js'
-import type { AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
+import type { AudioCount, AudioSampleId, AudioSampleUrl, AudioTimeoutMs, AudioVolume } from './audio-brands.js'
+import type { AudioSampleLoadFailure, AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
+import type { AudioAssetManifest } from './audio-asset-manifest.js'
 import type { Effect } from 'effect'
 import type { WebAudioConstructorName } from './webaudio-runtime.js'
+
+type AudioSampleAbortSignalSurface = {
+  readonly aborted: boolean
+  readonly reason: unknown
+  addEventListener(type: 'abort', listener: () => void): void
+  removeEventListener(type: 'abort', listener: () => void): void
+}
+
+/** Use the host's standard signal when available without adding DOM or Node types to the domain build. */
+export type AudioSampleAbortSignal = typeof globalThis extends { AbortSignal: { prototype: infer Signal } }
+  ? Signal
+  : AudioSampleAbortSignalSurface
 
 export type WebAudioOptions = {
   /**
@@ -34,8 +48,14 @@ export type WebAudioOptions = {
   readonly resolveAudioBuffer?: (soundId: NonNullable<ToneRequest['soundId']>) => AudioBufferSurface | null
   /** Manifest samples to decode. Manifest-backed cues also load lazily on first playback. */
   readonly sampleManifest?: AudioSampleManifest
-  /** Host-owned URL transport, keeping fetch and DOM types outside the domain. */
-  readonly loadSampleData?: (url: AudioSampleUrl) => PromiseLike<ArrayBuffer>
+  /** Licensed cue assets. Missing or failed files retain oscillator fallback. */
+  readonly audioAssetManifest?: AudioAssetManifest
+  /** Host-owned URL transport. The signal is aborted when the load times out or the backend is disposed. */
+  readonly loadSampleData?: (url: AudioSampleUrl, signal: AudioSampleAbortSignal) => PromiseLike<ArrayBuffer>
+  /** Maximum time in milliseconds for loading and decoding one sample. Omitted defaults to 15,000; zero expires immediately. Invalid values are reported as typed sample failures. */
+  readonly sampleLoadTimeoutMs?: AudioTimeoutMs
+  /** Maximum time in milliseconds a cue playback event waits for its sample. Omitted defaults to 250; zero expires immediately. */
+  readonly effectSampleLoadTimeoutMs?: AudioTimeoutMs
   /** Host-owned source creation for sounds that must remain streamed. */
   readonly createStreamSource?: (options: WebAudioStreamSourceOptions) => AudioScheduledSourceSurface | null
   /** Host-owned preload for streamed sounds that cannot be decoded as buffers. */
@@ -68,6 +88,10 @@ export type WebAudioReport = {
   readonly capacityRefusals: AudioCount
   /** Tones currently scheduled or sounding. */
   readonly activeTones: AudioCount
+  /** Cue-keyed asset failures observed during preload or playback. */
+  readonly audioAssetFailures: ReadonlyArray<AudioAssetLoadFailure>
+  /** File-keyed sample failures observed during preload or playback. */
+  readonly sampleLoadFailures: ReadonlyArray<AudioSampleLoadFailure>
   /** How many times the browser changed `state` without being asked. */
   readonly spontaneousStateChanges: AudioCount
   readonly muted: boolean
@@ -78,6 +102,8 @@ export type WebAudioReport = {
 export type WebAudioBackend = AudioBackend & {
   /** Decode configured samples. Concurrent requests for one id share one load. */
   readonly preloadSamples: (soundIds?: ReadonlyArray<AudioSampleId>) => Effect.Effect<AudioSampleLoadReport>
+  /** Decode cue assets through the sample cache and report any failures by cue. */
+  readonly preloadAudioAssets: Effect.Effect<AudioAssetLoadReport>
   /** Run from a user gesture handler and report the resulting availability. */
   readonly unlock: Effect.Effect<AudioAvailability>
   readonly report: Effect.Effect<WebAudioReport>

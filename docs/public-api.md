@@ -479,13 +479,21 @@ world/block の光量サンプリングと暗さに応じた判定を行い、�
 export type WebAudioGlobalSurface = {
   readonly AudioContext?: AudioContextConstructorSurface | undefined
 }
+export type AudioSampleAbortSignal = typeof globalThis extends { AbortSignal: { prototype: infer Signal } }
+  ? Signal
+  : {
+      readonly aborted: boolean
+      readonly reason: unknown
+      addEventListener(type: 'abort', listener: () => void): void
+      removeEventListener(type: 'abort', listener: () => void): void
+    }
 export type WebAudioOptions = {
   readonly global: WebAudioGlobalSurface
   readonly initialMasterGain?: AudioVolume
   readonly maxConcurrentTones?: AudioCount  // default: 32
   readonly resolveAudioBuffer?: (soundId: NonNullable<ToneRequest['soundId']>) => AudioBufferSurface | null
   readonly sampleManifest?: AudioSampleManifest
-  readonly loadSampleData?: (url: AudioSampleUrl) => PromiseLike<ArrayBuffer>
+  readonly loadSampleData?: (url: AudioSampleUrl, signal: AudioSampleAbortSignal) => PromiseLike<ArrayBuffer>
   readonly createStreamSource?: (options: WebAudioStreamSourceOptions) => AudioScheduledSourceSurface | null
   readonly preloadStream?: (soundId: AudioSampleId, source: AudioSampleSource) => Effect.Effect<boolean, unknown>
 }

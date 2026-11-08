@@ -472,7 +472,7 @@ The package-root declaration comparison found 271 changed members across 101 exi
 | `WebAudioBackend.setMasterGain` | `(gain: number) => Effect.Effect<void>` | `(gain: AudioVolume) => Effect.Effect<void>` |
 | `WebAudioBackend.setToneGain` | `(handle: ToneHandle, gain: number) => Effect.Effect<void>` | `(handle: ToneHandle, gain: AudioGain) => Effect.Effect<void>` |
 | `WebAudioOptions.initialMasterGain` | `number?` | `AudioVolume?` |
-| `WebAudioOptions.loadSampleData` | `((url: string) => Promise<ArrayBuffer>)?` | `((url: AudioSampleUrl) => PromiseLike<ArrayBuffer>)?` |
+| `WebAudioOptions.loadSampleData` | `((url: string) => Promise<ArrayBuffer>)?` | `((url: AudioSampleUrl, signal: AudioSampleAbortSignal) => PromiseLike<ArrayBuffer>)?` |
 | `WebAudioOptions.maxConcurrentTones` | `number?` | `AudioCount?` |
 | `WebAudioOptions.preloadStream` | `((soundId: string, source: AudioSampleSource) => Effect.Effect<boolean, unknown>)?` | `((soundId: AudioSampleId, source: AudioSampleSource) => Effect.Effect<boolean, unknown>)?` |
 | `WebAudioOptions.resolveAudioBuffer` | `((soundId: string) => AudioBufferSurface \| null)?` | `((soundId: NonNullable<ToneRequest['soundId']>) => AudioBufferSurface \| null)?` |
