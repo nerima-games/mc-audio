@@ -4,7 +4,7 @@
  * Loading and cache state are separate from node scheduling so that the
  * backend can keep its platform boundary focused on AudioContext operations.
  */
-import { AudioSampleId, type AudioSampleId as AudioSampleIdType, AudioCount as audioCount } from './audio-brands.js'
+import { AudioSampleId, type AudioSampleId as AudioSampleIdType, type AudioTimeoutMs, AudioCount as audioCount } from './audio-brands.js'
 import type { AudioSampleLoadReport, AudioSampleManifest, AudioSampleSource } from './audio-sample.js'
 import { Deferred, Effect, Option } from 'effect'
 import type { AudioBufferSurface } from './webaudio-surface.js'
@@ -18,7 +18,7 @@ export type AudioSamplePreloadOptions = {
   readonly pendingLoads: Map<AudioSampleId, Deferred.Deferred<boolean>>
   readonly preloadedStreams: Set<AudioSampleId>
   readonly preloadStream: ((soundId: AudioSampleId, source: AudioSampleSource) => Effect.Effect<boolean, unknown>) | undefined
-  readonly sampleLoadTimeoutMs: number | null
+  readonly sampleLoadTimeoutMs: AudioTimeoutMs | null
   readonly onlyPreload?: boolean
   readonly loadSample: (
     soundId: AudioSampleId,

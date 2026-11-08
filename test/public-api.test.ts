@@ -46,6 +46,7 @@ describe('public API', () => {
         "AudioSampleUrl",
         "AudioSeed",
         "AudioTick",
+        "AudioTimeoutMs",
         "AudioVolume",
         "AudioWeight",
         "CAPTION_DISPLAY_SECS",

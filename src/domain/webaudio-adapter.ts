@@ -73,7 +73,7 @@
  * this repository protects hardest.
  */
 import { Deferred, Effect, Layer, Option, Ref, Result } from 'effect'
-import { AudioCount, AudioDurationSecs, AudioFrequencyHz, AudioGain, AudioHandleId, AudioPan, AudioPlaybackRate, AudioSampleId, AudioVolume } from './audio-brands.js'
+import { AudioCount, AudioDiagnosticPath as makeAudioDiagnosticPath, AudioDurationSecs, AudioFrequencyHz, AudioGain, AudioHandleId, AudioPan, AudioPlaybackRate, AudioSampleId, AudioTimeoutMs, AudioVolume } from './audio-brands.js'
 import {
   type AudioAvailability,
   type AudioBackend,
@@ -125,9 +125,9 @@ export { DEFAULT_TONE_WAVE } from './webaudio-tone-graph.js'
 
 /** A conservative ceiling that prevents pathological cue bursts from exhausting nodes. */
 export const DEFAULT_MAX_CONCURRENT_TONES: AudioCount = AudioCount(32)
-export const DEFAULT_SAMPLE_LOAD_TIMEOUT_MS = 15_000
+export const DEFAULT_SAMPLE_LOAD_TIMEOUT_MS: AudioTimeoutMs = AudioTimeoutMs(15_000)
 
-const resolveSampleLoadTimeoutMs = (value: number | undefined): number | null => {
+const resolveSampleLoadTimeoutMs = (value: AudioTimeoutMs | undefined): AudioTimeoutMs | null => {
   if (value === undefined) {
     return DEFAULT_SAMPLE_LOAD_TIMEOUT_MS
   }
@@ -498,7 +498,7 @@ export const makeWebAudioBackend = (
         if (Option.isNone(runtime) || (yield* Ref.get(disposedRef))) {
           return null
         }
-        const file = source.kind === 'url' ? source.url : String(sampleId)
+        const file = makeAudioDiagnosticPath(source.kind === 'url' ? source.url : String(sampleId))
         const loadBytes = sampleLoadBytes(source, loadSampleData)
         if (sampleLoadTimeoutMs === null) {
           yield* recordSampleLoadFailure({
@@ -560,7 +560,7 @@ export const makeWebAudioBackend = (
         }
         return recordSampleLoadFailure({
           _tag: 'AudioSampleLoadFailure',
-          file: String(sampleId),
+          file: makeAudioDiagnosticPath(String(sampleId)),
           reason: 'asset-missing',
           sampleId,
         })
@@ -741,7 +741,7 @@ export const makeWebAudioBackend = (
           if (sampleSource === undefined) {
             yield* recordSampleLoadFailure({
               _tag: 'AudioSampleLoadFailure',
-              file: String(sampleId.value),
+              file: makeAudioDiagnosticPath(String(sampleId.value)),
               reason: 'asset-missing',
               sampleId: sampleId.value,
             })

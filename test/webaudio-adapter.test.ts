@@ -46,11 +46,13 @@ import {
   AudioPlaybackRate,
   AudioSampleId,
   AudioSampleUrl,
+  AudioTimeoutMs,
   AudioVolume,
   MinecraftSoundResourceId,
 } from '../src/domain/audio-brands'
 import { AudioBackendPort, type ToneRequest } from '../src/domain/backend-port'
 import type { AudioSampleManifest, AudioSampleSource } from '../src/domain/audio-sample'
+import type { WebAudioOptions } from '../src/domain/webaudio-backend-types'
 import { type CaptionEvent, CaptionStream } from '../src/domain/caption'
 import { SoundCueId } from '../src/domain/cue'
 import { decodeAudioAssetManifest } from '../src/domain/audio-asset-manifest'
@@ -639,7 +641,7 @@ describe('decoded sample playback', () => {
       const audio = yield* makeWebAudioBackend({
         global: fake.global,
         loadSampleData: () => neverSettlingPromise<ArrayBuffer>(),
-        sampleLoadTimeoutMs: 0,
+        sampleLoadTimeoutMs: AudioTimeoutMs(0),
         sampleManifest: audioSampleManifest({ title: { kind: 'url', stream: false, url: '/audio/title.ogg' } }),
       })
       yield* audio.unlock
@@ -677,7 +679,7 @@ describe('decoded sample playback', () => {
           streamPreloads += 1
           return Effect.never
         },
-        sampleLoadTimeoutMs: 0,
+        sampleLoadTimeoutMs: AudioTimeoutMs(0),
         sampleManifest: audioSampleManifest({ title: { kind: 'url', stream: true, url: '/audio/title.ogg' } }),
       })
       yield* audio.unlock
@@ -704,7 +706,7 @@ describe('decoded sample playback', () => {
       const audio = yield* makeWebAudioBackend({
         global: fake.global,
         loadSampleData: async () => new ArrayBuffer(4),
-        sampleLoadTimeoutMs: 1_000,
+        sampleLoadTimeoutMs: AudioTimeoutMs(1_000),
         sampleManifest: audioSampleManifest({ title: { kind: 'url', stream: false, url: '/audio/title.ogg' } }),
       })
       yield* audio.unlock
@@ -723,11 +725,15 @@ describe('decoded sample playback', () => {
 
   it.effect('reports invalid sample load deadlines instead of substituting the default', () =>
     Effect.gen(function* () {
+      expect(AudioTimeoutMs.option(0)).toEqual(Option.some(AudioTimeoutMs(0)))
+      for (const invalidTimeoutMs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        expect(Option.isNone(AudioTimeoutMs.option(invalidTimeoutMs))).toBe(true)
+      }
       for (const sampleLoadTimeoutMs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
         const fake = makeFakeWebAudio()
         let loads = 0
         let streamPreloads = 0
-        const audio = yield* makeWebAudioBackend({
+        const options: WebAudioOptions = {
           global: fake.global,
           loadSampleData: async () => {
             loads += 1
@@ -737,9 +743,10 @@ describe('decoded sample playback', () => {
             streamPreloads += 1
             return Effect.succeed(true)
           },
-          sampleLoadTimeoutMs,
           sampleManifest: audioSampleManifest({ title: { kind: 'url', stream: true, url: '/audio/title.ogg' } }),
-        })
+        }
+        Reflect.set(options, 'sampleLoadTimeoutMs', sampleLoadTimeoutMs)
+        const audio = yield* makeWebAudioBackend(options)
 
         expect(yield* audio.preloadSamples([sampleId('title')])).toMatchObject({ failed: 1 })
         expect((yield* audio.report).sampleLoadFailures).toEqual([{

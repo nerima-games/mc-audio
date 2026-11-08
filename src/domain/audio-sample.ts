@@ -30,7 +30,7 @@ export type AudioSampleManifest = ReadonlyMap<AudioSampleId, AudioSampleSource>
 export type AudioSampleLoadFailure = {
   readonly _tag: 'AudioSampleLoadFailure'
   readonly sampleId: AudioSampleIdType
-  readonly file: string
+  readonly file: AudioDiagnosticPath
   readonly reason: 'asset-missing' | 'decode-failed' | 'invalid-timeout' | 'load-failed' | 'load-timeout' | 'loader-unavailable'
 }
 
