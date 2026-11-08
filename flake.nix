@@ -28,6 +28,19 @@
       pkgsFor = system: nixpkgs.legacyPackages.${system};
     in
     {
+      apps = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        {
+          ffmpeg = {
+            type = "app";
+            program = "${pkgs.ffmpeg}/bin/ffmpeg";
+          };
+        }
+      );
+
       devShells = forAllSystems (
         system:
         let

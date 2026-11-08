@@ -1,0 +1,8 @@
+# Audio credits
+
+This file is generated from the cue and music manifests.
+
+| Source | License | Files |
+|---|---|---|
+| [Delta12 Studio (pack author; source OGG tags list Michael William), Rpg Sound Effect Pack](https://opengameart.org/content/rpg-sound-effect-pack) | [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/); modified: yes | `audio/effects/cc0/explosion.ogg`, `audio/effects/cc0/grass.ogg`, `audio/effects/cc0/hurt.ogg`, `audio/effects/cc0/hurt.ogg`, `audio/effects/cc0/item.ogg`, `audio/effects/cc0/punch.ogg`, `audio/effects/cc0/steps.ogg`, `audio/effects/cc0/steps.ogg` |
+| `scripts/audio/generate-assets.mjs` | [MIT License](https://opensource.org/license/MIT); SPDX: `MIT`; license file: `LICENSE` | `audio/effects/generated/achievementUnlock.ogg`, `audio/effects/generated/blockBreak.ogg`, `audio/effects/generated/blockPlace.ogg`, `audio/effects/generated/enchant.ogg`, `audio/effects/generated/entityHit.ogg`, `audio/effects/generated/footstepDefault.ogg`, `audio/effects/generated/footstepGrass.ogg`, `audio/effects/generated/footstepStone.ogg`, `audio/effects/generated/footstepWood.ogg`, `audio/effects/generated/inventoryClose.ogg`, `audio/effects/generated/inventoryOpen.ogg`, `audio/effects/generated/itemPickup.ogg`, `audio/effects/generated/levelUp.ogg`, `audio/effects/generated/mobDeath.ogg`, `audio/effects/generated/mobHurt.ogg`, `audio/effects/generated/playerHurt.ogg`, `audio/effects/generated/rainAmbient.ogg`, `audio/effects/generated/thunderClap.ogg`, `audio/music/cave.ogg`, `audio/music/combat.ogg`, `audio/music/creative.ogg`, `audio/music/day.ogg`, `audio/music/end.ogg`, `audio/music/nether.ogg`, `audio/music/night.ogg`, `audio/music/title.ogg`, `audio/music/underwater.ogg` |

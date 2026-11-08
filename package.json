@@ -32,6 +32,7 @@
     }
   },
   "files": [
+    "audio",
     "dist",
     "LICENSE",
     "README.md"
@@ -47,6 +48,8 @@
     "audio"
   ],
   "scripts": {
+    "audio:credits": "tsx scripts/audio/generate-credits.ts",
+    "audio:determinism": "node scripts/audio/verify-determinism.mjs",
     "typecheck": "tsc -p tsconfig.build.json --pretty false && tsc -p tsconfig.test.json --pretty false && tsc -p tsconfig.preview.json --pretty false",
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.release.json --pretty false",
     "bench": "tsx scripts/bench-audio.ts",
@@ -60,7 +63,7 @@
     "test:browser": "pnpm typecheck:browser && vitest --config vitest.browser.config.ts run",
     "test:coverage": "vitest run --coverage",
     "typecheck:browser": "tsc -p tsconfig.browser.json --pretty false",
-    "verify": "pnpm typecheck && pnpm lint && pnpm test",
+    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm audio:determinism",
     "package:verify": "pnpm build && node scripts/verify-package.mjs",
     "prepublishOnly": "pnpm verify && pnpm package:verify"
   },
