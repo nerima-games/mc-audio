@@ -1,0 +1,173 @@
+{
+  "title": {
+    "crossfadeTicks": 40,
+    "maximumSilenceTicks": 1,
+    "minimumSilenceTicks": 1,
+    "tracks": [
+      {
+        "attribution": {
+          "generatorScript": "scripts/audio/generate-assets.mjs",
+          "licenseFile": "LICENSE",
+          "licenseName": "MIT License",
+          "licenseSpdx": "MIT",
+          "licenseUrl": "https://opensource.org/license/MIT",
+          "type": "generated"
+        },
+        "eventId": "mc-audio:music/title",
+        "file": "audio/music/title.ogg"
+      }
+    ]
+  },
+  "day": {
+    "crossfadeTicks": 40,
+    "maximumSilenceTicks": 1,
+    "minimumSilenceTicks": 1,
+    "tracks": [
+      {
+        "attribution": {
+          "generatorScript": "scripts/audio/generate-assets.mjs",
+          "licenseFile": "LICENSE",
+          "licenseName": "MIT License",
+          "licenseSpdx": "MIT",
+          "licenseUrl": "https://opensource.org/license/MIT",
+          "type": "generated"
+        },
+        "eventId": "mc-audio:music/day",
+        "file": "audio/music/day.ogg"
+      }
+    ]
+  },
+  "night": {
+    "crossfadeTicks": 40,
+    "maximumSilenceTicks": 1,
+    "minimumSilenceTicks": 1,
+    "tracks": [
+      {
+        "attribution": {
+          "generatorScript": "scripts/audio/generate-assets.mjs",
+          "licenseFile": "LICENSE",
+          "licenseName": "MIT License",
+          "licenseSpdx": "MIT",
+          "licenseUrl": "https://opensource.org/license/MIT",
+          "type": "generated"
+        },
+        "eventId": "mc-audio:music/night",
+        "file": "audio/music/night.ogg"
+      }
+    ]
+  },
+  "cave": {
+    "crossfadeTicks": 40,
+    "maximumSilenceTicks": 1,
+    "minimumSilenceTicks": 1,
+    "tracks": [
+      {
+        "attribution": {
+          "generatorScript": "scripts/audio/generate-assets.mjs",
+          "licenseFile": "LICENSE",
+          "licenseName": "MIT License",
+          "licenseSpdx": "MIT",
+          "licenseUrl": "https://opensource.org/license/MIT",
+          "type": "generated"
+        },
+        "eventId": "mc-audio:music/cave",
+        "file": "audio/music/cave.ogg"
+      }
+    ]
+  },
+  "nether": {
+    "crossfadeTicks": 40,
+    "maximumSilenceTicks": 1,
+    "minimumSilenceTicks": 1,
+    "tracks": [
+      {
+        "attribution": {
+          "generatorScript": "scripts/audio/generate-assets.mjs",
+          "licenseFile": "LICENSE",
+          "licenseName": "MIT License",
+          "licenseSpdx": "MIT",
+          "licenseUrl": "https://opensource.org/license/MIT",
+          "type": "generated"
+        },
+        "eventId": "mc-audio:music/nether",
+        "file": "audio/music/nether.ogg"
+      }
+    ]
+  },
+  "end": {
+    "crossfadeTicks": 40,
+    "maximumSilenceTicks": 1,
+    "minimumSilenceTicks": 1,
+    "tracks": [
+      {
+        "attribution": {
+          "generatorScript": "scripts/audio/generate-assets.mjs",
+          "licenseFile": "LICENSE",
+          "licenseName": "MIT License",
+          "licenseSpdx": "MIT",
+          "licenseUrl": "https://opensource.org/license/MIT",
+          "type": "generated"
+        },
+        "eventId": "mc-audio:music/end",
+        "file": "audio/music/end.ogg"
+      }
+    ]
+  },
+  "combat": {
+    "crossfadeTicks": 40,
+    "maximumSilenceTicks": 1,
+    "minimumSilenceTicks": 1,
+    "tracks": [
+      {
+        "attribution": {
+          "generatorScript": "scripts/audio/generate-assets.mjs",
+          "licenseFile": "LICENSE",
+          "licenseName": "MIT License",
+          "licenseSpdx": "MIT",
+          "licenseUrl": "https://opensource.org/license/MIT",
+          "type": "generated"
+        },
+        "eventId": "mc-audio:music/combat",
+        "file": "audio/music/combat.ogg"
+      }
+    ]
+  },
+  "underwater": {
+    "crossfadeTicks": 40,
+    "maximumSilenceTicks": 1,
+    "minimumSilenceTicks": 1,
+    "tracks": [
+      {
+        "attribution": {
+          "generatorScript": "scripts/audio/generate-assets.mjs",
+          "licenseFile": "LICENSE",
+          "licenseName": "MIT License",
+          "licenseSpdx": "MIT",
+          "licenseUrl": "https://opensource.org/license/MIT",
+          "type": "generated"
+        },
+        "eventId": "mc-audio:music/underwater",
+        "file": "audio/music/underwater.ogg"
+      }
+    ]
+  },
+  "creative": {
+    "crossfadeTicks": 40,
+    "maximumSilenceTicks": 1,
+    "minimumSilenceTicks": 1,
+    "tracks": [
+      {
+        "attribution": {
+          "generatorScript": "scripts/audio/generate-assets.mjs",
+          "licenseFile": "LICENSE",
+          "licenseName": "MIT License",
+          "licenseSpdx": "MIT",
+          "licenseUrl": "https://opensource.org/license/MIT",
+          "type": "generated"
+        },
+        "eventId": "mc-audio:music/creative",
+        "file": "audio/music/creative.ogg"
+      }
+    ]
+  }
+}

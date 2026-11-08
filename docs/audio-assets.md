@@ -1,6 +1,18 @@
 # Audio asset manifests
 
-`AudioAssetManifest` maps the existing `SoundCueId` values to licensed effect recordings. `MusicScenePlaylistManifest` maps music scenes to licensed tracks. This change adds no recordings or offline asset-generation scripts; the existing procedural music bank remains the playback fallback.
+`AudioAssetManifest` maps the registered `SoundCueId` values to licensed effect recordings. `MusicScenePlaylistManifest` maps music scenes to licensed tracks. The repository includes the OGG Vorbis files, manifests, generation script, checksums, and credits. The npm package ships the `audio/` data; the generation script stays in the repository. The existing procedural music bank remains the playback fallback when a BGM asset cannot be read or decoded.
+
+## Included files and audio format
+
+The distributed audio files are under `audio/`. `audio/effects/manifest.json` assigns at least one file to every registered cue, and `audio/music/manifest.json` assigns a track to each of the nine music scenes. Both manifests use the shapes decoded by this package. Their file paths are relative to the audio asset root supplied by the host's `loadSampleData` transport.
+
+`audio/music/metadata.json` records the fixed generation seed, sample rate, normalization target, and each track's duration, key, tempo, and timbre. Tracks use 48 kHz OGG Vorbis and loop over complete musical phrases. Effects use 48 kHz OGG Vorbis and stay under three seconds. The generator targets -18 dBFS RMS and keeps sample peaks below -1 dBFS.
+
+Generated effects and all BGM come from `scripts/audio/generate-assets.mjs`. Run `nix run nixpkgs#nodejs -- scripts/audio/generate-assets.mjs` to regenerate them. Synthesis uses a fixed seed and repository code; the script invokes `nix run nixpkgs#ffmpeg --` for OGG Vorbis encoding and adds no npm dependency. External effects come from Delta12 Studio's [Rpg Sound Effect Pack](https://opengameart.org/content/rpg-sound-effect-pack), whose distribution page identifies the pack as CC0 1.0. The original OGG tags identify Michael William; the credit record preserves both names without assuming their relationship. The selected effects are normalized for playback, so their manifest entries set `modified` to `true`.
+
+`audio/SHA256SUMS` records the SHA-256 digest of every OGG file. `audio/CREDITS.md` is generated from the two manifests and their attribution helpers. Run `pnpm audio:credits` after changing either manifest. `pnpm audio:determinism` regenerates one cue and one scene in separate temporary directories and checks that the OGG and scene metadata bytes match. The package's npm `files` list includes `audio/`, so the recordings ship with the package; a host can copy that directory into its resource pack or serve it from its package asset root.
+
+Effects are capped at 2 MB total and music at 10 MB total. The distribution tests verify manifest coverage, file hashes, package inclusion, browser decoding, duration, and clipping.
 
 ## Cue recordings and attribution
 
@@ -8,39 +20,39 @@ Each cue variant has a relative `file` path, `volume`, `pitchRange`, and `attrib
 
 ```json
 {
-  "blockBreak": [
+  "entityHit": [
     {
-      "file": "audio/effects/block-break.ogg",
-      "volume": 0.8,
-      "pitchRange": { "minimum": 0.9, "maximum": 1.1 },
-      "attribution": {
-        "type": "external",
-        "author": "Kenney",
-        "workTitle": "Impact Sounds",
-        "sourceUrl": "https://kenney.nl/assets/impact-sounds",
-        "licenseName": "CC0 1.0 Universal",
-        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
-        "modified": false
-      }
-    },
-    {
-      "file": "audio/effects/block-break-generated.ogg",
+      "file": "audio/effects/generated/entityHit.ogg",
       "volume": 1,
-      "pitchRange": { "minimum": 1, "maximum": 1.2 },
+      "pitchRange": { "minimum": 1, "maximum": 1 },
       "attribution": {
         "type": "generated",
-        "generatorScript": "scripts/audio/generate-cues.ts",
+        "generatorScript": "scripts/audio/generate-assets.mjs",
         "licenseSpdx": "MIT",
         "licenseName": "MIT License",
         "licenseFile": "LICENSE",
         "licenseUrl": "https://opensource.org/license/MIT"
+      }
+    },
+    {
+      "file": "audio/effects/cc0/punch.ogg",
+      "volume": 1,
+      "pitchRange": { "minimum": 1, "maximum": 1 },
+      "attribution": {
+        "type": "external",
+        "author": "Delta12 Studio (pack author; source OGG tags list Michael William)",
+        "workTitle": "Rpg Sound Effect Pack",
+        "sourceUrl": "https://opengameart.org/content/rpg-sound-effect-pack",
+        "licenseName": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modified": true
       }
     }
   ]
 }
 ```
 
-The `file` values are project-relative destinations for imported or generated audio. Replace them with the files selected by the asset stream. This CC0 example assumes the sound is unmodified; set `modified` to match any conversion or editing. The cue manifest accepts only registered `SoundCueId` keys. `{}` is valid and leaves cues on their procedural fallback path.
+The example shows the shape used by `audio/effects/manifest.json`. The `file` values point to files included in the package. The cue manifest accepts only registered `SoundCueId` keys. `{}` remains valid for hosts that want only procedural playback.
 
 Decode untrusted JSON with `decodeAudioAssetManifest`. It returns a typed `Result` for unknown cues, missing fields, invalid URLs, unsafe paths, and invalid numbers.
 
@@ -61,7 +73,7 @@ File paths cannot be absolute, contain traversal segments, or include query and 
 
 The music manifest uses the same attribution union. Each scene has a non-empty `tracks` array, a silence interval between completed tracks, and a crossfade duration for scene changes. The decoder accepts these nine scene keys: `title`, `day`, `night`, `cave`, `nether`, `end`, `combat`, `underwater`, and `creative`. Track `eventId` values must use the reserved `mc-audio:music/` prefix so they cannot collide with vanilla context fallback events. The playlist registry marks its events as replacements, so each selected track resolves to its file after merging with the fallback registry.
 
-This TypeScript example builds a manifest the decoder accepts. It uses repository-generated tracks and repeats the repository's MIT license data for every track. The paths are destinations for the later music generation stream; this package does not include those files or the script.
+This TypeScript example builds a manifest the decoder accepts. The checked-in `audio/music/manifest.json` uses the same shape and points to the generated tracks included in the package.
 
 ```ts
 import { Result } from 'effect'
@@ -75,7 +87,7 @@ import {
 
 const generatedAttribution = {
   type: 'generated',
-  generatorScript: 'scripts/audio/generate-music.ts',
+  generatorScript: 'scripts/audio/generate-assets.mjs',
   licenseSpdx: 'MIT',
   licenseName: 'MIT License',
   licenseFile: 'LICENSE',
@@ -96,15 +108,15 @@ const playlist = (...tracks: ReadonlyArray<ReturnType<typeof track>>) => ({
 })
 
 const scenePlaylists = {
-  title: playlist(track('title/main')),
-  day: playlist(track('day/01'), track('day/02')),
-  night: playlist(track('night/main')),
-  cave: playlist(track('cave/main')),
-  nether: playlist(track('nether/main')),
-  end: playlist(track('end/main')),
-  combat: playlist(track('combat/main')),
-  underwater: playlist(track('underwater/main')),
-  creative: playlist(track('creative/main')),
+  title: playlist(track('title')),
+  day: playlist(track('day')),
+  night: playlist(track('night')),
+  cave: playlist(track('cave')),
+  nether: playlist(track('nether')),
+  end: playlist(track('end')),
+  combat: playlist(track('combat')),
+  underwater: playlist(track('underwater')),
+  creative: playlist(track('creative')),
 }
 
 const decodedMusic = decodeMusicScenePlaylistManifest(scenePlaylists)
@@ -123,7 +135,7 @@ On failure, handle `decodedMusic.failure` before using the manifest. Inside the 
 
 `decodeMusicScenePlaylistManifest` returns a typed `Result`; check it before using the manifest. Pass its success value to `musicScenePlaylistSampleManifest` and `musicScenePlaylistRegistry`. The sample manifest uses the track's relative `file` path as its sample URL. `loadSampleData` receives that path as an `AudioSampleUrl`, and the host resolves it against its resource pack, base URL, or asset store. Pass the scene and manifest to `player.tick({ context, scene, scenePlaylists, musicVolume })`. `musicVolume` controls BGM independently from the effect volume.
 
-Merge `musicScenePlaylistRegistry(manifest)` into the host's existing music registry with `mergeSoundRegistries(existingRegistry, musicScenePlaylistRegistry(manifest))`. Merge `musicScenePlaylistSampleManifest(manifest)` into the host's existing sample map with `mergeAudioSampleManifests(existingSamples, musicScenePlaylistSampleManifest(manifest))`. Keep the existing generated-track registry available as the procedural fallback. A failed or timed-out BGM asset read or decode is recorded in `backend.report.sampleLoadFailures` with its file and reason; only that asset-load refusal selects the procedural track. Context unavailable or locked and capacity refusals remain playback failures and do not select the fallback.
+Keep the existing generated-track registry available as the procedural fallback. A failed or timed-out BGM asset read or decode is recorded in `backend.report.sampleLoadFailures` with its file and reason; only that asset-load refusal selects the procedural track. Context unavailable or locked and capacity refusals remain playback failures and do not select the fallback.
 
 Call `audioAssetCredits` for cue attribution and `musicScenePlaylistCredits` for music attribution. Both return distinct rows for credits and distribution notices. Generated rows include the generator path, SPDX identifier, license name, repository `LICENSE` path, and canonical license URL. External rows include the author, work title, source page, and license details.
 

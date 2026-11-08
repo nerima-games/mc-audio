@@ -1,0 +1,389 @@
+{
+  "achievementUnlock": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/achievementUnlock.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "blockBreak": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/blockBreak.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "blockPlace": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/blockPlace.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "enchant": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/enchant.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "entityHit": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/entityHit.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    },
+    {
+      "attribution": {
+        "author": "Delta12 Studio (pack author; source OGG tags list Michael William)",
+        "licenseName": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modified": true,
+        "sourceUrl": "https://opengameart.org/content/rpg-sound-effect-pack",
+        "type": "external",
+        "workTitle": "Rpg Sound Effect Pack"
+      },
+      "file": "audio/effects/cc0/punch.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "footstepDefault": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/footstepDefault.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    },
+    {
+      "attribution": {
+        "author": "Delta12 Studio (pack author; source OGG tags list Michael William)",
+        "licenseName": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modified": true,
+        "sourceUrl": "https://opengameart.org/content/rpg-sound-effect-pack",
+        "type": "external",
+        "workTitle": "Rpg Sound Effect Pack"
+      },
+      "file": "audio/effects/cc0/steps.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "footstepGrass": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/footstepGrass.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "surface": "grass",
+      "volume": 1
+    },
+    {
+      "attribution": {
+        "author": "Delta12 Studio (pack author; source OGG tags list Michael William)",
+        "licenseName": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modified": true,
+        "sourceUrl": "https://opengameart.org/content/rpg-sound-effect-pack",
+        "type": "external",
+        "workTitle": "Rpg Sound Effect Pack"
+      },
+      "file": "audio/effects/cc0/grass.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "surface": "grass",
+      "volume": 1
+    }
+  ],
+  "footstepStone": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/footstepStone.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "surface": "stone",
+      "volume": 1
+    },
+    {
+      "attribution": {
+        "author": "Delta12 Studio (pack author; source OGG tags list Michael William)",
+        "licenseName": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modified": true,
+        "sourceUrl": "https://opengameart.org/content/rpg-sound-effect-pack",
+        "type": "external",
+        "workTitle": "Rpg Sound Effect Pack"
+      },
+      "file": "audio/effects/cc0/steps.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "surface": "stone",
+      "volume": 1
+    }
+  ],
+  "footstepWood": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/footstepWood.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "surface": "wood",
+      "volume": 1
+    }
+  ],
+  "inventoryClose": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/inventoryClose.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "inventoryOpen": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/inventoryOpen.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "itemPickup": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/itemPickup.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    },
+    {
+      "attribution": {
+        "author": "Delta12 Studio (pack author; source OGG tags list Michael William)",
+        "licenseName": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modified": true,
+        "sourceUrl": "https://opengameart.org/content/rpg-sound-effect-pack",
+        "type": "external",
+        "workTitle": "Rpg Sound Effect Pack"
+      },
+      "file": "audio/effects/cc0/item.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "levelUp": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/levelUp.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "mobDeath": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/mobDeath.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "mobHurt": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/mobHurt.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    },
+    {
+      "attribution": {
+        "author": "Delta12 Studio (pack author; source OGG tags list Michael William)",
+        "licenseName": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modified": true,
+        "sourceUrl": "https://opengameart.org/content/rpg-sound-effect-pack",
+        "type": "external",
+        "workTitle": "Rpg Sound Effect Pack"
+      },
+      "file": "audio/effects/cc0/hurt.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "playerHurt": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/playerHurt.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    },
+    {
+      "attribution": {
+        "author": "Delta12 Studio (pack author; source OGG tags list Michael William)",
+        "licenseName": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modified": true,
+        "sourceUrl": "https://opengameart.org/content/rpg-sound-effect-pack",
+        "type": "external",
+        "workTitle": "Rpg Sound Effect Pack"
+      },
+      "file": "audio/effects/cc0/hurt.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "rainAmbient": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/rainAmbient.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ],
+  "thunderClap": [
+    {
+      "attribution": {
+        "generatorScript": "scripts/audio/generate-assets.mjs",
+        "licenseFile": "LICENSE",
+        "licenseName": "MIT License",
+        "licenseSpdx": "MIT",
+        "licenseUrl": "https://opensource.org/license/MIT",
+        "type": "generated"
+      },
+      "file": "audio/effects/generated/thunderClap.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    },
+    {
+      "attribution": {
+        "author": "Delta12 Studio (pack author; source OGG tags list Michael William)",
+        "licenseName": "CC0 1.0 Universal",
+        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "modified": true,
+        "sourceUrl": "https://opengameart.org/content/rpg-sound-effect-pack",
+        "type": "external",
+        "workTitle": "Rpg Sound Effect Pack"
+      },
+      "file": "audio/effects/cc0/explosion.ogg",
+      "pitchRange": { "maximum": 1, "minimum": 1 },
+      "volume": 1
+    }
+  ]
+}

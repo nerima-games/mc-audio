@@ -1,0 +1,67 @@
+{
+  "codec": "Vorbis",
+  "container": "Ogg",
+  "sampleRateHz": 48000,
+  "channels": 2,
+  "seed": 482712,
+  "normalization": {
+    "targetDbfsRms": -18,
+    "maximumPeakDbfs": -1
+  },
+  "scenes": {
+    "title": {
+      "durationSeconds": 96,
+      "key": "C Lydian",
+      "tempoBpm": 80,
+      "timbre": "glass pluck and warm pad"
+    },
+    "day": {
+      "durationSeconds": 80,
+      "key": "D major",
+      "tempoBpm": 96,
+      "timbre": "wood pluck, strings and light shaker"
+    },
+    "night": {
+      "durationSeconds": 106.66666666666667,
+      "key": "A natural minor",
+      "tempoBpm": 72,
+      "timbre": "bell melody and soft low bass"
+    },
+    "cave": {
+      "durationSeconds": 87.27272916666666,
+      "key": "E Phrygian",
+      "tempoBpm": 88,
+      "timbre": "low muted drone with water drops"
+    },
+    "nether": {
+      "durationSeconds": 68.5714375,
+      "key": "F-sharp harmonic minor",
+      "tempoBpm": 112,
+      "timbre": "low saw and metallic pulse"
+    },
+    "end": {
+      "durationSeconds": 91.4285625,
+      "key": "C-sharp minor",
+      "tempoBpm": 84,
+      "timbre": "sparse bell and airy pad"
+    },
+    "combat": {
+      "durationSeconds": 64,
+      "key": "G minor",
+      "tempoBpm": 120,
+      "timbre": "clear pulse and wooden percussion"
+    },
+    "underwater": {
+      "durationSeconds": 101.052625,
+      "key": "F major",
+      "tempoBpm": 76,
+      "timbre": "round sine arpeggio and soft pad"
+    },
+    "creative": {
+      "durationSeconds": 73.84614583333334,
+      "key": "E Mixolydian",
+      "tempoBpm": 104,
+      "timbre": "bright pluck and gentle shaker"
+    }
+  }
+}
