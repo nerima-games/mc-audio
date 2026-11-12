@@ -1,5 +1,15 @@
 # @nerima-games/mc-audio
 
+## 0.6.0
+
+### Minor Changes
+
+- Add licensed cue and scene music manifests, adapter-backed asset loading, event-to-cue mapping, and crossfaded music playback.
+
+- Include licensed cue recordings and generated scene music with reproducible source assets.
+
+- Align the exact kernel dependency to 0.17.0 so consumers share one copy of its branded types across dependent packages.
+
 ## 0.5.0
 
 ### Minor Changes
