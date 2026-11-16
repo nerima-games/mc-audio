@@ -11,6 +11,7 @@ import {
   AudioVolume,
   AudioWeight,
   MinecraftSoundEventId,
+  MinecraftSoundNamespace,
   MinecraftSoundResourceId,
 } from '../src/domain/audio-brands.js'
 import {
@@ -27,15 +28,17 @@ import {
   type MinecraftMusicDefinition,
 } from '../src/domain/minecraft-music.js'
 import { normalizeMinecraftAudioComponent } from '../src/domain/minecraft-audio.js'
-import { mergeMinecraftSoundRegistries, type MinecraftSoundRegistry } from '../src/domain/minecraft-sounds.js'
+import {
+  mergeMinecraftSoundRegistries,
+  parseMinecraftSoundsJson,
+  type MinecraftSoundRegistry,
+} from '../src/domain/minecraft-sounds.js'
 import {
   makeMinecraftMusicPlayer,
   type MinecraftMusicPlayer,
   type MinecraftMusicTickInput,
 } from '../src/domain/minecraft-music-player.js'
-import { createFreeMinecraftMusicRegistry } from '../src/domain/free-music-bank.js'
 
-const REGISTRY = createFreeMinecraftMusicRegistry()
 const handle = (id: number) => ({ id: AudioHandleId(id) })
 const success = <A, E>(result: Result.Result<A, E>): A => {
   if (Result.isFailure(result)) {
@@ -43,6 +46,32 @@ const success = <A, E>(result: Result.Result<A, E>): A => {
   }
   return result.success
 }
+// Self-authored sounds.json-shaped fixture. Event keys default to the
+// `minecraft` namespace so they match MINECRAFT_BACKGROUND_MUSIC; every sound
+// file name, volume, and weight here is made up for these tests.
+const REGISTRY = success(parseMinecraftSoundsJson({
+  'mc-audio:music.test_biome': {
+    sounds: [{ name: 'mc-audio:music/test_biome', stream: true }],
+  },
+  'music.creative': {
+    sounds: [
+      { name: 'music.game', type: 'event' },
+      { name: 'mc-audio:music/test_creative', stream: true, volume: 0.9 },
+    ],
+  },
+  'music.game': {
+    sounds: [
+      { name: 'mc-audio:music/test_game_a', stream: true, volume: 0.6, weight: 3 },
+      { name: 'mc-audio:music/test_game_b', stream: true, volume: 0.3 },
+    ],
+  },
+  'music.under_water': {
+    sounds: [
+      { name: 'music.game', type: 'event' },
+      { name: 'mc-audio:music/test_underwater', stream: true, volume: 0.7 },
+    ],
+  },
+}, { namespace: MinecraftSoundNamespace('minecraft') }))
 const METADATA_REGISTRY: MinecraftSoundRegistry = {
   events: new Map([[MinecraftSoundEventId('minecraft:music.game'), {
       id: MinecraftSoundEventId('minecraft:music.game'),
@@ -52,7 +81,7 @@ const METADATA_REGISTRY: MinecraftSoundRegistry = {
           attenuationDistance: AudioDistance(16),
           pitch: AudioPlaybackRate(1.25),
           preload: true,
-          name: MinecraftSoundResourceId('minecraft:music/free_game'),
+          name: MinecraftSoundResourceId('mc-audio:music/test_metadata'),
           stream: true,
           type: 'sound',
           volume: AudioGain(0.5),
@@ -71,7 +100,7 @@ const LOUD_METADATA_REGISTRY: MinecraftSoundRegistry = {
           attenuationDistance: AudioDistance(16),
           pitch: AudioPlaybackRate(1.25),
           preload: true,
-          name: MinecraftSoundResourceId('minecraft:music/free_game'),
+          name: MinecraftSoundResourceId('mc-audio:music/test_metadata'),
           stream: true,
           type: 'sound',
           volume: AudioGain(4),
@@ -425,7 +454,7 @@ describe('Minecraft music player', () => {
     }),
   )
 
-  it.effect('retries a refused scene asset with the existing free music fallback', () =>
+  it.effect('retries a refused scene asset with the context music fallback', () =>
     Effect.gen(function* () {
       const recorded = yield* makeRecordingBackend('ready')
       const attempts = yield* Ref.make(0)
@@ -447,7 +476,7 @@ describe('Minecraft music player', () => {
       expect(result.played).toBe(true)
       expect(yield* Ref.get(attempts)).toBe(2)
       expect(yield* recorded.musicPlayed).toMatchObject([
-        { soundId: 'minecraft:music/free_game' },
+        { soundId: 'mc-audio:music/test_game_a' },
       ])
     }),
   )
@@ -505,7 +534,7 @@ describe('Minecraft music player', () => {
       expect(result.played).toBe(true)
       expect(result.soundId).toBe('minecraft:music.game')
       expect(yield* recorded.musicPlayed).toStrictEqual([
-        { gain: 0.4, playbackRate: 1, soundId: 'minecraft:music/free_game', stream: true },
+        { gain: 0.6, playbackRate: 1, soundId: 'mc-audio:music/test_game_a', stream: true },
       ])
     }),
   )
@@ -518,7 +547,7 @@ describe('Minecraft music player', () => {
       })
       expect(result.soundId).toBe('minecraft:music.under_water')
       expect(yield* recorded.musicPlayed).toStrictEqual([
-        { gain: 0.4, playbackRate: 1, soundId: 'minecraft:music/free_underwater', stream: true },
+        { gain: 0.7, playbackRate: 1, soundId: 'mc-audio:music/test_underwater', stream: true },
       ])
     }),
   )
@@ -553,7 +582,7 @@ describe('Minecraft music player', () => {
       })
       expect(result.soundId).toBe('minecraft:music.creative')
       expect(yield* recorded.musicPlayed).toStrictEqual([
-        { gain: 1, playbackRate: 1, soundId: 'minecraft:music/free_creative', stream: true },
+        { gain: 0.9, playbackRate: 1, soundId: 'mc-audio:music/test_creative', stream: true },
       ])
 
       const stopped = yield* player.tick({
@@ -596,13 +625,13 @@ describe('Minecraft music player', () => {
     }),
   )
 
-  it.effect('plays the Sulfur Caves free track through biome music', () =>
+  it.effect('plays a biome-only music event through biome music', () =>
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness()
       const input: MinecraftMusicTickInput = {
         biomeMusic: [
           {
-            data: { ...START_DEFINITION, sound: MinecraftSoundEventId('minecraft:music.free_sulfur_caves') },
+            data: { ...START_DEFINITION, sound: MinecraftSoundEventId('mc-audio:music.test_biome') },
             weight: 1,
           },
         ],
@@ -611,12 +640,12 @@ describe('Minecraft music player', () => {
 
       const result = yield* tickToStart(player, input)
 
-      expect(result.soundId).toBe('minecraft:music.free_sulfur_caves')
+      expect(result.soundId).toBe('mc-audio:music.test_biome')
       expect(yield* recorded.musicPlayed).toStrictEqual([
         {
           gain: 1,
           playbackRate: 1,
-          soundId: 'minecraft:music/free_sulfur_caves',
+          soundId: 'mc-audio:music/test_biome',
           stream: true,
         },
       ])
@@ -644,7 +673,7 @@ describe('Minecraft music player', () => {
       const result = yield* player.tick({ ...START_INPUT, musicVolume: AudioVolume(0) })
 
       expect(result.played).toBe(false)
-      expect(yield* recorded.toneGains).toStrictEqual([{ gain: 0.38, handle: { id: 1 } }])
+      expect(yield* recorded.toneGains).toStrictEqual([{ gain: 0.57, handle: { id: 1 } }])
     }),
   )
 
@@ -690,8 +719,8 @@ describe('Minecraft music player', () => {
       expect(result.played).toBe(true)
       expect(result.soundId).toBe('minecraft:music.creative')
       expect(yield* recorded.musicPlayed).toStrictEqual([
-        { gain: 0.4, playbackRate: 1, soundId: 'minecraft:music/free_game', stream: true },
-        { gain: 0.4, playbackRate: 1, soundId: 'minecraft:music/free_game', stream: true },
+        { gain: 0.6, playbackRate: 1, soundId: 'mc-audio:music/test_game_a', stream: true },
+        { gain: 0.6, playbackRate: 1, soundId: 'mc-audio:music/test_game_a', stream: true },
       ])
       expect(yield* recorded.backend.isToneActive(handle(1))).toBe(false)
       expect(yield* recorded.backend.isToneActive(handle(2))).toBe(true)
@@ -838,7 +867,7 @@ describe('Minecraft music player', () => {
 
       expect(result).toMatchObject({
         _tag: 'MinecraftMusicPlaybackError',
-        soundId: 'minecraft:music/free_game',
+        soundId: 'mc-audio:music/test_game_a',
       })
       yield* player.stop
     }),
@@ -860,18 +889,18 @@ describe('Minecraft music player', () => {
       yield* tickToStart(player)
 
       expect(yield* recorded.musicPlayed).toStrictEqual([
-        { gain: 0.5, playbackRate: 1.25, soundId: 'minecraft:music/free_game', stream: true },
+        { gain: 0.5, playbackRate: 1.25, soundId: 'mc-audio:music/test_metadata', stream: true },
       ])
     }),
   )
 
-  it.effect('forwards official variant volumes above unity', () =>
+  it.effect('forwards variant volumes above unity', () =>
     Effect.gen(function* () {
       const { player, recorded } = yield* makeHarness('ready', () => 0, LOUD_METADATA_REGISTRY)
       yield* tickToStart(player)
 
       expect(yield* recorded.musicPlayed).toStrictEqual([
-        { gain: 4, playbackRate: 1.25, soundId: 'minecraft:music/free_game', stream: true },
+        { gain: 4, playbackRate: 1.25, soundId: 'mc-audio:music/test_metadata', stream: true },
       ])
     }),
   )

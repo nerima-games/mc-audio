@@ -1,6 +1,6 @@
 # Audio asset manifests
 
-`AudioAssetManifest` maps the registered `SoundCueId` values to licensed effect recordings. `MusicScenePlaylistManifest` maps music scenes to licensed tracks. The repository includes the OGG Vorbis files, manifests, generation script, checksums, and credits. The npm package ships the `audio/` data; the generation script stays in the repository. The existing procedural music bank remains the playback fallback when a BGM asset cannot be read or decoded.
+`AudioAssetManifest` maps the registered `SoundCueId` values to licensed effect recordings. `MusicScenePlaylistManifest` maps music scenes to licensed tracks. The repository includes the OGG Vorbis files, manifests, generation script, checksums, and credits. The npm package ships the `audio/` data; the generation script stays in the repository. When a BGM asset cannot be read or decoded, the music player falls back to the context music event if the host's registry defines it.
 
 ## Included files and audio format
 
@@ -127,7 +127,7 @@ if (Result.isSuccess(decodedMusic)) {
 }
 ```
 
-`existingMusicRegistry` and `existingSampleManifest` are the host's current music maps, including its procedural fallback tracks. The registry merge applies the scene registry as an overlay; the sample merge keeps existing sample IDs on collisions.
+`existingMusicRegistry` and `existingSampleManifest` are the host's current music maps, including the context music events used as the fallback. The registry merge applies the scene registry as an overlay; the sample merge keeps existing sample IDs on collisions.
 
 On failure, handle `decodedMusic.failure` before using the manifest. Inside the success branch, pass `manifest` to the registry and sample helpers, then to `player.tick` as `scenePlaylists`.
 
@@ -135,7 +135,7 @@ On failure, handle `decodedMusic.failure` before using the manifest. Inside the 
 
 `decodeMusicScenePlaylistManifest` returns a typed `Result`; check it before using the manifest. Pass its success value to `musicScenePlaylistSampleManifest` and `musicScenePlaylistRegistry`. The sample manifest uses the track's relative `file` path as its sample URL. `loadSampleData` receives that path as an `AudioSampleUrl`, and the host resolves it against its resource pack, base URL, or asset store. Pass the scene and manifest to `player.tick({ context, scene, scenePlaylists, musicVolume })`. `musicVolume` controls BGM independently from the effect volume.
 
-Keep the existing generated-track registry available as the procedural fallback. A failed or timed-out BGM asset read or decode is recorded in `backend.report.sampleLoadFailures` with its file and reason; only that asset-load refusal selects the procedural track. Context unavailable or locked and capacity refusals remain playback failures and do not select the fallback.
+The fallback is the event for the current context (`minecraft:music.game`, `minecraft:music.under_water`, or `minecraft:music.creative`); keep it in the host registry if you want a fallback. mc-audio does not ship a registry for these events. A failed or timed-out BGM asset read or decode is recorded in `backend.report.sampleLoadFailures` with its file and reason; only that asset-load refusal selects the fallback track. Context unavailable or locked and capacity refusals remain playback failures and do not select the fallback.
 
 Call `audioAssetCredits` for cue attribution and `musicScenePlaylistCredits` for music attribution. Both return distinct rows for credits and distribution notices. Generated rows include the generator path, SPDX identifier, license name, repository `LICENSE` path, and canonical license URL. External rows include the author, work title, source page, and license details.
 

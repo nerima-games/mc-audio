@@ -644,31 +644,15 @@ export const planMinecraftSound: (
 >
 ```
 
-`src/domain/minecraft-sounds-*` は公式 `sounds.json` の `sounds` 配列と、文字列／オブジェクト
+`src/domain/minecraft-sounds-*` は `sounds.json` 形式の `sounds` 配列と、文字列／オブジェクト
 variant、`type`、`volume`、`pitch`、`weight`、`stream`、`preload`、
 `attenuation_distance`、`subtitle`、`replace` を扱う。event variant の参照と循環検出、
 重み付き選択、URL／`ArrayBuffer` のサンプル境界は parser・resolver・WebAudio adapter に
 分離してある。実際の OGG はライブラリに埋め込まず、ホストが合法なリソースパックを
 `AudioSampleManifest` として渡す。
 
-26.2 の 1,968 件の公式イベントカタログは `MINECRAFT_26_2_SOUND_EVENT_GROUPS`、
-`MINECRAFT_26_2_SOUND_EVENT_IDS`、`missingMinecraft26_2SoundEvents` で検査できる。
-`MINECRAFT_26_2_SOUNDS_JSON` は公式 `sounds.json` 全イベントの定義本体を保持し、
-`createMinecraft26_2SoundRegistry()` はそれを通常の `MinecraftSoundRegistry` に変換する。
-ブロック、Sulfur Cube 系エンティティ、Sulfur Cube 用バケツなどのイベント定義を含み、
-公式の空イベントも識別子とともに保持するが、音声バイナリの再配布ではない。
-
-26.3 Snapshot 9 の 1,991 件の検証版カタログは、`MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_GROUPS`、
-`MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_IDS`、`missingMinecraft26_3Snapshot9SoundEvents`、
-`MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON`、`createMinecraft26_3Snapshot9SoundRegistry()` で
-利用できる。これは 26.2 から独立した pre-release API であり、stable API の互換 alias ではない。
-Snapshot 用 resource pack と組み合わせる場合にだけ選択する。
-
-`FREE_MINECRAFT_MUSIC_TRACKS` と `FREE_MINECRAFT_MUSIC_EVENT_VARIANTS` は、
-`createFreeMinecraftMusicPack()` が生成する、26.2 の全公式音楽イベント配置へ追加可能なフリーの
-合成代替音源である。イベント ID、variant 順序、重み、音量、`stream`、event 参照は保持するが、
-生成音は Mojang／Minecraft の原曲波形と同一ではない。原音との完全一致が必要な配布物では、権利を確認した
-公式音源またはリソースパックを注入する。
+mc-audio は vanilla の sound-event カタログや `sounds.json` 由来の値を同梱しない。
+`parseMinecraftSoundsJson` に渡す `sounds.json` 形式のデータはホストが用意する。
 
 `mergeAudioSampleManifests(base, additions)` は、同じ `soundId` がある場合に base を優先し、
 resource pack の追加音源だけを安全に統合する。
@@ -692,7 +676,7 @@ mob の標準 variant は `parseMinecraftMobSoundVariantJson`、
 | `src/qa/audio.ts` / `src/entrypoints/audio-qa.ts` | `makeAudioQaSurface`、`makeAudioQaEntrypoint` | Effect-based audio QA provider and synchronous `audio.report` / `audio.snapshot` entrypoint. |
 | `src/domain/minecraft-audio.ts` | `parseMinecraftAudioComponent`、`normalizeMinecraftAudioComponent` | `minecraft:audio/*` component の解析・正規化 |
 | `src/domain/audio-sample.ts` | `AudioSampleManifest`、`mergeAudioSampleManifests` | リソースパック音源の manifest 境界 |
-| `src/domain/original-sample-bank.ts` / `free-music-bank.ts` | `createOriginalSampleManifest`、`createFreeMinecraftMusicPack` | 権利を持つ音源を manifest 化する。標準サンプル生成の失敗は `Result` で返す。 |
+| `src/domain/original-sample-bank.ts` | `createOriginalSampleManifest` | 権利を持つ音源を manifest 化する。標準サンプル生成の失敗は `Result` で返す。 |
 
 root export の完全な機械的な一覧は `src/index.ts` を正とする。この表は各モジュールの利用目的を示し、
 音声バイナリやブラウザ固有の型を公開契約に混ぜないという境界を補足する。

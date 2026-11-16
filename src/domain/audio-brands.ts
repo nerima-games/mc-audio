@@ -86,16 +86,6 @@ export const AudioCount: Brand.Constructor<AudioCount> = Brand.make<AudioCount>(
   (value) => validationResult(Number.isInteger(value) && value >= ZERO, 'Audio count must be a non-negative integer'),
 )
 
-export type AudioBpm = number & Brand.Brand<'AudioBpm'>
-export const AudioBpm: Brand.Constructor<AudioBpm> = Brand.make<AudioBpm>(
-  (value) => validationResult(Number.isFinite(value) && value > ZERO, 'Audio BPM must be finite and positive'),
-)
-
-export type AudioNote = number & Brand.Brand<'AudioNote'>
-export const AudioNote: Brand.Constructor<AudioNote> = Brand.make<AudioNote>(
-  (value) => validationResult(Number.isFinite(value), 'Audio note must be finite'),
-)
-
 export type AudioSampleRate = number & Brand.Brand<'AudioSampleRate'>
 export const AudioSampleRate: Brand.Constructor<AudioSampleRate> = Brand.make<AudioSampleRate>(
   (value) => validationResult(Number.isInteger(value) && value > ZERO, 'Audio sample rate must be a positive integer'),
