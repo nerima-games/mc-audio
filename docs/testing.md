@@ -60,7 +60,6 @@ test/cue-registry.test.ts          効果音キューレジストリ
 test/end-audio-controller.test.ts  End 音源の制御
 test/end-audio.test.ts             End 音源の計画
 test/envelope.test.ts               エンベロープの算術（クリック除去）
-test/free-music-bank.test.ts        再配布可能な生成音楽バンク
 test/game-audio.test.ts             ゲーム音響の統合
 test/minecraft-music-player.test.ts Minecraft 音楽 player と metadata
 test/minecraft-music.test.ts        Minecraft 音楽の状態機械

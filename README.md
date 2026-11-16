@@ -38,8 +38,7 @@ mc-audio に依存するのは `mx-gameplay` と `mx-ui` の 2 つである。
 | [docs/architecture.md](./docs/architecture.md) | 4 階層、16 リポジトリ依存グラフ、mc-audio の位置 |
 | [docs/responsibility.md](./docs/responsibility.md) | 責務と非スコープ |
 | [docs/public-api.md](./docs/public-api.md) | 公開 API（参照実装で検証済み） |
-| [docs/minecraft-sounds.md](./docs/minecraft-sounds.md) | `sounds.json`、バリアント、サウンド再生 |
-| [docs/free-music.md](./docs/free-music.md) | 追加可能なフリー音源、Minecraft 互換の BGM 定義、利用方法 |
+| [docs/minecraft-sounds.md](./docs/minecraft-sounds.md) | ホストが渡す `sounds.json` 形式のデータ、バリアント、サウンド再生 |
 | [docs/design-notes.md](./docs/design-notes.md) | 設計注意 + 回帰テスト |
 | [docs/porting.md](./docs/porting.md) | 移植元と実測 LOC |
 | [docs/testing.md](./docs/testing.md) | 検証要件と完了条件 |
@@ -93,7 +92,7 @@ src/domain/
   minecraft-ambient-sounds-data.ts     Minecraft ambient 定義・正規化
   minecraft-ambient-sounds-planner.ts  Minecraft ambient 状態機械（純関数）
   minecraft-ambient-sounds.ts          上記の公開 re-export
-  minecraft-sounds* sounds.json の解析・マージ・バリアント解決・再生計画
+  minecraft-sounds* sounds.json 形式の解析・マージ・バリアント解決・再生計画
   minecraft-sound-player.ts  mc-kernel の Position / ClockPort を使う高水準再生
   audio-sample.ts  ホスト非依存の sample manifest 型
   volume.ts         音量カテゴリと gain 算術
@@ -123,7 +122,7 @@ master volume と mute、同時音数上限、Node/SSR の安全な unavailable 
 - **キューロスターは 17 個。** 参照実装の効果音ロスターを移植済み
 - **オリジナルPCMサンプルを同梱。** `createOriginalSampleManifest()` は全 cue と End/portal 用の短い16-bit mono WAVを実行時生成する。外部アセット、DOM、fetch、著作権付き素材は不要
 - URL または独自 `ArrayBuffer` の manifest も引き続き指定でき、未ロード・失敗時は tone 合成へフォールバックする
-- `sounds.json` の namespace、replace マージ、weight バリアント、subtitle、attenuation を解析し、URL manifest と再生計画へ変換できる
+- ホストが渡す `sounds.json` 形式のデータについて、namespace、replace マージ、weight バリアント、subtitle、attenuation を解析し、URL manifest と再生計画へ変換できる
 - **サウンドボードプレビューは実装済み**（`apps/preview-soundboard`）
 - **ビルドは実装済み。** `pnpm build` が `dist/`、型宣言、source map を生成し、`exports` は release 出力を指す。publish は公開判断と registry 認証を伴うため、このリポジトリでは実行していない
 - **カバレッジ閾値は 100%。** 全対象指標をゲートとして検証する

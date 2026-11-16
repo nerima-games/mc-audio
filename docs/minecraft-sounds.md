@@ -1,9 +1,9 @@
 # Minecraft サウンドレジストリ
 
-`minecraft-sounds` は Minecraft の `sounds.json` に相当するイベント定義を、
-ホスト非依存の型へ変換するドメイン API である。著作権付きの公式音声バイナリは
-このリポジトリに含めず、ゲーム側が resource pack の URL または読み込み済みの
-`ArrayBuffer` を渡す。
+`minecraft-sounds` は Minecraft の `sounds.json` と同じ形式のイベント定義を
+ホスト非依存の型へ変換するドメイン API である。このリポジトリは Minecraft のイベント定義も
+音声バイナリも同梱しない。ゲーム側が `sounds.json` 形式のデータと、
+resource pack の URL または読み込み済みの `ArrayBuffer` を渡す。
 
 ## 解析とマージ
 
@@ -15,7 +15,7 @@ const registry = parseMinecraftSoundsJson(soundsJson, {
 })
 ```
 
-入力は event id をキーにした `sounds.json` オブジェクトである。各 `sounds` 要素は
+入力は、ホストが用意した event id をキーにする `sounds.json` 形式のオブジェクトである。各 `sounds` 要素は
 文字列、または次の属性を持つオブジェクトにできる。
 
 - `name`: `namespace:path`。省略した namespace は parser の既定値を使う
@@ -104,87 +104,16 @@ const playback = yield* player.play('minecraft:block.stone.break', {
 線形 cutoff と listener の forward vector から gain/pan を計算する。backend が `locked`、`unavailable`、または呼び出し側が
 `enabled: false` の場合でも、caption は対応する reason とともに発行される。
 
-## 26.2 sound-event catalog
+## 同梱する音とデータの範囲
 
-`MINECRAFT_26_2_SOUND_EVENT_IDS` と `MINECRAFT_26_2_SOUNDS_JSON` は、Minecraft Java Edition
-26.2 のリリースで定義された 1,968 件の sound-event カタログを固定データとして提供する。従来イベントに加えて、Cinnabar、Sulfur、
-Sulfur Spike、Potent Sulfur、Sulfur Cube、Small Sulfur Cube、geyser、bucket のイベントも
-含む。resource pack を読み込んだ後、`missingMinecraft26_2SoundEvents` で解析済み
-`sounds.json` が公式カタログ全体を持つか検査できる。
+mc-audio は vanilla の sound-event カタログを同梱せず、Mojang の `sounds.json` に由来する値も
+含まない。`sounds.json` 形式のデータで再生する場合は、ホストが自分のデータを用意して
+`parseMinecraftSoundsJson` に渡す。
 
-```ts
-import {
-  missingMinecraft26_2SoundEvents,
-  parseMinecraftSoundsJson,
-} from '@nerima-games/mc-audio'
-
-const registry = parseMinecraftSoundsJson(resourcePackSoundsJson, {
-  namespace: 'minecraft',
-})
-const missing = missingMinecraft26_2SoundEvents(registry)
-```
-
-このカタログは識別子と検証だけを提供し、Mojang の OGG ファイルは再配布しない。音源は
-権利を持つ resource pack から通常の `sounds.json` / asset-loading 境界を通して渡す。
-イベント一覧とメタデータは、[Java Edition 26.2 のリリースノート](https://www.minecraft.net/en-us/article/minecraft-java-edition-26-2)
-で確認できる音声追加内容と、Mojang の [公式 version manifest](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json) が指す asset index の
-`minecraft/sounds.json` に基づく。
-
-定義本体も `MINECRAFT_26_2_SOUNDS_JSON` と `createMinecraft26_2SoundRegistry()` で利用できる。
-これは snapshot の `sounds.json` に収録された全イベントについて、候補音、subtitle、weight、volume、pitch、
-`stream` などのメタデータを保持した固定データである。空の variant 配列を持つ公式イベントも
-識別子を維持したまま収録し、実際に解決・再生する段階で空イベントとして扱う。
-
-同梱 JSON は `pnpm import:minecraft-sounds` で、Mojang の version manifest と asset index を解決して
-公式 resource service から再生成できる。生成後のデータは parser の境界検証と公式カタログの回帰テストを通過させる。
-
-```ts
-import {
-  createMinecraft26_2SoundRegistry,
-  MINECRAFT_26_2_SOUNDS_JSON,
-} from '@nerima-games/mc-audio'
-
-const registry = createMinecraft26_2SoundRegistry()
-const officialDefinition = MINECRAFT_26_2_SOUNDS_JSON['block.cinnabar.break']
-```
-
-この定義にも音声バイナリは含まれない。`minecraftSoundManifest(registry, baseUrl)` または
-ホストが用意した `AudioSampleManifest` と組み合わせて再生する。
-
-## 26.3 Snapshot 9 sound-event catalog
-
-`MINECRAFT_26_3_SNAPSHOT_9_SOUND_EVENT_IDS` と `MINECRAFT_26_3_SNAPSHOT_9_SOUNDS_JSON` は、
-Minecraft Java Edition 26.3 Snapshot 9 の 1,991 件の sound-event カタログを、26.2 とは別の
-検証版 API として提供する。Snapshot 1 の shelf mushroom / poplar leaves、Snapshot 3 の
-straw bed / red shrub / poplar leaves / cushion の音声イベントと、Snapshot 9 時点の定義変更を
-含む。安定版 26.2 の API をこの検証版へ向ける alias は提供しない。
-
-追加内容と仕様は、公式の [26.3 Snapshot 1](https://feedback.minecraft.net/hc/en-us/articles/46861657001101-Minecraft-Java-Edition-26-3-Snapshot-1)、
-[26.3 Snapshot 3](https://feedback.minecraft.net/hc/en-us/articles/47197422514061-Minecraft-Java-Edition-26-3-Snapshot-3)、
-[26.3 Snapshot 9](https://feedback.minecraft.net/hc/en-us/articles/48195693403661-Minecraft-Java-Edition-26-3-Snapshot-9) と、Mojang の
-[公式 version manifest](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json) が指す Snapshot 9 の asset index にある
-`minecraft/sounds.json` に基づく。
-Snapshot は安定版ではないため、実際の resource pack と同じ Minecraft バージョンの API を選択する。
-
-```ts
-import {
-  createMinecraft26_3Snapshot9SoundRegistry,
-  missingMinecraft26_3Snapshot9SoundEvents,
-} from '@nerima-games/mc-audio'
-
-const registry = createMinecraft26_3Snapshot9SoundRegistry()
-const missing = missingMinecraft26_3Snapshot9SoundEvents(registry)
-```
-
-同梱 JSON は対象を明示して再生成する。
-
-```sh
-pnpm import:minecraft-sounds -- 26.2
-pnpm import:minecraft-sounds -- 26.3-snapshot-9
-```
-
-この検証版にも音声バイナリは含まれない。合法な resource pack の `sounds.json` と
-`AudioSampleManifest` を同じバージョンのレジストリへ渡す。
+mc-audio 自身が同梱する音は、独自に定義した cue ID（`src/data/cue-definitions.ts` と
+`audio/effects/manifest.json`）と、`mc-audio:music/<scene>` の曲（`audio/music/manifest.json`）だけである。
+これらの音量、ピッチ範囲、並び順は、このプロジェクトが独自に決めたサウンドデザインである。音源は
+`scripts/audio/generate-assets.mjs` で生成し、一部は `audio/CREDITS.md` に記載した CC0 パックから取り込んでいる。配信方法は [audio-assets.md](./audio-assets.md) に記載する。
 
 ## `ambient_sounds`
 
@@ -287,6 +216,12 @@ Firefly Bush の idle 音を発行する直前に、ホストが解決した遮�
 `true` かつ opaque block の直下でない場合だけ、`minecraft:block.firefly_bush.idle` を既存の `MinecraftSoundPlayer` で再生する。
 idle tick と block position/light lookup はホスト側の責務であり、ライブラリはそこを推測しない。
 この boolean と遮蔽条件は [Minecraft Java Edition 1.21.11](https://feedback.minecraft.net/hc/en-us/articles/41809981427213-Minecraft-Java-Edition-1-21-11-Mounts-of-Mayhem) の仕様に合わせている。
+
+`makeMinecraftMusicPlayer` は、最初の曲を `MINECRAFT_MUSIC_STARTING_DELAY_TICKS`（100 tick）の後に選ぶ。
+組み込みの通常・水中・クリエイティブ定義は、`minecraft:music.game`、`minecraft:music.under_water`、
+`minecraft:music.creative` を 12,000〜24,000 tick の間隔で選ぶ。これらのイベントの音源は mc-audio に含まれないため、
+組み込み定義で鳴らすにはホストの registry にこれらのイベントを定義する。環境は水中をクリエイティブより優先して解決する。
+`musicVolume` が変わると、gain を 1 tick あたり `MINECRAFT_MUSIC_GAIN_STEP`（0.05）ずつ目標値へ近づける。
 
 旧来の biome 音楽リストも重み付きで扱える。
 

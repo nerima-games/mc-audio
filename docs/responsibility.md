@@ -18,7 +18,7 @@ mc-audio は、WebAudio の再生基盤、効果音キューレジストリ、BG
 | WebAudio アダプタ | `AudioContext` のガード付き生成、オシレータ | ✅ `src/domain/webaudio-adapter.ts` |
 | WebAudio 界面型 | `lib` に `"DOM"` を入れずに済ませる構造的サブセット | ✅ `src/domain/webaudio-surface.ts` |
 | gain エンベロープ | クリック除去のための attack / release | ✅ `src/domain/envelope.ts` |
-| 音声サンプルと manifest | バイナリを固定せず、決定的な標準 WAV manifest、URL / `ArrayBuffer` manifest、Minecraft sound registry をこの repository で管理 | ✅ |
+| 音声サンプルと manifest | バイナリを固定せず、決定的な標準 WAV manifest、URL / `ArrayBuffer` manifest、Minecraft sound registry の形式をこの repository で管理 | ✅ |
 | サウンドボードプレビュー | 全キューを一覧から試聴 | ✅ `apps/preview-soundboard/` |
 
 ### WebAudio アダプタについて
@@ -151,6 +151,7 @@ subtitle・attenuation・manifest 変換も `minecraft-sounds*` に集約して�
 ### 5-1. 現在の境界
 
 - バイナリの Minecraft 音源ファイルは、ライセンスと配布元が未確定のためコミットしていない。
+- vanilla の `sounds.json` に由来するイベント定義も同梱しない。`sounds.json` 形式のデータはホストが渡す。
 - 代わりに標準サンプルは実行時生成し、決定性をテストしている。
 - 実音源を組み込む場合は、`AudioSampleManifest` に URL または `ArrayBuffer` を渡すだけで、
   再生・decode・cache・失敗時の tone fallback は既存の WebAudio アダプタを使える。
