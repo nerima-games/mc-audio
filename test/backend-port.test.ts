@@ -57,7 +57,7 @@ describe('makeRecordingBackend', () => {
       const musicHandle = yield* recorded.backend.playMusic({
         gain: AudioGain(0.75),
         playbackRate: AudioPlaybackRate(1),
-        soundId: MinecraftSoundResourceId('minecraft:music/free_game'),
+        soundId: MinecraftSoundResourceId('mc-audio:music/test_track'),
         stream: false,
       })
       expect(musicHandle.accepted).toBe(false)
@@ -71,12 +71,12 @@ describe('makeRecordingBackend', () => {
       const handle = yield* recorded.backend.playMusic({
         gain: AudioGain(0.75),
         playbackRate: AudioPlaybackRate(1),
-        soundId: MinecraftSoundResourceId('minecraft:music/free_game'),
+        soundId: MinecraftSoundResourceId('mc-audio:music/test_track'),
         stream: false,
       })
 
       expect(yield* recorded.musicPlayed).toStrictEqual([
-        { gain: 0.75, playbackRate: 1, soundId: 'minecraft:music/free_game', stream: false },
+        { gain: 0.75, playbackRate: 1, soundId: 'mc-audio:music/test_track', stream: false },
       ])
       expect(handle.accepted).toBe(true)
       expect(yield* recorded.backend.isToneActive(handle)).toBe(true)
@@ -109,7 +109,7 @@ describe('UnavailableBackendLayer', () => {
       expect(yield* backend.playMusic({
         gain: AudioGain(1),
         playbackRate: AudioPlaybackRate(1),
-        soundId: MinecraftSoundResourceId('minecraft:music/free_game'),
+        soundId: MinecraftSoundResourceId('mc-audio:music/test_track'),
         stream: false,
       })).toStrictEqual({ accepted: false, id: 0 })
       yield* backend.stopTone(handle)

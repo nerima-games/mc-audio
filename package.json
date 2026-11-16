@@ -55,8 +55,6 @@
     "bench": "tsx scripts/bench-audio.ts",
     "lint": "oxlint --deny-warnings src test apps scripts && ast-grep scan",
     "lint:fix": "oxlint --fix src test apps scripts",
-    "import:minecraft-sounds": "tsx scripts/import-minecraft-sounds.ts",
-    "import:minecraft-26-3-snapshot-9": "pnpm import:minecraft-sounds -- 26.3-snapshot-9",
     "preview": "tsx apps/preview-soundboard/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",

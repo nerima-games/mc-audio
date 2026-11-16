@@ -361,20 +361,25 @@ try {
     }
     if (
       typeof rootModule.parseMinecraftSoundsJson !== 'function' ||
-      typeof rootModule.MinecraftSoundNamespace !== 'function' ||
-      typeof rootModule.MINECRAFT_26_2_SOUNDS_JSON !== 'object'
+      typeof rootModule.MinecraftSoundNamespace !== 'function'
     ) {
       throw new Error('The root export does not expose the Minecraft sounds.json parser');
     }
-    const parsedRegistry = rootModule.parseMinecraftSoundsJson(rootModule.MINECRAFT_26_2_SOUNDS_JSON, {
-      namespace: rootModule.MinecraftSoundNamespace('minecraft'),
+    const parsedRegistry = rootModule.parseMinecraftSoundsJson({
+      'probe.chime': {
+        sounds: ['verify/probe_a', { name: 'verify/probe_b', volume: 0.5, weight: 2 }],
+      },
+    }, {
+      namespace: rootModule.MinecraftSoundNamespace('mc-audio'),
     });
     if (!Result.isSuccess(parsedRegistry)) {
       throw new Error('The root export failed to parse the Minecraft sounds registry');
     }
     const events = [...parsedRegistry.success.events];
     if (
-      events.length === 0 ||
+      events.length !== 1 ||
+      events[0][0] !== 'mc-audio:probe.chime' ||
+      events[0][1].sounds.length !== 2 ||
       events.some(([eventId, event]) =>
         typeof eventId !== 'string' ||
         eventId.length === 0 ||
@@ -416,7 +421,6 @@ import {
   MinecraftSoundNamespace,
   SoundCueId,
   parseMinecraftSoundsJson,
-  MINECRAFT_26_2_SOUNDS_JSON,
   type CueDefinition,
   type VolumeCategory,
   type VolumeSettings,
@@ -442,7 +446,10 @@ const manifest: AudioSampleManifest = mergeAudioSampleManifests(
   new Map([[sampleId, { kind: 'url', url: AudioSampleUrl('https://example.invalid/a.wav') }]]),
   new Map(),
 )
-const parsed = parseMinecraftSoundsJson(MINECRAFT_26_2_SOUNDS_JSON, { namespace: MinecraftSoundNamespace('minecraft') })
+const parsed = parseMinecraftSoundsJson(
+  { 'probe.chime': { sounds: ['verify/probe_a', { name: 'verify/probe_b', volume: 0.5, weight: 2 }] } },
+  { namespace: MinecraftSoundNamespace('mc-audio') },
+)
 if (
   typeof definition.baseGain !== 'number' ||
   typeof settings[category] !== 'number' ||
