@@ -581,6 +581,7 @@ describe('decoded sample playback', () => {
       yield* audio.playTone({ ...CUE, soundId: sampleId('missing') })
       expect(fake.context()?.bufferSources).toHaveLength(0)
       expect(fake.context()?.oscillators).toHaveLength(1)
+      expect((yield* audio.report).oscillatorNodes).toBe(1)
     }),
   )
 
@@ -1174,6 +1175,7 @@ describe('decoded sample playback', () => {
 
       expect(fake.context()?.bufferSources).toHaveLength(1)
       expect(fake.context()?.oscillators).toHaveLength(0)
+      expect((yield* audio.report).oscillatorNodes).toBe(0)
       expect(fake.context()?.log.stopped).toHaveLength(0)
       expect(yield* audio.isToneActive(handle)).toBe(true)
     }),
