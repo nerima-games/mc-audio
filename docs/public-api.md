@@ -297,6 +297,7 @@ export const makeSoundCueService: (input: {
 `makeSoundCueService` reads `ClockPort` from its Effect environment when it emits a
 caption. `makeMinecraftSoundPlayer` also requires `ClockPort` in its environment.
 Caption times are monotonic seconds, never wall-clock time or `performance.now()`.
+The event time of a hit sound (`entityHit`) is `CaptionEvent.atSecs` on the `CaptionStream`; there is no separate hit event.
 
 ---
 
