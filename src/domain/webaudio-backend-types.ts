@@ -88,6 +88,11 @@ export type WebAudioReport = {
   readonly capacityRefusals: AudioCount
   /** Tones currently scheduled or sounding. */
   readonly activeTones: AudioCount
+  /**
+   * How many OscillatorNodes the oscillator fallback has created since construction.
+   * Cumulative: an ended tone still counts. The main-path target is 0 (DoD-10).
+   */
+  readonly oscillatorNodes: AudioCount
   /** Cue-keyed asset failures observed during preload or playback. */
   readonly audioAssetFailures: ReadonlyArray<AudioAssetLoadFailure>
   /** File-keyed sample failures observed during preload or playback. */

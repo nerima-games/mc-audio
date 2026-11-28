@@ -39,11 +39,13 @@ export type ToneGraphOptions = {
   readonly sampleBuffer: AudioBufferSurface | null
   readonly playbackRate: AudioPlaybackRate
   readonly streamSource: AudioScheduledSourceSurface | null
+  /** Runs once after each OscillatorNode is created; the adapter counts them. */
+  readonly onOscillatorCreated?: Effect.Effect<void>
 }
 
 type ToneSourceOptions = Pick<
   ToneGraphOptions,
-  'context' | 'request' | 'sampleBuffer' | 'playbackRate' | 'streamSource'
+  'context' | 'request' | 'sampleBuffer' | 'playbackRate' | 'streamSource' | 'onOscillatorCreated'
 >
 
 const graphFailure = (options: ToneSourceOptions, cause: unknown): ToneGraphFailure => ({
@@ -81,8 +83,8 @@ const createStreamSource = ({ streamSource, request, context, sampleBuffer, play
   return Effect.succeed(streamSource)
 }
 
-const createOscillatorSource = ({ context, request, sampleBuffer, playbackRate, streamSource }: ToneSourceOptions): Effect.Effect<OscillatorSurface, ToneGraphFailure> =>
-  Effect.try({
+const createOscillatorSource = ({ context, request, sampleBuffer, playbackRate, streamSource, onOscillatorCreated = Effect.void }: ToneSourceOptions): Effect.Effect<OscillatorSurface, ToneGraphFailure> =>
+  Effect.tap(Effect.try({
     catch: (cause) => graphFailure({ context, playbackRate, request, sampleBuffer, streamSource }, cause),
     try: () => {
       const oscillator = context.createOscillator()
@@ -91,7 +93,7 @@ const createOscillatorSource = ({ context, request, sampleBuffer, playbackRate, 
       oscillator.frequency.value = drivenFrequency(request.frequency)
       return oscillator
     },
-  })
+  }), () => onOscillatorCreated)
 
 const createStreamingSource = (options: ToneSourceOptions): Effect.Effect<AudioScheduledSourceSurface, ToneGraphFailure> => {
   if (options.streamSource !== null) {

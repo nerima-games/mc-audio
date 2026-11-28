@@ -385,6 +385,7 @@ export const makeWebAudioBackend = (
     const unlockAttemptsRef = yield* Ref.make(0)
     const unlockRefusalsRef = yield* Ref.make(0)
     const refusedTonesRef = yield* Ref.make(0)
+    const oscillatorNodesRef = yield* Ref.make(0)
     const capacityRefusalsRef = yield* Ref.make(0)
     const audioAssetFailuresRef = yield* Ref.make<ReadonlyArray<AudioAssetLoadFailure>>([])
     const sampleLoadFailuresRef = yield* Ref.make<ReadonlyArray<AudioSampleLoadFailure>>([])
@@ -857,6 +858,7 @@ export const makeWebAudioBackend = (
           context,
           envelope,
           master,
+          onOscillatorCreated: Ref.update(oscillatorNodesRef, (count) => count + 1),
           playbackRate,
           request: playbackRequest,
           sampleBuffer,
@@ -1129,6 +1131,7 @@ export const makeWebAudioBackend = (
         }),
         disposed: yield* Ref.get(disposedRef),
         muted: yield* Ref.get(mutedRef),
+        oscillatorNodes: AudioCount(yield* Ref.get(oscillatorNodesRef)),
         refusedTones: AudioCount(yield* Ref.get(refusedTonesRef)),
         sampleLoadFailures: yield* Ref.get(sampleLoadFailuresRef),
         spontaneousStateChanges: AudioCount(spontaneousStateChanges),
